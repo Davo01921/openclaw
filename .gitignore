@@ -1,0 +1,13 @@
+# Local and secret configuration
+.env
+.env.*
+!.env.example
+openclaw.config.json5
+
+# Generated files
+__pycache__/
+*.py[cod]
+.DS_Store
+
+# Retired duplicate retained locally for reference only.
+/betta-picture-processing/

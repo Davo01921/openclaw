@@ -1,0 +1,37 @@
+// Example OpenClaw configuration fragment.
+// Merge carefully into the existing openclaw.json; do not replace unrelated config.
+// Exact provider/model IDs must match models already configured on David's OpenClaw installation.
+
+{
+  agents: {
+    defaults: {
+      // Keep the main agent capable for general work.
+      // If the existing primary is GPT-5.6 Sol, it can remain so.
+      utilityModel: "<CHEAP_TEXT_MODEL>"
+    },
+
+    entries: {
+      "betta-vision-worker": {
+        name: "Betta Vision Worker",
+        model: {
+          primary: "<QWEN_VISION_MODEL>",
+          fallbacks: []
+        },
+        utilityModel: "<CHEAP_TEXT_MODEL>",
+        // Give this worker only the tools needed to inspect batch images.
+        // It should not have Shopify mutation authority.
+        skills: ["betta-picture-processing"]
+      },
+
+      "betta-escalation": {
+        name: "Betta Exception Reviewer",
+        model: {
+          primary: "<GPT_5_6_SOL_MODEL>",
+          fallbacks: []
+        },
+        // Restrict this agent to diagnosis/review tools where practical.
+        skills: ["betta-picture-processing"]
+      }
+    }
+  }
+}
