@@ -1,80 +1,100 @@
 ---
 name: "nta-supplier-order-processing"
-description: "Process supplier purchase orders from Discord, understand packs/combo deals, match Shopify products, audit cost/vendor/retail, inventory, and preorder state safely."
+description: "Process NTA supplier orders and invoices as a specialist intake workflow that delegates product decisions to the canonical modular product system."
 ---
 
 # NTA supplier order processing
 
-Use when a supplier order, invoice, screenshot, PDF, CSV, or Discord message needs to be reconciled against Shopify.
+Use when a supplier purchase order, invoice, screenshot, PDF, CSV, or Discord message needs to be reconciled against Shopify.
 
-Read [references/workflow.md](references/workflow.md) before making Shopify changes.
+This is a specialist entry-point workflow. It does not own product-domain rules that now live in the modular product system.
+
+## Canonical dependencies
+
+Read and use `nta-product-orchestrator` first. Delegate each line to the applicable modules:
+
+- `nta-product-identity-resolver`
+- `nta-product-classifier`
+- `nta-supplier-unit-cost-normalizer`
+- `nta-retail-pricing-standard` when a retail-price decision is needed
+- `nta-inventory-state` when stock is physically received
+- `nta-product-availability` when supplier availability/orderability changes
+- `nta-product-metafields`
+- `nta-product-exception-gate`
+- `nta-shopify-product-writer`
+- `nta-product-qa-auditor`
+
+Do not copy or reinterpret those modules' rules here.
 
 ## Purpose
 
-Turn a supplier document into a verified Shopify change set without blindly assuming that supplier order quantities equal Shopify sellable units.
+Turn supplier documents into structured supplier-line input and a verified product change set. This workflow owns supplier-document interpretation, order state, supplier-line semantics, idempotency and reconciliation reporting.
 
-The workflow must understand packs, cartons, trays, pairs, trios, assorted bundles, bonus quantities, free goods, supplier availability, backorders, uncertain ETAs, and other supplier ordering units/states.
+## Supplier intake responsibilities
 
-## Non-negotiable rules
+For every supplier line extract where available:
 
-- Shopify is the live source of truth for existing products, variants, inventory units, vendor, cost, retail, inventory policy, and preorder metafields.
-- Never create a new Shopify product merely because a supplier line cannot be matched. Flag it for review unless creation was explicitly requested.
-- SKU/barcode/vendor SKU match wins over title matching. Exact product + variant match is next. Fuzzy title matching may suggest a candidate but must not silently write when ambiguous.
-- Supplier **order quantity** and Shopify **sellable quantity** are different concepts. Resolve the unit conversion before any inventory write.
-- Do not assume a line containing `10 PACK`, `6PK`, `PAIR`, `TRIO`, `DOZEN`, `BOX`, `TRAY`, `CARTON`, `CASE`, `ASSORTED`, `BONUS`, or similar is one sellable unit.
-- Conversely, do not multiply a supplier pack if Shopify itself sells that exact pack as one variant. Match the Shopify selling unit first.
-- Supplier line subtotal must be divided by the supplier units actually purchased before comparing unit cost. Then convert cost again if the Shopify selling unit differs from the supplier unit.
-- Detect whether prices are ex-GST or inc-GST from the document totals or explicit wording. Never mix GST-inclusive and GST-exclusive cost bases.
-- Retail price must not change automatically just because supplier cost changed. Review margin and like-for-like market evidence first. Auto-change retail only when an explicit NTA pricing rule authorises it.
-- Vendor can be corrected automatically only when the supplier identity is clear and the Shopify match is high confidence.
-- A purchase order is not proof that stock has physically arrived. `ORDERED` and `RECEIVED` are separate states.
-- In `ORDERED` state, update cost/vendor/audit data as appropriate but do not increase Shopify available inventory merely because goods were ordered.
-- In `RECEIVED` state, convert supplier units to Shopify sellable units, then update inventory using the received quantity.
-- If part of an order is short supplied, damaged, substituted or backordered, inventory must use the physically received quantity, not the ordered quantity.
-- The same supplier order must be idempotent. Build a fingerprint from supplier + order/invoice number where available, otherwise supplier + document date + normalized line items + total. Refuse a duplicate inventory application unless explicitly overridden.
-- Never report completion until every write is re-read from Shopify and verified.
-- Preorder state is variant-level. Read and verify `custom.preorder_eligible` and `custom.preorder_status_override` before changing them.
-- Allowed preorder overrides are `automatic`, `eta_tbc`, and `disabled` only.
-- Bettas and other individually identified one-off livestock must never be made preorder eligible.
-- Clearance, discontinued, internal-use, explicitly one-off, and non-replenishable lines must not be auto-enabled for preorder.
+```yaml
+supplier_line:
+  supplier:
+  order_or_invoice_number:
+  document_date:
+  source_state: ORDERED | RECEIVED | RECEIVED_PARTIAL
+  supplier_sku:
+  supplier_description:
+  order_qty:
+  pack_or_combo_wording:
+  line_cost:
+  gst_evidence:
+  supplier_availability:
+  eta_evidence:
+  received_qty_evidence:
+  notes: []
+```
 
-## Supplier availability → preorder rules
-
-After matching the exact Shopify variant, resolve supplier availability separately from physical inventory:
-
-- **Normal / available / routinely replenished:** keep or set `custom.preorder_eligible = true`. If inventory is `<= 0`, use inventory policy `CONTINUE` and `custom.preorder_status_override = automatic` so the storefront shows **Pre-order**.
-- **Backordered / no firm ETA / supplier says unavailable for a while / timing uncertain:** if NTA still wants to accept customer orders, keep `custom.preorder_eligible = true`, keep inventory policy `CONTINUE`, and set `custom.preorder_status_override = eta_tbc` so the storefront shows **Available to Order – ETA TBC**.
-- **Confirmed incoming with a reliable normal replenishment path:** use `automatic`; do not use `eta_tbc` merely because stock is currently zero.
-- **Cannot source / discontinued / supplier permanently stopped / NTA does not want further orders:** set `custom.preorder_status_override = disabled`, set `custom.preorder_eligible = false` when the line is genuinely non-replenishable, and use inventory policy `DENY` where appropriate.
-- **Received stock above zero:** if the variant was temporarily `eta_tbc`, return it to `automatic` unless David explicitly wants the warning retained.
-- Never invent an ETA from a PO date, invoice date, supplier lead-time guess, or previous delivery pattern.
-- If supplier wording is ambiguous, keep the existing preorder state and flag the uncertainty instead of silently changing it.
+Do not decide downstream product fields while parsing.
 
 ## Pack and combo intelligence
 
-For every supplier line determine four separate values:
+Preserve exact supplier wording for packs, cartons, trays, pairs, trios, assorted bundles, bonus quantities and free goods.
 
-1. `supplier_order_qty` — how many supplier packs/lines were ordered.
-2. `supplier_pack_size` — how many base units are inside one supplier pack.
-3. `shopify_sell_unit` — what one Shopify inventory unit represents.
-4. `shopify_inventory_delta_or_set` — the actual quantity Shopify should receive.
+Examples that require explicit unit interpretation include `10 PACK`, `6PK`, `PAIR`, `TRIO`, `DOZEN`, `BOX`, `TRAY`, `CARTON`, `CASE`, `ASSORTED`, `BONUS`, and `12 + 2 FREE`.
 
-Example:
+Pass these facts to `nta-supplier-unit-cost-normalizer` and, for received stock, `nta-inventory-state`. Do not duplicate their unit-cost or inventory arithmetic here.
 
-`10 PACK CRYPT ASSORTED EMERSE 3CM | Qty 2 | Subtotal $91.22`
+If an assorted line maps to multiple Shopify products without a verified split, require review rather than inventing allocation.
 
-Possible interpretations:
+## ORDERED vs RECEIVED
 
-- If Shopify sells the crypts **individually**, supplier pack size = 10, ordered base units = 20, and the cost per individual is `$91.22 / 2 / 10` before any required GST conversion.
-- If Shopify has a variant called **10 Pack**, Shopify inventory received is 2 packs and the cost per Shopify unit is `$91.22 / 2` before any required GST conversion.
-- If the supplier line is an assorted pack that maps to multiple different Shopify products, do not invent the split. Require a packing list, explicit breakdown, or manual confirmation.
+A purchase order is not proof of physical stock.
 
-Other examples:
+- `ORDERED`: do not increase available Shopify inventory merely because goods were ordered.
+- `RECEIVED`: inventory may be updated after exact identity and sell-unit conversion are resolved.
+- `RECEIVED_PARTIAL`: use only physically confirmed usable quantities.
 
-- `PAIR x 6` can mean 6 Shopify pair units or 12 individual fish depending on the Shopify variant.
-- `TRIO x 4` can mean 4 trio units or 12 individual fish depending on the Shopify selling unit.
-- `12 + 2 FREE` means 14 received base units if all arrived, but cost is allocated over the 14 physical units unless accounting policy says otherwise.
-- `BOX OF 24 x 3` means 72 base units only when Shopify sells individual units.
+## Product matching
+
+Use `nta-product-identity-resolver`. SKU/barcode/supplier SKU evidence outranks title similarity. An unmatched supplier line is not automatic authority to create a new Shopify product.
+
+## Cost and retail
+
+Use `nta-supplier-unit-cost-normalizer` for GST and pack-to-unit cost conversion.
+
+If supplier cost changed or a retail review is requested, pass normalized cost to `nta-retail-pricing-standard`. Do not change retail solely because cost changed.
+
+## Supplier availability
+
+Pass supplier availability evidence to `nta-product-availability` after `nta-product-classifier` resolves replenishable/one-off state.
+
+Do not infer preorder status from inventory alone and do not invent an ETA from order date, invoice date, historical lead time, or guesswork.
+
+## Idempotency
+
+The same supplier order must not apply inventory twice.
+
+Build a fingerprint from supplier + order/invoice number where available. If no stable document identifier exists, use supplier + document date + normalized line items + total.
+
+A detected duplicate must route to `nta-product-exception-gate` as BLOCK for duplicate inventory application unless an explicit override is authorised.
 
 ## Discord intake
 
@@ -84,34 +104,42 @@ Recommended trigger:
 
 `@FRED process supplier order`
 
-Optional operator phrases:
+Useful operator phrases:
 
-- `ordered` — document is a purchase order/inbound order; do not add available inventory.
-- `received` — stock is physically present; inventory may be updated after unit conversion.
-- `received partial` — use only quantities explicitly confirmed as received.
-- `eta tbc` — supplier timing is uncertain; keep eligible products orderable but set `custom.preorder_status_override = eta_tbc`.
-- `normal preorder` — clear a temporary ETA-TBC state back to `automatic` when justified.
-- `stop preorder` — set `disabled` and stop overselling for that exact variant/product where appropriate.
-- `dry run` — prepare the full proposed change set but make no Shopify writes.
+- `ordered`
+- `received`
+- `received partial`
+- `eta tbc`
+- `normal preorder`
+- `stop preorder`
+- `dry run`
 
-If state is genuinely unclear, default to `ORDERED` rather than falsely increasing available inventory, and preserve the existing preorder override unless supplier availability evidence is clear.
+If physical state is unclear, default to `ORDERED` rather than falsely increasing inventory.
+
+## Write and verification
+
+All approved Shopify mutations must go through `nta-shopify-product-writer` and then `nta-product-qa-auditor`.
+
+Do not report completion until live Shopify has been re-read and all intended changes pass QA.
 
 ## Output
 
-Post a concise Discord reconciliation report containing:
+Return a concise reconciliation report containing:
 
-- supplier and order/invoice identifier
-- detected GST basis
-- number of lines parsed
-- exact matches / ambiguous matches / unmatched lines
-- pack conversions used
-- cost changes
-- vendor changes
-- retail changes or recommendations
-- inventory action and whether it was withheld because the order is not yet received
-- supplier availability interpretation
-- preorder state applied: `automatic`, `eta_tbc`, `disabled`, or unchanged
-- duplicate-order status
-- Shopify verification result
+- supplier and order/invoice identifier;
+- state: ORDERED / RECEIVED / RECEIVED_PARTIAL;
+- detected GST evidence;
+- lines parsed;
+- exact/ambiguous/unmatched identity results;
+- pack conversions delegated and resolved;
+- cost changes;
+- pricing decisions or review flags;
+- inventory actions or inventory withheld because stock is not received;
+- supplier availability interpretation;
+- preorder/customer availability result;
+- duplicate-order status;
+- exception-gate result;
+- Shopify write result;
+- final QA result.
 
-Flag any line requiring human review rather than guessing.
+Never guess to make the report look complete.
