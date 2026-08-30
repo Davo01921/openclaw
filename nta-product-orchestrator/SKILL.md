@@ -1,0 +1,262 @@
+---
+name: "nta-product-orchestrator"
+version: "1.0"
+description: "Route NTA product work through canonical modular skills, minimise duplicated logic, and ensure Shopify changes are proposed, written, and verified safely."
+---
+
+# NTA Product Orchestrator — v1.0
+
+## Purpose
+
+This is the top-level controller for Nano Tanks Australia product work.
+
+It does not own detailed product-domain rules. It decides which canonical modules must run, in what order, which can be skipped, and when human review is required.
+
+Core principle:
+
+**Skills decide. Writers write. Auditors verify.**
+
+Do not duplicate child-skill rules here. When a canonical child skill changes, this orchestrator should continue to reference it rather than maintain a parallel copy.
+
+## Canonical modules
+
+Use these modules where applicable:
+
+1. `nta-product-identity-resolver` — match/create decision, SKU, vendor identity, duplicate prevention.
+2. `nta-product-classifier` — category, subtype, one-off/replenishable classification.
+3. `nta-supplier-unit-cost-normalizer` — GST, packs, retail-unit conversion, landed cost inputs.
+4. `nta-retail-pricing-standard` — final retail-pricing decision and price confidence.
+5. `nta-product-facts-research` — verified product facts/specifications for content and decision support.
+6. `nta-product-description-standard` — canonical NTA description generation and content QA.
+7. `nta-inventory-state` — physical quantity interpretation and inventory-set/delta decision.
+8. `nta-product-availability` — preorder/orderability state independent of physical stock.
+9. `nta-product-merchandising` — tags, collections and customer-facing merchandising classifications.
+10. `nta-product-metafields` — map approved product state to Shopify metafields.
+11. `nta-shopify-product-writer` — perform only authorised Shopify writes and preserve untouched fields.
+12. `nta-product-qa-auditor` — re-read Shopify and compare expected vs live state.
+13. `nta-product-exception-gate` — AUTO_APPROVE / WARNING / REVIEW_REQUIRED / BLOCK.
+
+Existing specialist workflows remain valid entry points but must call these modules instead of maintaining conflicting copies of the same rules:
+
+- `nta-supplier-order-processing`
+- `nta-inventory-update`
+- `nta-betta-picture-processing-v2`
+- `nta-individual-betta-shopify-update`
+
+Use `adaptive-model-router` for model delegation where a task genuinely needs an AI model.
+
+## Shared Product State
+
+All modules should exchange structured state rather than free-form prose where practical.
+
+```yaml
+product:
+  job:
+    source:
+    mode: dry_run | write
+    state: ordered | received | received_partial | catalogue_review | new_product | update
+
+  identity:
+    title:
+    shopify_product_id:
+    shopify_variant_id:
+    sku:
+    barcode:
+    vendor:
+    supplier_sku:
+    match_confidence:
+    duplicate_risk:
+
+  classification:
+    category:
+    subtype:
+    replenishable:
+    individually_identified:
+
+  cost:
+    supplier_cost:
+    gst_basis:
+    supplier_order_qty:
+    supplier_pack_size:
+    shopify_sell_unit:
+    unit_purchase_cost_ex_gst:
+    attributable_unit_cost:
+    landed_cost_ex_gst:
+    confidence:
+
+  pricing:
+    current_price:
+    proposed_price:
+    decision:
+    confidence:
+
+  inventory:
+    current_available:
+    received_qty:
+    mode: set | add | none
+    proposed_available:
+    confidence:
+
+  availability:
+    preorder_eligible:
+    inventory_policy:
+    status_override:
+    customer_state:
+    eta:
+    confidence:
+
+  content:
+    facts:
+    description_html:
+    content_confidence:
+
+  merchandising:
+    tags_add:
+    tags_remove:
+    collections_add:
+    collections_remove:
+
+  metafields:
+    proposed: {}
+
+  writes:
+    authorised_fields: []
+    proposed_changes: []
+    applied_changes: []
+
+  qa:
+    warnings: []
+    errors: []
+    final_status:
+```
+
+A module may update only its own responsibility unless explicitly defined otherwise.
+
+## Entry-point routing
+
+### New product
+
+Run:
+
+`identity → classifier → facts research as needed → cost normalizer → pricing → inventory state → availability → description → merchandising → metafields → exception gate → Shopify writer → QA auditor`
+
+Do not create a product when identity or classification is materially uncertain.
+
+### Supplier order / invoice — ORDERED
+
+Run:
+
+`supplier-order parser/intake → identity → classifier → cost normalizer → pricing only if cost/pricing review is needed → availability only if supplier availability evidence changed → metafields → exception gate → Shopify writer → QA auditor`
+
+Do not increase available inventory from an order alone.
+
+### Supplier order / invoice — RECEIVED
+
+Run:
+
+`supplier-order parser/intake → identity → classifier → cost normalizer → inventory state → pricing if required → availability → metafields → exception gate → Shopify writer → QA auditor`
+
+### Existing-product catalogue cleanup
+
+Run only affected modules. Examples:
+
+- description-only cleanup: `identity → classifier → facts research → description → exception gate → writer → QA`
+- price review: `identity → classifier → cost normalizer → pricing → exception gate → writer → QA`
+- inventory receipt: `identity → classifier → inventory state → availability → metafields → exception gate → writer → QA`
+- tag/collection cleanup: `identity → classifier → merchandising → writer → QA`
+
+Never run expensive modules merely because they exist.
+
+### Individual Bettas / one-off livestock
+
+Invoke the relevant Betta workflow, but enforce shared classification and availability rules:
+
+- individually identified = true
+- replenishable = false
+- never automatically preorder eligible
+- inventory normally represents the specific specimen
+
+Betta image processing remains specialised and is not replaced by this orchestrator.
+
+## Dependency rules
+
+- Identity must be resolved before any write.
+- Classification must be resolved before category-specific description or pricing logic.
+- Cost normalisation must complete before pricing when supplier cost is part of the decision.
+- Physical inventory and customer availability are separate states.
+- A zero inventory count does not, by itself, prove preorder eligibility.
+- Description generation must consume verified facts rather than invent missing specifications.
+- Shopify Writer must receive an explicit authorised field list.
+- QA Auditor must independently re-read changed fields after writing.
+
+## Write safety
+
+No child decision skill should directly mutate Shopify unless it is explicitly acting as the `nta-shopify-product-writer`.
+
+Specialist legacy workflows may temporarily contain direct-write implementation details, but their canonical decision rules must come from the modules above and should be progressively refactored toward the writer boundary.
+
+Before a write, build a change set containing:
+
+- field
+- current value
+- proposed value
+- source module
+- confidence
+- reason
+
+The writer must not change unrelated fields.
+
+## Exception gate
+
+Before writing, run `nta-product-exception-gate`.
+
+Possible outcomes:
+
+- `AUTO_APPROVE` — safe to proceed.
+- `AUTO_APPROVE_WITH_WARNING` — proceed and report warning.
+- `REVIEW_REQUIRED` — do not write the affected uncertain field(s); deterministic safe fields may proceed only when independent.
+- `BLOCK` — no product mutation.
+
+Never turn missing evidence into invented certainty just to complete a workflow.
+
+## Cost-efficient model routing
+
+Prefer deterministic code/rules for:
+
+- GST arithmetic
+- pack conversion once units are known
+- inventory arithmetic
+- state comparisons
+- tag/metafield application
+- Shopify write verification
+
+Use cheaper model routes for:
+
+- straightforward classification
+- extraction from clean supplier text
+- obvious supplier/product mapping
+- simple product-fact extraction
+
+Escalate to stronger reasoning only for:
+
+- ambiguous identity
+- contradictory product evidence
+- non-obvious pack/variant mapping
+- pricing exceptions
+- uncertain biological/product facts
+- cross-module contradictions
+
+Do not invoke a high-cost model merely to perform arithmetic, formatting, or deterministic API work.
+
+## Final completion rule
+
+A job is complete only when:
+
+1. all required modules returned a state;
+2. exception status allows the intended action;
+3. authorised writes succeeded;
+4. live Shopify was re-read;
+5. expected and live values match for every changed field;
+6. unresolved warnings/review items are reported explicitly.
+
+A successful API response alone is not proof of completion.
