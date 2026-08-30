@@ -1,10 +1,10 @@
 ---
 name: "nta-retail-pricing-standard"
-description: "Determine, validate, recommend, update, and verify Nano Tanks Australia retail prices using cost, category margin, market evidence, profitability, and controlled pricing safeguards."
-version: "0.1"
+description: "Determine, validate, recommend, update, and verify Nano Tanks Australia retail prices using cost, category margin, market evidence, profitability, fulfilment economics, and controlled pricing safeguards."
+version: "0.2"
 ---
 
-# NTA Retail Pricing Standard — v0.1
+# NTA Retail Pricing Standard — v0.2
 
 ## Purpose
 
@@ -21,16 +21,7 @@ Use this skill whenever:
 - checking whether an existing product remains commercially viable;
 - another workflow needs to determine or validate an NTA retail price.
 
-The objective is not to produce the cheapest price.
-
-The objective is to determine a commercially sensible NTA retail price that:
-
-1. protects profitability;
-2. remains defensible against the Australian market;
-3. reflects product and operational risk;
-4. recognises value customers receive from NTA;
-5. maintains sensible retail price architecture; and
-6. avoids unnecessary reductions to established profitable prices.
+The objective is not to produce the cheapest price. The objective is to determine a commercially sensible NTA retail price that protects profitability, remains defensible against the Australian market, reflects product and operational risk, recognises NTA value, maintains sensible price architecture, and avoids unnecessary reductions to established profitable prices.
 
 Competitor prices are evidence, not instructions.
 
@@ -38,7 +29,7 @@ Competitor prices are evidence, not instructions.
 
 Determine retail price in this order:
 
-**Product identification → Cost validation → Unit conversion → Category classification → Margin requirement → Margin-derived price → Market validation → Risk/value assessment → Price architecture → Existing-price comparison → Confidence assessment → Final recommendation → Shopify verification**
+**Product identification → Cost validation → Unit conversion → Category classification → Margin requirement → Margin-derived price → Market validation → Risk/value assessment → Fulfilment treatment → Price architecture → Existing-price comparison → Confidence assessment → Final recommendation → Shopify verification**
 
 Never determine price from only one factor.
 
@@ -49,6 +40,7 @@ In particular:
 - Do not automatically undercut competitors.
 - Do not automatically reduce an existing NTA price because a lower calculated price is possible.
 - Do not confuse markup percentage with gross margin percentage.
+- Do not force a target margin where credible market evidence shows that doing so would make the product commercially unrealistic.
 
 ## 2. Required Inputs
 
@@ -67,14 +59,12 @@ Before determining a retail price, establish as many of the following as reasona
 - Current NTA retail price
 - Current compare-at price
 - Current inventory
-- Dropship status
+- Fulfilment type, including pickup, delivered or dropship where applicable
 - Australian market evidence
 - Product availability/scarcity
 - Relevant operational or product risk
 
-Do not invent missing information.
-
-If a material input cannot be established reliably, lower confidence or escalate for review.
+Do not invent missing information. If a material input cannot be established reliably, lower confidence or escalate for review.
 
 ## 3. Cost Normalisation
 
@@ -90,6 +80,8 @@ Where supplier cost is already ex GST, do not remove GST again.
 
 Customer-facing Australian retail prices should normally be expressed GST-inclusive.
 
+If the GST basis is unknown and materially changes the decision, do not classify the result GREEN.
+
 ## 4. Pack-to-Unit Conversion
 
 Never assume supplier pack quantity equals Shopify retail quantity.
@@ -98,26 +90,11 @@ Determine:
 
 **Unit Purchase Cost = Supplier Pack Cost ÷ Number of NTA Retail Units Produced**
 
-Example:
-
-Supplier invoice:
-
-Cryptocoryne 10-pack  
-Cost: $50 ex GST
-
-NTA sells plants individually.
-
-Therefore:
-
-**Unit purchase cost = $50 ÷ 10 = $5**
-
-The pricing engine must price the $5 retail unit, not treat $50 as the cost of one plant.
+Example: a supplier 10-pack costing $50 ex GST that NTA sells individually has a unit purchase cost of $5.
 
 If pack quantity or retail-unit conversion is unclear:
 
 **DO NOT AUTO-PRICE.**
-
-Request or obtain clarification.
 
 ## 5. Landed Cost
 
@@ -125,26 +102,15 @@ Where meaningful:
 
 **NTA Unit Landed Cost = Ex-GST Unit Purchase Cost + Directly Attributable Unit Costs**
 
-Potential attributable costs may include:
-
-- supplier freight;
-- import freight;
-- unavoidable supplier handling;
-- per-product surcharges;
-- unavoidable dropship fees;
-- other direct acquisition costs.
+Potential attributable costs may include supplier freight, import freight, unavoidable supplier handling, per-product surcharges, unavoidable dropship fees, or other direct acquisition costs.
 
 Do not arbitrarily allocate general overhead to landed cost.
-
-General operating expenses should eventually be considered through contribution analysis rather than fabricated product-level landed costs.
 
 ## 6. Dropship Products
 
 Dropship is NOT a pricing category.
 
-Dropship products follow exactly the same pricing methodology as equivalent stocked products.
-
-Classify the product according to what it actually is.
+Dropship products follow the same pricing methodology as equivalent stocked products. Classify the product according to what it actually is.
 
 Examples:
 
@@ -152,136 +118,65 @@ Dropship filter → equipment category
 Dropship fish food → food/consumables category  
 Dropship aquarium accessory → appropriate accessory category
 
-Dropship status may affect the underlying cost if NTA incurs unavoidable supplier freight, dropship charges, handling charges, or similar costs.
+Dropship status may affect actual economic cost where NTA incurs unavoidable supplier freight, dropship charges, handling charges, or similar costs.
 
-Therefore:
+**Fulfilment method does not determine margin target. Actual economic cost may affect profitability.**
 
-**Fulfilment method does not determine margin target.**
+## 7. Fulfilment-Specific Variants
 
-**Actual economic cost may affect profitability.**
+Pickup and delivered variants are not automatically equivalent price points.
 
-## 7. Product Classification
+Where a delivered variant includes a documented freight, handling or delivery allowance:
+
+1. establish the underlying product retail first;
+2. establish the direct delivery cost or approved delivery surcharge;
+3. add that fulfilment amount to the base retail in a consistent way;
+4. compare competitors on an equivalent fulfilment basis;
+5. do not compare an NTA delivered price directly with a competitor pickup price or a competitor price that excludes shipping.
+
+If an existing delivered variant has a deliberate, evidenced delivery differential and the base product price changes, preserve or recalculate that differential rather than independently repricing the delivered variant as though it were a separate product category.
+
+If the delivery differential cannot be explained or supported, classify the affected variant AMBER until reviewed.
+
+## 8. Product Classification
 
 Every product must be assigned to the most appropriate pricing category.
 
-Initial categories:
-
 ### Common Livestock
-
-Examples:
-- commonly available community fish;
-- standard livebearers;
-- commonly traded aquarium livestock.
-
-Provisional target gross margin:
-
-**55–65%**
+Provisional target gross margin: **55–65%**
 
 ### Premium / Rare Livestock
-
-Examples:
-- uncommon varieties;
-- difficult-to-source livestock;
-- premium strains;
-- high-risk or specialist livestock.
-
-Provisional target gross margin:
-
-**60–70%**
+Provisional target gross margin: **60–70%**
 
 ### Individual Bettas
-
-Individually photographed/listed Bettas are treated separately from commodity livestock because individual specimen quality, colour, rarity and presentation can materially affect value.
-
-Provisional target gross margin:
-
-**60–70%**
+Provisional target gross margin: **60–70%**
 
 ### Shrimp / Specialist Invertebrates
-
-Provisional target gross margin:
-
-**55–70%**
-
-Use strain quality, stability, rarity and market availability as supporting evidence.
+Provisional target gross margin: **55–70%**
 
 ### Aquarium Plants
-
-Includes standard potted, loose, bunch, rooted and other conventional aquarium plants unless another category clearly applies.
-
-Provisional target gross margin:
-
-**55–65%**
+Provisional target gross margin: **55–65%**
 
 ### Tissue Culture
-
-Provisional target gross margin:
-
-**45–55%**
+Provisional target gross margin: **45–55%**
 
 ### Food / Consumables
-
-Examples:
-
-- fish food;
-- shrimp food;
-- conditioners;
-- regularly replaced aquarium consumables.
-
-Provisional target gross margin:
-
-**35–45%**
+Provisional target gross margin: **35–45%**
 
 ### Commodity Branded Equipment
-
-Products customers can readily compare across multiple Australian retailers.
-
-Examples may include:
-
-- common filters;
-- heaters;
-- pumps;
-- lighting;
-- widely distributed branded equipment.
-
-Provisional target gross margin:
-
-**30–40%**
+Products customers can readily compare across multiple Australian retailers. Provisional target gross margin: **30–40%**
 
 ### Specialist / Niche Equipment
-
-Products with reduced direct comparability, specialist use or limited distribution.
-
-Provisional target gross margin:
-
-**40–50%**
+Products with reduced direct comparability, specialist use or limited distribution. Provisional target gross margin: **40–50%**
 
 ### Low-Cost Accessories
+Provisional target gross margin: **50–65%**. Minimum dollar gross profit is especially important here.
 
-Examples:
+These ranges remain provisional until broader catalogue testing is complete.
 
-- small tools;
-- fittings;
-- inexpensive accessories;
-- low-dollar miscellaneous products.
+## 9. Category Bleed Check
 
-Provisional target gross margin:
-
-**50–65%**
-
-Minimum dollar gross profit becomes particularly important for this category.
-
-## 8. Category Bleed Check
-
-Do not classify products purely by keywords.
-
-Consider the actual commercial nature of the product.
-
-For example:
-
-A specialist branded aquarium tool should not automatically become "commodity equipment" merely because it has a brand.
-
-A rare but inexpensive fish should not automatically become "common livestock" because the species is normally common.
+Do not classify products purely by keywords. Consider the actual commercial nature of the product.
 
 Where two categories could reasonably apply:
 
@@ -290,11 +185,9 @@ Where two categories could reasonably apply:
 3. use the selected category;
 4. reduce confidence where classification materially affects the recommendation.
 
-## 9. Gross Margin Calculation
+## 10. Gross Margin Calculation
 
 Gross margin is NOT markup.
-
-Use:
 
 **Gross Profit = Ex-GST Selling Price − Unit Landed Cost**
 
@@ -308,58 +201,21 @@ Then:
 
 **GST-Inclusive Retail = Required Ex-GST Retail × 1.10**
 
-Example:
+The margin-derived price is an analytical input, not automatically the final NTA retail price.
 
-Unit landed cost = $10 ex GST  
-Target gross margin = 60%
-
-Required ex-GST retail:
-
-$10 ÷ 0.40 = $25
-
-GST-inclusive retail:
-
-$25 × 1.10 = $27.50
-
-$27.50 is the **margin-derived price**, not automatically the final NTA retail price.
-
-## 10. Margin Range
+## 11. Margin Range
 
 Each category has a target margin range rather than one compulsory percentage.
 
-The engine should determine where within the range the product reasonably belongs.
+Factors supporting the upper part of the range may include scarcity, mortality risk, conditioning, inconsistent availability, specialist care, unusual variety, high holding risk, individual selection, premium presentation, limited competition, or demonstrated willingness to pay.
 
-Factors supporting the upper part of the range may include:
+Factors supporting the lower part may include commodity status, strong price transparency, high turnover, readily available supply, strategic traffic-generation, low handling risk, or unusually high dollar GP despite a lower percentage margin.
 
-- scarcity;
-- mortality risk;
-- livestock conditioning;
-- inconsistent supplier availability;
-- specialist care;
-- unusual variety;
-- high holding risk;
-- individual specimen selection;
-- premium presentation;
-- limited direct competition;
-- strong demonstrated customer willingness to pay.
+Do not convert these factors into arbitrary percentage bonuses unless explicitly defined by a future version.
 
-Factors supporting the lower part may include:
+## 12. Market Research
 
-- commodity product;
-- extremely strong price transparency;
-- high turnover;
-- readily available supply;
-- strategic traffic-generating product;
-- very low handling/risk;
-- unusually high dollar gross profit despite lower percentage margin.
-
-Do not convert these factors into arbitrary percentage bonuses unless explicitly defined by a future version of this standard.
-
-## 11. Market Research
-
-Market research validates the NTA price.
-
-It does not determine the price by itself.
+Market research validates the NTA price. It does not determine the price by itself.
 
 Prefer Australian retailers selling:
 
@@ -369,142 +225,86 @@ Prefer Australian retailers selling:
 4. genuinely equivalent plant form/size;
 5. genuinely comparable substitutes where exact matches are unavailable.
 
-Record where possible:
-
-- competitor;
-- product;
-- advertised retail;
-- product size/quantity;
-- stock status;
-- sale vs normal price;
-- similarity;
-- date checked.
+Record where possible competitor, product, price, size/quantity, stock status, sale vs normal price, similarity and date checked.
 
 Derive where evidence allows:
 
-**Market Low**
+**Market Low / Market Median / Market High / Sample Size**
 
-**Market Median**
-
-**Market High**
-
-**Sample Size**
-
-## 12. Market Evidence Quality
-
-Rate evidence:
+## 13. Market Evidence Quality
 
 ### HIGH
-
 Multiple credible Australian sellers with exact or near-exact product matches.
 
 ### MEDIUM
-
 Some exact evidence plus reasonable comparable products.
 
 ### LOW
-
 Few matches, questionable equivalence, outdated listings, marketplace sellers, overseas prices or highly variable products.
 
 Low-quality evidence must not drive automatic price changes.
 
-## 13. Market Outliers
+## 14. Market Outliers
 
-Do not blindly include every observed price.
+Potential outliers include clearance pricing, liquidation, obvious pricing errors, permanently unavailable listings, materially different pack sizes, substantially different livestock grade, private/marketplace sellers, or temporary promotional discounts.
 
-Potential outliers include:
+Record relevant outliers but do not let them distort the normal market range without justification.
 
-- clearance pricing;
-- liquidation;
-- obvious pricing errors;
-- permanently unavailable listings;
-- tiny pack sizes compared with NTA;
-- substantially different livestock grade;
-- marketplace/private sellers;
-- temporary promotional discounts.
-
-Record relevant outliers but do not allow them to distort the normal market range without justification.
-
-## 14. Do Not Automatically Undercut
+## 15. Do Not Automatically Undercut
 
 Never assume NTA should be the cheapest seller.
 
-If market range is:
+Determine the price based on required margin, NTA value, product risk, existing price, market position and reasonable retail architecture.
 
-$24.95  
-$27.95  
-$29.95  
-$32.95
+NTA may appropriately price near the median, above the median, or at the high end where evidence supports it.
 
-do not automatically recommend $24.90 or $24.95.
+## 16. Market-Constrained Margin Exception
 
-Determine the price based on:
+Target margin is a target, not permission to price a product irrationally above a strong market.
 
-- required margin;
-- NTA value;
-- product risk;
-- existing price;
-- market position;
-- reasonable retail architecture.
+If the margin-derived floor is materially above a credible high-quality Australian market range:
 
-NTA may appropriately price near the median, above the median, or occasionally at the high end where evidence supports it.
+1. confirm cost and GST basis;
+2. confirm product and pack equivalence;
+3. confirm no freight or fulfilment mismatch exists;
+4. calculate the best defensible market price;
+5. calculate the gross margin at that market-defensible price;
+6. classify the product **AMBER — MARGIN CONSTRAINED BY MARKET**;
+7. do not silently force the product above market merely to hit the category target.
 
-## 15. Existing Price Protection
+Possible actions include accepting a lower margin as an approved exception, renegotiating supplier cost, changing supplier, changing the product offer, bundling value, or discontinuing the product.
+
+A market-constrained exception must remain visible as an exception. Do not rewrite the target-margin standard to rationalise it.
+
+## 17. Existing Price Protection
 
 An established NTA retail price has informational value.
 
-If an existing product sells at $29.95 and a new mathematical calculation produces $24.95:
+If an existing product sells above a lower mathematical recommendation, do not automatically reduce it.
 
-**DO NOT AUTOMATICALLY REDUCE THE PRODUCT TO $24.95.**
-
-First determine whether:
-
-- the existing price remains within a defensible market range;
-- customers have demonstrated willingness to pay;
-- margin is healthy;
-- market conditions have materially changed;
-- the product has changed;
-- NTA's cost structure has changed.
+First determine whether the existing price remains defensible, customers have demonstrated willingness to pay, margin is healthy, market conditions changed, the product changed, or NTA's cost structure changed.
 
 If the existing price remains commercially defensible:
 
 **KEEP THE EXISTING PRICE.**
 
-Price reductions require stronger justification than simply discovering that NTA could theoretically sell the product for less.
+Price reductions require stronger justification than simply discovering that NTA could theoretically sell for less.
 
-## 16. Price Increase Review
+## 18. Price Increase Review
 
-Where supplier costs rise, recalculate profitability.
+Where supplier costs rise or an existing price is materially below a credible market and produces weak economics, recalculate profitability.
 
-Do not automatically preserve an existing price if it now breaches NTA's acceptable profitability standard.
+Determine new landed cost, current GP, current GM, margin-derived retail, current market range and recommended new retail.
 
-Determine:
+A clear market-supported correction may be appropriate even without a recent supplier cost change where the current retail is demonstrably stale or underpriced.
 
-- new landed cost;
-- current gross profit;
-- current gross margin;
-- margin-derived retail;
-- current market range;
-- recommended new retail.
+Material increases should still be flagged where confidence is insufficient for automatic action.
 
-Material increases should be flagged where confidence is insufficient for automatic action.
-
-## 17. Minimum Dollar Gross Profit
+## 19. Minimum Dollar Gross Profit
 
 Percentage margin alone is insufficient.
 
-Example:
-
-Cost = $1  
-Retail ex GST = $2
-
-Gross margin = 50%
-
-Gross profit = only $1.
-
-Low-dollar products may consume picking, packing, transaction, staffing and handling resources disproportionate to their selling price.
-
-Therefore every pricing assessment should calculate:
+Every pricing assessment should calculate:
 
 **Dollar Gross Profit Per Retail Unit**
 
@@ -514,229 +314,101 @@ Minimum dollar gross-profit thresholds are currently:
 
 Until thresholds are formally established, unusually low dollar GP should trigger review rather than automatic approval.
 
-## 18. Contribution Economics
+## 20. Contribution Economics
 
-Gross margin is the initial pricing standard.
-
-Future versions should progressively incorporate contribution economics.
-
-Potential contribution costs include:
-
-- payment processing;
-- packaging;
-- picking/handling labour;
-- livestock mortality;
-- plant losses;
-- warranty/DOA exposure;
-- shipping subsidy;
-- marketplace/platform costs;
-- other directly attributable fulfilment expenses.
+Future versions should progressively incorporate payment processing, packaging, picking/handling labour, livestock mortality, plant losses, warranty/DOA exposure, shipping subsidy, platform costs and other directly attributable fulfilment expenses.
 
 Do not fabricate contribution costs when reliable data is unavailable.
 
-Gross margin remains the primary calculation until contribution rules are formally adopted.
-
-## 19. Retail Price Architecture
+## 21. Retail Price Architecture
 
 Do not publish unnecessarily awkward mathematical prices.
 
-Convert calculated prices into sensible customer-facing NTA prices.
-
-Potential price points include:
-
-- $4.95
-- $5.95
-- $7.95
-- $9.95
-- $12.95
-- $14.95
-- $15
-- $19.95
-- $24.95
-- $29.95
-- $34.95
-- $39.95
-- $49
-- $59
-- $69
-- $79
-- $89
-- $99
+Use sensible customer-facing points appropriate to the category and market, for example $9.95, $14.95, $19.95, $24.95, $29.95, $39.95, $49, $59, $69, $79, $89, $99, or clean whole-dollar pricing where the category uses it.
 
 These are examples, not mandatory price points.
 
-Choose a sensible retail price based on product type and market context.
+Never round downward if doing so causes unacceptable economics without flagging the issue.
 
-Never round downward if doing so causes an unacceptable margin without flagging the issue.
-
-## 20. Sale and Compare-at Pricing
+## 22. Sale and Compare-at Pricing
 
 Never fabricate a compare-at price.
 
-A compare-at price must represent a legitimate reference price and must not be created merely to make the current retail price appear discounted.
+A compare-at price must represent a legitimate reference price and must not be created merely to make the current retail look discounted.
 
-When reviewing Shopify pricing:
+When reviewing Shopify pricing, check current price, compare-at price, whether the comparison remains legitimate, variant consistency, and whether stale sale pricing remains active.
 
-Check:
+### Persistent Sale Check
 
-- current price;
-- compare-at price;
-- whether the comparison remains legitimate;
-- whether variants have inconsistent pricing;
-- whether stale sale pricing remains active.
+If a product appears to have been left indefinitely at a sale price and the compare-at price is effectively the current ordinary Australian market price, do not automatically preserve the sale presentation.
 
-If evidence is insufficient to support a compare-at price:
+Check whether there is evidence that the higher compare-at price was genuinely NTA's established former selling price and that the sale remains current and intentional.
 
-**DO NOT CREATE ONE.**
+If not supported:
 
-## 21. Pricing Decision
+- set the commercially appropriate regular retail price;
+- clear the unsupported or stale compare-at price;
+- do not manufacture a replacement discount.
 
-For each product, produce:
+If evidence is insufficient, classify AMBER rather than presenting an unsupported sale claim.
 
-### Product
-[NAME]
+## 23. Pricing Decision Output
 
-### SKU
-[SKU]
+For each product, record where relevant:
 
-### Category
-[CATEGORY]
+- Product
+- SKU
+- Category
+- Supplier
+- Supplier cost
+- GST basis
+- Supplier pack quantity
+- NTA retail units produced
+- Unit purchase cost ex GST
+- Additional attributable cost
+- Unit landed cost
+- Current NTA retail
+- Current GP and GM
+- Target margin range
+- Margin-derived retail
+- Australian market low/median/high/sample
+- Market evidence quality
+- Fulfilment treatment
+- Risk/value factors
+- Recommended NTA retail
+- Recommended GP and GM
+- Price movement
+- Confidence
+- Action
+- Short factual reasoning
 
-### Supplier
-[SUPPLIER]
-
-### Supplier Cost
-[$]
-
-### Supplier Cost GST Basis
-[INC GST / EX GST / UNKNOWN]
-
-### Supplier Pack Quantity
-[#]
-
-### NTA Retail Units Produced
-[#]
-
-### Unit Purchase Cost Ex GST
-[$]
-
-### Additional Attributable Cost
-[$]
-
-### Unit Landed Cost
-[$]
-
-### Current NTA Retail
-[$]
-
-### Current Gross Profit
-[$]
-
-### Current Gross Margin
-[%]
-
-### Target Margin Range
-[%–%]
-
-### Margin-Derived Retail
-[$ INC GST]
-
-### Australian Market
-Low: [$]  
-Median: [$]  
-High: [$]  
-Sample: [#]
-
-### Market Evidence Quality
-[HIGH / MEDIUM / LOW]
-
-### Risk / Value Factors
-[FACTORS]
-
-### Recommended NTA Retail
-[$]
-
-### Recommended Gross Profit
-[$]
-
-### Recommended Gross Margin
-[%]
-
-### Price Movement
-[$ AND %]
-
-### Confidence
-[HIGH / MEDIUM / LOW]
-
-### Action
-[AUTO APPROVE / REVIEW / DO NOT CHANGE]
-
-### Reasoning
-[SHORT FACTUAL EXPLANATION]
-
-## 22. Decision Status
+## 24. Decision Status
 
 ### GREEN — AUTO APPROVE
-
-Use only where:
-
-- cost is reliable;
-- GST basis is known;
-- unit conversion is reliable;
-- category is clear;
-- recommended margin is compliant;
-- market evidence is sufficiently strong;
-- price movement is not abnormal;
-- no major contradictory evidence exists.
+Use only where cost is reliable, GST basis known, unit conversion reliable, category clear, economics acceptable, market evidence sufficiently strong, price movement not abnormal, fulfilment comparison equivalent, and no major contradictory evidence exists.
 
 ### AMBER — REVIEW
-
-Use where:
-
-- market evidence is weak;
-- category is debatable;
-- price movement is substantial;
-- product is unusually rare;
-- margin is unusual;
-- dollar GP appears inadequate;
-- existing NTA price materially differs from recommendation;
-- supplier information is incomplete but a reasonable estimate exists.
+Use where market evidence is weak, category debatable, movement substantial, product unusually rare, margin unusual or market-constrained, dollar GP inadequate, fulfilment differential uncertain, existing price materially differs, or supplier information is incomplete.
 
 ### RED — DO NOT CHANGE
+Use where cost is unreliable, GST treatment materially affects the result and is unknown, pack conversion cannot be established, product identity is uncertain, evidence conflicts materially, economics are unacceptable, or Shopify product/variant mapping is uncertain.
 
-Use where:
-
-- cost is unreliable;
-- GST treatment materially affects the result and is unknown;
-- pack/unit conversion cannot be established;
-- product identity is uncertain;
-- evidence conflicts materially;
-- recommended price would create unacceptable economics;
-- Shopify product/variant mapping is uncertain.
-
-## 23. Confidence Assessment
-
-Confidence must reflect evidence, not optimism.
+## 25. Confidence Assessment
 
 ### HIGH
-
 Inputs verified and market evidence strong.
 
 ### MEDIUM
-
-Core cost data reliable but some market/category uncertainty remains.
+Core cost data reliable but some market/category/fulfilment uncertainty remains.
 
 ### LOW
+Material assumptions or missing information could materially change the recommendation.
 
-Material assumptions or missing information could materially change the recommended price.
+Never describe a result as HIGH confidence merely because the arithmetic is correct.
 
-Never describe a result as HIGH confidence merely because the calculation itself is mathematically correct.
+## 26. Devil's-Advocate Check
 
-## 24. Devil's-Advocate Check
-
-Before approving a recommended price, challenge it.
-
-Ask:
+Before approving a recommended price, ask:
 
 1. Are we pricing too cheaply merely because competitors are cheap?
 2. Are we pricing too high because the target margin is unrealistic for this category?
@@ -745,96 +417,69 @@ Ask:
 5. Have we handled GST correctly?
 6. Is the current NTA price already better than the proposed price?
 7. Would lowering this price unnecessarily destroy existing margin?
-8. Is apparent high margin hiding very low dollar gross profit?
+8. Is apparent high margin hiding very low dollar GP?
 9. Are we mistaking temporary scarcity for permanent pricing power?
 10. Are we overlooking an unavoidable cost?
-11. Is this recommendation based on sufficient evidence to change a live Shopify price?
+11. Are we comparing pickup with delivered pricing incorrectly?
+12. Is a compare-at price stale or unsupported?
+13. Is this recommendation based on sufficient evidence to change a live Shopify price?
 
-If the devil's-advocate check exposes a material unresolved issue:
+If a material unresolved issue remains:
 
 **DOWNGRADE CONFIDENCE OR ESCALATE.**
 
-## 25. Shopify Write Rules
+## 27. Shopify Write Rules
 
-Where this skill is authorised to update Shopify:
+Never write a new price until the correct product and variant are confirmed, cost and unit conversion are validated, pricing calculation is complete, fulfilment treatment is understood, and the confidence/action threshold permits the change.
 
-Never write a new price until:
+GREEN may be written where the calling workflow authorises automatic writes. AMBER requires review unless explicitly authorised. RED must not be modified.
 
-- correct product confirmed;
-- correct variant confirmed;
-- cost confirmed;
-- unit conversion confirmed;
-- pricing calculation completed;
-- confidence/action threshold permits the change.
+## 28. Store-Controlled Fields
 
-Where status is:
+If a pricing/catalogue workflow also updates Shopify metafields, metaobjects or enumerated fields, never invent display values.
 
-**GREEN / AUTO APPROVE**
+First read the field definition or accepted choices and use the store's exact canonical values.
 
-the workflow may update the price if the calling workflow authorises automatic writes.
+A failed atomic validation is preferable to a partial write. If the platform rejects a value, inspect the accepted choices and retry with a valid canonical value rather than guessing.
 
-Where status is:
+Pricing logic must not use raw inventory quantity as a substitute for a separately managed customer-facing availability classification unless the store explicitly defines that relationship.
 
-**AMBER / REVIEW**
-
-do not automatically write unless explicitly authorised.
-
-Where status is:
-
-**RED / DO NOT CHANGE**
-
-do not modify the price.
-
-## 26. Post-Write Verification
+## 29. Post-Write Verification
 
 A successful API response is not sufficient proof that pricing is correct.
 
 After changing Shopify:
 
-1. Re-fetch the product.
-2. Re-fetch relevant variant.
-3. Confirm retail price.
-4. Confirm compare-at price.
-5. Confirm SKU.
-6. Confirm cost where accessible.
-7. Confirm no unintended variant was changed.
-8. Confirm intended customer-facing price.
-9. Record verification result.
+1. re-fetch the product;
+2. re-fetch relevant variant;
+3. confirm retail price;
+4. confirm compare-at price;
+5. confirm SKU;
+6. confirm cost where accessible;
+7. confirm no unintended variant changed;
+8. confirm any related store-controlled field written by the workflow;
+9. confirm intended customer-facing state;
+10. record verification result.
 
 If verification fails:
 
 **REPORT FAILURE AND DO NOT CLAIM THE TASK IS COMPLETE.**
 
-## 27. Bulk Pricing
-
-When reviewing multiple products:
+## 30. Bulk Pricing
 
 Do not silently update an entire category based on one example.
 
-For every product:
+For every product or SKU, calculate, classify, validate and assign confidence independently.
 
-- calculate independently;
-- classify independently;
-- validate independently;
-- assign confidence independently.
+Bulk operations may share category rules and market evidence where products are genuinely comparable, but every SKU must pass its own profitability and sanity checks.
 
-Bulk operations may share category rules and research evidence where products are genuinely comparable, but every SKU must still pass its own profitability and sanity checks.
-
-## 28. Missing Cost
+## 31. Missing Cost
 
 A retail price should not normally be automatically determined without reliable cost.
 
-If Shopify cost is missing:
+Attempt to establish missing cost from approved evidence such as supplier invoices, supplier orders, supplier price lists, verified current supplier information or authoritative NTA records.
 
-Attempt to establish cost from approved available evidence such as:
-
-- supplier invoice;
-- supplier order;
-- supplier price list;
-- verified current supplier information;
-- other authoritative NTA records.
-
-Never reverse-engineer cost from the existing retail price and then treat that estimate as fact.
+Never reverse-engineer cost from retail price and then treat that estimate as fact.
 
 If reliable cost cannot be found:
 
@@ -842,48 +487,21 @@ If reliable cost cannot be found:
 
 unless an explicitly authorised exception applies.
 
-## 29. Record Keeping
+## 32. Record Keeping
 
-Where supported, retain sufficient evidence to reconstruct why a retail price was selected.
+Where supported, retain enough evidence to reconstruct why a price was selected, including date, cost, cost source, category, target margin, market evidence, existing retail, recommended retail, final retail, confidence, fulfilment treatment and reason for override where applicable.
 
-Record where practical:
+Pricing should be auditable rather than dependent on memory.
 
-- date;
-- cost;
-- cost source;
-- category;
-- target margin;
-- market evidence;
-- existing retail;
-- recommended retail;
-- final retail;
-- confidence;
-- reason for override if applicable.
-
-Pricing should be auditable rather than dependent on remembering why a number was chosen.
-
-## 30. Human Override
-
-The standard supports decision-making; it does not eliminate commercial judgment.
+## 33. Human Override
 
 An authorised NTA decision-maker may override the recommended price.
 
-Where an override materially breaches normal pricing rules, record:
+Where an override materially breaches normal rules, record **OVERRIDE**, the approved retail, reason, approver and date where practical.
 
-**OVERRIDE**
+Do not silently rewrite the underlying standard to rationalise an exception.
 
-and where possible:
-
-- approved retail;
-- reason;
-- approver;
-- date.
-
-Do not silently rewrite the underlying pricing rules to rationalise an exception.
-
-An exception is an exception.
-
-## 31. Accuracy Rules
+## 34. Accuracy Rules
 
 Never:
 
@@ -892,67 +510,54 @@ Never:
 - invent pack quantities;
 - invent GST treatment;
 - claim a competitor match without verifying equivalence;
+- compare different fulfilment methods as though prices were equivalent;
 - treat sale pricing as normal market pricing without noting it;
 - manufacture compare-at pricing;
 - confuse markup with margin;
+- invent values for store-controlled metafields or enums;
 - claim Shopify was updated without verification;
 - reduce an existing profitable price simply because the mathematical minimum is lower.
 
-When uncertain:
+When uncertain, say so and reduce confidence.
 
-**say so and reduce confidence.**
+## 35. Field-Test Learnings — Aquael Aquariums, 31 August 2026
 
-## 32. Current Provisional Status
+The first live field test of this skill against the NTA Aquael Aquariums collection established the following:
+
+- equipment margin targets must remain subordinate to credible market validation;
+- some stale promotional prices can materially suppress margin while the old compare-at price has become the normal market level;
+- delivery-inclusive variants require separate fulfilment economics and must not be compared directly with pickup-only competitor prices;
+- exact Shopify metafield choices must be read before writing store-controlled classifications;
+- customer-facing availability classification can be intentionally independent of raw Shopify inventory quantity;
+- a draft product should not be automatically published merely because its price or availability has been reviewed;
+- post-write verification must confirm both price and any related catalogue state.
+
+These are now formal rules in v0.2.
+
+## 36. Current Provisional Status
 
 This is:
 
-**NTA Retail Pricing Standard — v0.1**
+**NTA Retail Pricing Standard — v0.2**
 
-The category margin ranges are provisional.
+The category margin ranges remain provisional.
 
-Before promotion to v1.0, stress-test against a representative sample of actual NTA products including:
+Before promotion to v1.0, continue stress-testing against common livestock, premium livestock, Bettas, shrimp, common and premium plants, tissue cultures, food, consumables, inexpensive accessories, commodity equipment, specialist equipment, stocked products and dropship products.
 
-- common livestock;
-- premium livestock;
-- Bettas;
-- shrimp;
-- common plants;
-- premium plants;
-- tissue cultures;
-- food;
-- consumables;
-- inexpensive accessories;
-- commodity equipment;
-- specialist equipment;
-- stocked products;
-- dropship products.
+The remaining major unresolved controls are:
 
-The stress test should identify:
+- minimum dollar GP thresholds;
+- automatic price-change tolerance thresholds;
+- fuller contribution-margin economics.
 
-- categories with unrealistic margin targets;
-- products where dollar GP is inadequate;
-- market-positioning conflicts;
-- pack-conversion problems;
-- cases where existing NTA prices outperform the calculated recommendation;
-- appropriate thresholds for automatic price changes;
-- appropriate minimum dollar GP rules.
+Only after broader testing and adjustment should this standard be promoted to **v1.0**.
 
-Only after testing and adjustment should this standard be promoted to:
+## 37. Final Principle
 
-**NTA Retail Pricing Standard — v1.0**
-
-## 33. Final Principle
-
-The goal is not:
-
-**"What is the cheapest price NTA can charge?"**
-
-Nor is it:
-
-**"What markup should NTA apply?"**
+The goal is not "What is the cheapest price NTA can charge?" and it is not "What markup should NTA apply?"
 
 The goal is:
 
-**"What is the most commercially appropriate retail price for NTA, supported by reliable cost data, acceptable profitability, credible market evidence, product risk, customer value, and existing sales reality?"**
+**"What is the most commercially appropriate retail price for NTA, supported by reliable cost data, acceptable profitability, credible market evidence, product risk, customer value, fulfilment economics and existing sales reality?"**
 
 Protect sustainable profit while remaining fair, competitive and evidence-based.
