@@ -1,10 +1,10 @@
 ---
 name: "nta-product-description-standard"
-version: "1.0"
+version: "1.1"
 description: "Create, rewrite, validate and QA Nano Tanks Australia Shopify product descriptions using the mandatory NTA HTML structure, with category-specific rules for livestock, aquarium plants and dry goods."
 ---
 
-# NTA Product Description Standard — v1.0
+# NTA Product Description Standard — v1.1
 
 ## Purpose
 
@@ -79,6 +79,8 @@ PLANTS
 └── Other aquatic plant
 
 DRY GOODS
+├── Aquarium / Tank
+├── Aquarium Stand / Cabinet
 ├── Equipment
 ├── Food
 ├── Water Treatment
@@ -154,8 +156,6 @@ Do not introduce alternative CSS classes unless authorised.
 
 # 4. Global writing standard
 
-## Tone
-
 Write as a specialist aquarium retailer helping a customer make a sensible purchase.
 
 The tone should be knowledgeable, clear, practical, approachable, confident where evidence supports the claim, cautious where information varies, and free from exaggerated sales language.
@@ -172,28 +172,7 @@ Use specific reasons instead.
 
 # 5. Accuracy and evidence rules
 
-Never invent:
-
-- scientific names;
-- adult sizes;
-- water parameters;
-- tank-size recommendations;
-- compatibility;
-- ingredients;
-- dosage;
-- wattage;
-- voltage;
-- dimensions;
-- flow rates;
-- manufacturer specifications;
-- included components;
-- warranty;
-- replacement-part compatibility;
-- breeder information;
-- origin;
-- growth rates;
-- CO₂ requirements;
-- product capacity.
+Never invent scientific names, adult sizes, water parameters, tank-size recommendations, compatibility, ingredients, dosage, wattage, voltage, dimensions, flow rates, manufacturer specifications, included components, warranty, replacement-part compatibility, breeder information, origin, growth rates, CO₂ requirements or product capacity.
 
 Use the strongest available source.
 
@@ -218,677 +197,276 @@ Never fill a missing field simply to complete the template.
 
 # 6. Units and language
 
-Use Australian English.
+Use Australian English and metric measurements: cm, L, °C, mm, W and V.
 
-Use cm, L, °C, mm, W and V.
-
-Use metric measurements unless a manufacturer specification is only meaningfully expressed otherwise.
-
-Scientific names must be italicised:
-
-```html
-<em>Poecilia reticulata</em>
-```
+Scientific names must be italicised with `<em>`.
 
 # 7. Product title rules
 
-The displayed title should match the approved Shopify customer-facing product name.
+The displayed title should match the approved Shopify customer-facing product name. Do not silently rename a product.
 
-Do not silently rename a product.
-
-Correct obvious formatting issues only where authorised.
-
-For livestock varieties, preserve relevant strain names.
-
-For plants, include the accepted scientific name where appropriate.
-
-For dry goods, retain model names and sizes where those identify the actual product.
+For livestock varieties, preserve relevant strain names. For plants, include the accepted scientific name where appropriate. For dry goods, retain model names and sizes where those identify the actual product.
 
 # 8. Tagline rules
 
-The tagline should normally contain 2–4 sentences.
-
-It should explain what the product is, its strongest visual or practical characteristic, and where or why it is useful.
+The tagline should normally contain 2–4 sentences and explain what the product is, its strongest visual or practical characteristic, and where or why it is useful.
 
 Do not repeat the product title several times, stuff SEO keywords, or make unsupported claims.
 
 # 9. LIVESTOCK TEMPLATE
 
-Use this structure for fish, shrimp, snails and other live animals.
+Use the standard NTA wrapper and the following sequence:
 
-```html
-<div class="nta-product">
+Title → Tagline → Quick Facts → Is this for you? → Why choose? → Key Benefits → Care & Specifications → What will you receive? → Acclimation & Introduction → Ongoing Care → Pairs perfectly with → NTA Insight → Before You Buy → FAQ.
 
-<h2 class="nta-title">PRODUCT NAME</h2>
+Livestock Quick Facts may include scientific name, common name, strain, adult size, temperament, temperature, pH, GH/KH, diet, tank zone, social needs and difficulty.
 
-<p class="nta-tagline">INTRODUCTION</p>
+Do not use `Brand:` for ordinary livestock. Use `Breeder / Supplier:` only when genuinely customer-relevant.
 
-<div class="nta-box">
-<h3>Quick Facts</h3>
-<ul>
-QUICK FACTS
-</ul>
-</div>
-
-<div class="nta-box">
-<h3>Is this for you?</h3>
-PERFECT IF / CONSIDER SOMETHING ELSE
-</div>
-
-<div class="nta-box">
-<h3>Why choose PRODUCT NAME?</h3>
-PRODUCT-SPECIFIC REASONS
-</div>
-
-<div class="nta-box">
-<h3>Key Benefits</h3>
-<ul>
-KEY BENEFITS
-</ul>
-</div>
-
-<div class="nta-box">
-<h3>Care &amp; Specifications</h3>
-<ul>
-CARE DATA
-</ul>
-</div>
-
-<div class="nta-box">
-<h3>What will you receive?</h3>
-RECEIVE DETAILS
-</div>
-
-<div class="nta-box nta-warning">
-<h3>Acclimation &amp; Introduction</h3>
-ACCLIMATION STEPS
-</div>
-
-<div class="nta-box">
-<h3>Ongoing Care</h3>
-ONGOING CARE
-</div>
-
-<div class="nta-box">
-<h3>Pairs perfectly with</h3>
-<ul>
-RELEVANT COMPLEMENTARY PRODUCTS
-</ul>
-</div>
-
-<div class="nta-highlight">
-<strong>NTA Insight:</strong><br>
-PRODUCT-SPECIFIC PRACTICAL ADVICE
-</div>
-
-<div class="nta-box">
-<h3>Before You Buy</h3>
-PRE-PURCHASE CHECKS
-</div>
-
-<div class="nta-box">
-<h3>FAQ</h3>
-PRODUCT-SPECIFIC FAQ
-</div>
-
-</div>
-```
-
-# 10. Livestock Quick Facts
-
-Use relevant fields such as:
-
-```html
-<li><strong>Scientific name:</strong> <em>...</em></li>
-<li><strong>Common name:</strong> ...</li>
-<li><strong>Variety / Strain:</strong> ...</li>
-<li><strong>Type:</strong> ...</li>
-<li><strong>Adult size:</strong> ...</li>
-<li><strong>Temperament:</strong> ...</li>
-<li><strong>Temperature:</strong> ...</li>
-<li><strong>pH:</strong> ...</li>
-<li><strong>GH:</strong> ...</li>
-<li><strong>KH:</strong> ...</li>
-<li><strong>Diet:</strong> ...</li>
-<li><strong>Tank zone:</strong> ...</li>
-<li><strong>Social needs:</strong> ...</li>
-<li><strong>Difficulty:</strong> ...</li>
-```
-
-Only include fields that add useful information.
-
-Do not use `Brand:` for ordinary livestock.
-
-If breeder or supplier identity is genuinely customer-relevant, use:
-
-```html
-<li><strong>Breeder / Supplier:</strong> ...</li>
-```
-
-# 11. Livestock suitability section
-
-Use:
-
-```html
-<p><strong>✔️ Perfect if:</strong></p>
-<ul>
-...
-</ul>
-
-<p><strong>❌ Consider something else if:</strong></p>
-<ul>
-...
-</ul>
-```
-
-Make this product-specific.
-
-Do not repeat identical generic bullets across hundreds of products unless genuinely applicable.
-
-Examples of issues to mention where relevant include minimum group size, aggression, fin nipping, adult size, predatory behaviour, shrimp compatibility, jumping, burrowing, plant damage, territorial behaviour, water hardness, mature tank requirement, breeding rate and special feeding requirements.
-
-Be willing to tell the customer that a product may not suit them.
-
-# 12. Livestock care and specifications
-
-Include useful verified information such as adult size, temperature, pH, hardness, diet, social group, minimum sensible aquarium size where defensible, compatibility, behaviour and breeding considerations where relevant.
+The suitability section must use Perfect if / Consider something else if and be product-specific.
 
 Do not confuse sale size and adult size.
 
-If Shopify contains a sale-size variant, identify it separately.
+Livestock FAQ questions must be species- or strain-specific. Do not use equipment questions such as model compatibility, installation or replacement parts.
 
-```html
-<li><strong>Approximate sale size:</strong> 3 cm</li>
-<li><strong>Typical adult size:</strong> 5 cm</li>
-```
+# 10. PLANT TEMPLATE
 
-# 13. Livestock fulfilment and conditioning
+Use the standard NTA wrapper and the following sequence:
 
-NTA livestock should reflect actual NTA handling practices where applicable.
+Title → Tagline → Quick Facts → Is this for you? → Why choose? → Key Benefits → Plant Details & Specifications → What will you receive? → Planting & Setup → Maintenance & Trimming → Pairs perfectly with → NTA Insight → Before You Buy → FAQ.
 
-Do not imply livestock is simply picked and shipped immediately like dry goods.
+Quick Facts may include scientific name, common name, plant type, placement, growth rate, height, light, CO₂, difficulty and temperature.
 
-Where appropriate, wording may acknowledge observation, conditioning, suitability checks and NTA's established livestock handling process.
+Clearly distinguish emersed, submerged, mature and sale appearance where relevant. Explain transition melt, trimming, replanting, rhizome positioning, carpeting requirements and colour response where relevant. Do not guarantee colour outcomes.
 
-Do not promise guaranteed health outcomes or invent quarantine treatments.
+For tissue culture, explain rinsing gel, dividing portions and planting appropriately.
 
-If referring to NTA policies, use the current authorised policy rather than embedding old policy wording permanently into the product description.
+# 11. DRY GOODS TEMPLATE
 
-# 14. Livestock "What will you receive?"
+Use the standard NTA wrapper and the following sequence:
 
-Use livestock-appropriate wording.
+Title → Tagline → Quick Facts → Is this for you? → Why choose? → Key Benefits → Specifications → What's included? → Setup & Use → Maintenance → Pairs perfectly with → NTA Insight → Before You Buy → FAQ.
 
-```html
-<ul>
-<li>The selected livestock variant.</li>
-<li>Livestock packed appropriately for the selected fulfilment method.</li>
-<li>The quantity shown on the selected variant.</li>
-</ul>
-```
+Quick Facts may include brand, product type, model, size/capacity, suitable use, freshwater/marine, dimensions, wattage, voltage, flow rate, quantity, dosage, compatibility and manufacturer code where verified.
 
-Do not say "what's included in the box", "manufacturer components" or "replacement parts" for livestock.
+Only include relevant fields.
 
-# 15. Livestock NTA Insight
+# 12. Aquarium / Tank subtype rules
 
-This should contain practical advice that a competent aquarium retailer would genuinely give.
+Aquariums are not generic powered equipment. Do not describe a bare aquarium as if it were a filter, pump, heater or electrical appliance.
 
-Examples include considering adult size rather than sale size, rapid livebearer reproduction, dense moss improving shrimplet survival, proper schooling numbers, colour response under particular conditions, or mineral requirements for snails.
+For aquariums, prioritise:
 
-Do not make the NTA Insight generic if product-specific advice is available.
+- exact capacity;
+- exact external dimensions where verified;
+- exact model;
+- whether it is a bare tank or an all-in-one kit;
+- verified inclusions such as lid, hood, light, filter, pump, heater or media;
+- intended freshwater/marine use only where verified;
+- matching stand/cabinet where known;
+- fulfilment restrictions or delivery variants where material.
 
-# 16. Livestock FAQ
+Do not include irrelevant aquarium wording such as:
 
-FAQ questions must be relevant to the exact species, strain or livestock type.
+- confirm voltage;
+- prime before switching on;
+- check impellers;
+- inspect tubing;
+- replacement parts;
+- manufacturer tank-size ratings;
+- head height;
 
-Good examples:
+unless the aquarium listing genuinely includes equipment for which that advice is relevant.
 
-- How large does it grow?
-- How many should I keep?
-- Is it peaceful?
-- Can it live with shrimp?
-- Will it eat plants?
-- Will it breed?
-- What does this strain name mean?
-- What should I feed it?
-- Does it need hard water?
-- Is it suitable for beginners?
+For bare glass tanks, Setup & Use should focus on:
 
-Do not ask livestock questions such as:
+1. a level, structurally suitable stand or surface;
+2. full support of the exact aquarium footprint;
+3. final placement before filling;
+4. appropriate filtration, heating and lighting selected for the intended setup;
+5. cycling before livestock.
 
-- What does this product do?
-- Is this the right model?
-- Is it easy to install?
-- What comes in the box?
-- Are replacement parts available?
+For all-in-one aquarium kits, distinguish clearly between the tank itself and included electrical components.
 
-There is no mandatory FAQ count. Use only useful questions. A typical range is 4–8 questions, with more only where genuinely useful.
+# 13. Aquarium load and footprint rule
 
-# 17. PLANT TEMPLATE
+Aquarium descriptions must warn customers that nominal length labels such as `2ft`, `3ft` and `4ft` are not sufficient for compatibility decisions.
 
-```html
-<div class="nta-product">
+Before You Buy must include, where relevant:
 
-<h2 class="nta-title">COMMON NAME (<em>SCIENTIFIC NAME</em>)</h2>
+- the exact aquarium base footprint;
+- a requirement to verify the stand or supporting surface against that footprint;
+- a reminder that a filled aquarium weighs materially more than its water capacity alone because glass, substrate, hardscape and equipment add load;
+- a warning not to assume every stand with the same nominal foot length is compatible;
+- a requirement to match exact model, dimensions and structural suitability.
 
-<p class="nta-tagline">INTRODUCTION</p>
+Do not invent a total filled weight unless verified. Use qualitative wording if the exact weight is unknown.
 
-<div class="nta-box">
-<h3>Quick Facts</h3>
-<ul>
-QUICK FACTS
-</ul>
-</div>
+# 14. Aquarium Stand / Cabinet subtype rules
 
-<div class="nta-box">
-<h3>Is this for you?</h3>
-SUITABILITY
-</div>
+Aquarium stands and cabinets require exact model and footprint matching.
 
-<div class="nta-box">
-<h3>Why choose PLANT NAME?</h3>
-REASONS
-</div>
+Prioritise:
 
-<div class="nta-box">
-<h3>Key Benefits</h3>
-<ul>
-BENEFITS
-</ul>
-</div>
+- exact matching aquarium model;
+- supported footprint dimensions where verified;
+- stand dimensions where verified;
+- colour/finish;
+- flat-pack or assembled status where verified;
+- assembly requirement where verified;
+- load rating only when verified;
+- SKU/model code where useful.
 
-<div class="nta-box">
-<h3>Plant Details &amp; Specifications</h3>
-<ul>
-DETAILS
-</ul>
-</div>
+Do not describe a stand using electrical-equipment language. Do not mention voltage, priming, cable routing, impellers, tubing, filtration performance or replacement media.
 
-<div class="nta-box">
-<h3>What will you receive?</h3>
-RECEIVE DETAILS
-</div>
+Setup & Use for stands should focus on:
 
-<div class="nta-box nta-warning">
-<h3>Planting &amp; Setup</h3>
-PLANTING
-</div>
+1. assembling exactly to supplied instructions where assembly is required;
+2. placing on a level, structurally suitable floor;
+3. confirming all fasteners and panels are secure;
+4. ensuring the aquarium footprint is fully supported as intended;
+5. rechecking level before filling the aquarium.
 
-<div class="nta-box">
-<h3>Maintenance &amp; Trimming</h3>
-MAINTENANCE
-</div>
+Never infer that a generic stand is suitable merely because both products are called `2ft`, `3ft` or `4ft`.
 
-<div class="nta-box">
-<h3>Pairs perfectly with</h3>
-<ul>
-RELATED ITEMS
-</ul>
-</div>
+# 15. What's included
 
-<div class="nta-highlight">
-<strong>NTA Insight:</strong><br>
-PRACTICAL ADVICE
-</div>
-
-<div class="nta-box">
-<h3>Before You Buy</h3>
-PLANT-SPECIFIC EXPECTATIONS
-</div>
-
-<div class="nta-box">
-<h3>FAQ</h3>
-FAQ
-</div>
-
-</div>
-```
-
-# 18. Plant Quick Facts
-
-Use relevant fields:
-
-```html
-<li><strong>Scientific name:</strong> <em>...</em></li>
-<li><strong>Common name:</strong> ...</li>
-<li><strong>Plant type:</strong> ...</li>
-<li><strong>Placement:</strong> ...</li>
-<li><strong>Growth rate:</strong> ...</li>
-<li><strong>Typical height:</strong> ...</li>
-<li><strong>Light:</strong> ...</li>
-<li><strong>CO₂:</strong> ...</li>
-<li><strong>Difficulty:</strong> ...</li>
-<li><strong>Temperature:</strong> ...</li>
-```
-
-Optional relevant fields include pH, propagation method, substrate requirements, tissue-culture format, origin, colour and growth habit.
-
-# 19. Plant-specific truth rules
-
-Clearly distinguish where relevant between emersed appearance, submerged appearance, mature appearance and sale appearance.
-
-Do not imply a newly supplied plant will instantly look like an established aquascape specimen.
-
-Where relevant explain transition melt, emersed-to-submerged leaf change, trimming requirements, replanting stems, rhizome positioning, carpeting requirements, CO₂ impact, lighting impact, nutrient impact and colour response.
-
-Do not guarantee red colour merely because a plant can become red under ideal conditions.
-
-Use qualified wording such as "Colour intensity generally improves with stronger lighting, appropriate nutrition and CO₂" when evidence supports it.
-
-# 20. Tissue Culture rule
-
-If the product is tissue culture, ensure the description makes this clear.
-
-Include useful instructions such as removing the plant from the cup, rinsing culture gel, dividing into small portions and planting appropriately.
-
-Do not describe tissue culture as automatically superior in every situation.
-
-Where applicable, explain that tissue culture typically provides clean laboratory-propagated plant material.
-
-# 21. Plant "Before You Buy"
-
-Address relevant expectations such as supplied size variation, submerged leaf changes, colour dependence on growing conditions, transition melt, CO₂ expectations, growth-rate variation and living-product variability.
-
-Photos may show mature submerged growth.
-
-Do not include replacement parts, installation wiring or model compatibility.
-
-# 22. Plant FAQ
-
-Useful examples include:
-
-- Does it need CO₂?
-- How much light does it need?
-- How tall does it grow?
-- Where should I plant it?
-- How fast does it grow?
-- Can it grow without substrate?
-- Can it be attached to rock or wood?
-- Why do the leaves look different after planting?
-- How do I propagate it?
-- Is it suitable for beginners?
-- Will shrimp use it?
-- Is it tissue culture?
-
-Use only questions relevant to that particular plant.
-
-# 23. DRY GOODS TEMPLATE
-
-```html
-<div class="nta-product">
-
-<h2 class="nta-title">PRODUCT NAME</h2>
-
-<p class="nta-tagline">INTRODUCTION</p>
-
-<div class="nta-box">
-<h3>Quick Facts</h3>
-<ul>
-QUICK FACTS
-</ul>
-</div>
-
-<div class="nta-box">
-<h3>Is this for you?</h3>
-SUITABILITY
-</div>
-
-<div class="nta-box">
-<h3>Why choose PRODUCT NAME?</h3>
-REASONS
-</div>
-
-<div class="nta-box">
-<h3>Key Benefits</h3>
-<ul>
-BENEFITS
-</ul>
-</div>
-
-<div class="nta-box">
-<h3>Specifications</h3>
-<ul>
-SPECIFICATIONS
-</ul>
-</div>
-
-<div class="nta-box">
-<h3>What's included?</h3>
-INCLUSIONS
-</div>
-
-<div class="nta-box nta-warning">
-<h3>Setup &amp; Use</h3>
-SETUP
-</div>
-
-<div class="nta-box">
-<h3>Maintenance</h3>
-MAINTENANCE
-</div>
-
-<div class="nta-box">
-<h3>Pairs perfectly with</h3>
-<ul>
-RELATED PRODUCTS
-</ul>
-</div>
-
-<div class="nta-highlight">
-<strong>NTA Insight:</strong><br>
-PRACTICAL ADVICE
-</div>
-
-<div class="nta-box">
-<h3>Before You Buy</h3>
-COMPATIBILITY AND PREPURCHASE INFORMATION
-</div>
-
-<div class="nta-box">
-<h3>FAQ</h3>
-FAQ
-</div>
-
-</div>
-```
-
-# 24. Dry Goods Quick Facts
-
-Use relevant verified fields such as:
-
-```html
-<li><strong>Brand:</strong> ...</li>
-<li><strong>Product type:</strong> ...</li>
-<li><strong>Model:</strong> ...</li>
-<li><strong>Size / Capacity:</strong> ...</li>
-<li><strong>Suitable for:</strong> ...</li>
-<li><strong>Freshwater / Marine:</strong> ...</li>
-```
-
-Additional fields may include dimensions, wattage, voltage, flow rate, cable length, pipe size, media volume, quantity, dosage, food pellet size, ingredient information, manufacturer code and compatibility.
-
-Do not add irrelevant fields simply because the template supports them.
-
-# 25. Dry Goods specifications
-
-Manufacturer specifications should be preserved accurately.
-
-Do not convert approximate marketing statements into precise technical claims.
-
-If manufacturer revisions can alter specifications, use a note only where relevant.
-
-Do not automatically add "Specifications may vary by manufacturer revision" to every product.
-
-# 26. What's included
-
-State actual known inclusions.
+State actual known inclusions only.
 
 Never assume accessories are included based on promotional images.
 
-If uncertain, verify before stating the inclusion.
+For bare tanks, do not imply a filter, light, heater, stand or accessories are included unless verified.
 
-Photographed accessories are not evidence of inclusion.
+For aquarium kits, enumerate verified included components.
 
-# 27. Setup & Use
+For stands, do not imply the aquarium itself is included unless explicitly stated.
 
-The setup section should be specific to the product type.
+# 16. Setup & Use
 
-Equipment may cover placement, electrical safety, priming, connection and flow adjustment.
+Setup instructions must be specific to the subtype.
 
-Food may cover feeding amount, frequency and removing uneaten food where appropriate.
+Equipment may include placement, electrical safety, priming, connection and flow adjustment.
 
-Water treatment may cover dosage, water volume, timing and warnings.
+Food should describe feeding amount/frequency where verified.
 
-Aquascaping products may cover rinsing, preparation, placement, curing or soaking where applicable.
+Water treatment and medication should use verified dosing and warnings only.
 
-Do not generate generic installation instructions for products that require none.
+Aquariums and stands must follow their dedicated subtype rules above.
 
-# 28. Dry Goods "Before You Buy"
+# 17. Pairs perfectly with
 
-Use where relevant for physical dimensions, aquarium volume, inlet/outlet size, hose compatibility, voltage, power requirement, mounting clearance, glass thickness, model compatibility, replacement-part availability and consumable requirements.
+Recommend genuinely compatible complementary products or categories.
 
-This is the correct category for wording about installation, models, manufacturer revision and replacement parts.
+For aquariums, suitable examples include the exact matching stand, appropriate filtration, lighting, heater where required, conditioner, test kit, substrate and aquascaping materials.
 
-Do not copy these concepts into livestock or plant listings.
-
-# 29. FAQ quality rule
-
-FAQ content is generated after the main description.
-
-The system must ask:
-
-```text
-What would a real customer deciding whether to buy this exact product reasonably want to know?
-```
-
-Use those questions.
-
-Do not generate filler to achieve an arbitrary FAQ count.
-
-Every FAQ must relate to the exact product or product class, contain useful information, avoid repetition, avoid contradictions and avoid unsupported claims.
-
-Use:
-
-```html
-<details><summary>QUESTION</summary><p>ANSWER</p></details>
-```
-
-# 30. "Pairs perfectly with" standard
-
-This section should recommend categories or genuinely compatible complementary products.
-
-Examples:
-
-Livestock: suitable food, test kit, water conditioner, plants, moss, caves or mineral supplement where appropriate.
-
-Plants: aquasoil, fertiliser, CO₂ equipment, planting tweezers, suitable light or root tabs.
-
-Dry goods: replacement media, tubing, fittings, consumables or compatible accessories.
-
-Do not recommend random products simply to increase basket size.
+For stands, the exact matching aquarium is the primary recommendation.
 
 Compatibility comes before upselling.
 
-# 31. NTA Insight standard
+# 18. NTA Insight
 
-The NTA Insight is mandatory unless no meaningful insight can responsibly be provided.
+The NTA Insight should add genuine practical advice beyond manufacturer copy.
 
-It should add information beyond the manufacturer's description.
+For aquariums, useful insight includes planning around adult livestock needs, exact footprint, load, maintenance access and long-term equipment choices.
 
-Prioritise practical aquarium experience, purchasing considerations, common customer mistakes, setup tips, long-term care, compatibility and realistic expectations.
+For stands, useful insight includes exact model matching and levelling before the tank is filled.
 
-Do not fabricate claims such as "We use this every day at NTA" unless verified.
+Do not fabricate claims such as `We use this every day at NTA` unless verified.
 
-If NTA use is verified, practical first-hand wording is encouraged.
+# 19. FAQ quality rule
 
-# 32. Customer safety and responsible selling
+Ask what a real customer deciding whether to buy this exact product would reasonably want to know.
 
-Do not promote unsuitable combinations merely because they may increase sales.
+There is no mandatory FAQ count.
 
-Descriptions should help prevent incompatible livestock purchases, inadequate aquarium sizing, inappropriate schooling numbers, poor water-parameter matching, incorrect equipment sizing, unsafe electrical use, incorrect medication or chemical dosing and unrealistic plant expectations.
+Aquarium FAQ examples:
 
-Commercial persuasion does not override responsible aquarium advice.
+- What are the exact dimensions?
+- What is the stated capacity?
+- Is a lid included?
+- Does it include a filter or light?
+- Which stand matches this model?
+- Can it be used for a planted aquarium?
+- Is delivery available for this size?
 
-# 33. SEO standard
+Stand FAQ examples:
 
-Product descriptions should naturally contain the product name, common name, scientific name where applicable, important product type and relevant aquarium application.
+- Which exact aquarium does this stand fit?
+- What footprint does it support?
+- Does it require assembly?
+- Is the aquarium included?
+- Can I use it with another aquarium of similar nominal length?
 
-Do not keyword stuff, repeat titles unnaturally, generate SEO filler or create fake FAQ questions solely for search engines.
+Avoid generic filler such as `What does this product do?` when the answer is obvious from the product itself.
 
-Readable product information takes priority.
+# 20. Generic-template bleed detection
 
-# 34. Existing-description rewrite rule
+Flag aquarium/tank descriptions containing irrelevant terms such as:
 
-When rewriting an existing product:
+```text
+prime before switching on
+impeller
+head height
+filter media load
+replacement parts
+voltage
+cable routing
+pump performance
+```
 
-1. Preserve verified useful facts.
-2. Remove unsupported claims.
-3. Correct obvious category bleed.
-4. Rebuild into the NTA HTML template.
-5. Preserve material product-specific information.
-6. Do not replace good existing copy simply for stylistic uniformity.
-7. Improve weak sections rather than flattening all listings into identical wording.
+unless those terms specifically describe included equipment.
 
-# 35. Generic-template bleed detection
+Flag stand descriptions containing:
 
-Before approval, scan for terms that may be inappropriate to the category.
+```text
+voltage
+power
+filter
+pump
+impeller
+tubing
+prime
+livestock load
+head height
+```
 
-## Livestock warning terms
+unless genuinely relevant.
 
-Flag manufacturer revision, replacement parts, installation, model compatibility, included in the box, electrical, wattage, voltage and assembly unless legitimately relevant.
-
-## Plant warning terms
-
-Flag manufacturer revision, replacement parts, model, installation, warranty and electrical unless legitimately relevant.
-
-## Dry goods warning terms
-
-Flag inappropriate biological language such as adult size, schooling requirement, temperament, breeding behaviour and submerged leaf form unless genuinely relevant.
-
-# 36. Duplication QA
+# 21. Duplication QA
 
 Descriptions should not reuse entire paragraphs across unrelated products.
 
-Generic framework reuse is allowed.
+Generic framework reuse is allowed, but product-specific copy must remain product-specific.
 
-Product-specific copy must remain product-specific.
+Flag identical taglines, identical Why choose paragraphs, identical NTA Insights, identical FAQs or irrelevant copied specifications.
 
-Flag identical taglines, identical "Why choose" paragraphs, identical NTA Insights, identical FAQs and irrelevant copied specifications.
-
-# 37. HTML QA
+# 22. HTML QA
 
 Before sending to Shopify verify:
 
-- one opening `<div class="nta-product">`;
-- one matching closing `</div>`;
-- valid heading hierarchy;
-- all `<ul>` and `<ol>` elements close correctly;
-- all `<li>` elements close correctly;
-- all `<details>` elements close correctly;
-- scientific names use `<em>`;
+- one opening `<div class="nta-product">` and one matching closing `</div>`;
+- all standard sections that are relevant use `.nta-box`;
+- NTA Insight uses `.nta-highlight`;
+- warning sections use `.nta-warning` where appropriate;
+- all lists and details tags close correctly;
 - no Markdown exists inside final HTML;
-- no code fences are written into Shopify;
-- no duplicate title heading;
-- no malformed entities;
-- no accidental editor comments.
+- no generic placeholders remain.
 
-# 38. Content QA checklist
+# 23. Content QA checklist
 
-A description passes only if all applicable checks pass.
+A description passes only if all applicable checks pass:
 
 ```text
-[ ] Product category correctly identified
+[ ] Product category and subtype correctly identified
 [ ] Correct category template used
 [ ] Product title correct
 [ ] Tagline is product-specific
-[ ] Scientific name verified where applicable
 [ ] Key factual claims verified
-[ ] Sale size not confused with adult size
-[ ] Water parameters sensible and verified where applicable
-[ ] Compatibility discussed where relevant
-[ ] Plant growth expectations explained where relevant
-[ ] Manufacturer specifications verified where relevant
-[ ] What's included is verified
-[ ] Setup/acclimation/planting instructions fit category
+[ ] Capacity and dimensions verified where material
+[ ] Inclusions verified
+[ ] Aquarium footprint/load advice included where relevant
+[ ] Stand exact-model compatibility included where relevant
+[ ] Setup instructions fit the actual subtype
 [ ] NTA Insight adds genuine value
 [ ] Before You Buy is category-specific
 [ ] FAQ contains useful product-specific questions
@@ -897,94 +475,52 @@ A description passes only if all applicable checks pass.
 [ ] HTML validates
 ```
 
-# 39. Confidence check
+# 24. Confidence check
 
 Before publishing assign an internal confidence level:
 
 ```text
-HIGH
-Core factual data is verified and category fit is clear.
-
-MEDIUM
-Description is substantially reliable but one or more non-critical facts are qualified or omitted.
-
-LOW
-Important product identity, specification, livestock care or compatibility information is uncertain.
+HIGH — Core factual data is verified and category fit is clear.
+MEDIUM — Description is substantially reliable but one or more non-critical facts are qualified or omitted.
+LOW — Important identity, specification, inclusion, compatibility or safety information is uncertain.
 ```
 
-LOW confidence descriptions must not be automatically published. They require review or additional research.
+LOW confidence descriptions must not be automatically published.
 
-# 40. Publish behaviour
+# 25. Publish behaviour
 
 When authorised to update Shopify:
 
-```text
 1. Read current Shopify product data.
-2. Determine product category.
+2. Determine category and subtype.
 3. Gather existing useful facts.
 4. Verify missing critical information.
 5. Generate description.
 6. Run factual QA.
-7. Run category QA.
+7. Run category/subtype QA.
 8. Run HTML QA.
 9. Compare against current product to ensure useful information was not lost.
 10. Write the description to Shopify.
 11. Re-read the saved Shopify description.
 12. Confirm the saved output matches the generated output.
-```
 
 Do not treat a successful API response as proof that the correct content was saved.
 
-Always verify after write.
+# 26. Bulk processing
 
-# 41. Bulk processing
+Process products independently.
 
-For bulk catalog work, process products independently.
-
-Do not assume the next product has the same species, size, compatibility, manufacturer specifications, variant structure or care requirements.
+Do not assume the next product has the same size, inclusions, compatibility, variant structure or specifications.
 
 Batching may optimise retrieval and API use, but must not reduce factual accuracy.
 
-If several products share a verified manufacturer family, shared specifications may be reused only where the exact model supports them.
+# 27. Human-review triggers
 
-# 42. Human-review triggers
+Stop automatic publishing and request review when product identity is ambiguous, key specifications conflict, exact compatibility is uncertain, included components cannot be verified and are purchase-critical, electrical or medication information is uncertain, or existing Shopify information appears factually dangerous.
 
-Stop automatic publishing and request review when:
+# 28. Final quality principle
 
-- product identity is ambiguous;
-- scientific name cannot be established;
-- two sources materially disagree;
-- product title appears incorrect;
-- livestock identity is questionable;
-- adult size differs significantly between credible sources;
-- medication instructions conflict;
-- electrical specification is uncertain;
-- variant selection materially changes specifications;
-- included components cannot be verified and are purchase-critical;
-- existing Shopify information appears factually dangerous;
-- a claim may create customer safety or animal-welfare risk.
-
-# 43. Final quality principle
-
-Consistency means:
-
-```text
-same NTA structure
-+
-same quality threshold
-+
-same tone
-```
-
-It does not mean:
-
-```text
-same words for every product
-```
-
-Every product description should look like it belongs to Nano Tanks Australia while still sounding like it was written specifically for that product.
-
-The description should be useful enough that a customer can make a better purchasing decision after reading it.
+Consistency means the same NTA structure, the same quality threshold and the same tone. It does not mean the same words for every product.
 
 When forced to choose between more content and more accurate content, choose accuracy.
 
