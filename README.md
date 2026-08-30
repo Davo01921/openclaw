@@ -10,6 +10,7 @@ This private repository is the source of truth for David's custom OpenClaw skill
 - `nta-gumtree-listing`
 - `nta-individual-betta-shopify-update`
 - `nta-inventory-update`
+- `nta-supplier-order-processing`
 
 ## Safety
 
