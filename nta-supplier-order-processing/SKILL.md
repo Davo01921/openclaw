@@ -1,6 +1,6 @@
 ---
 name: "nta-supplier-order-processing"
-description: "Process supplier purchase orders from Discord, understand packs/combo deals, match Shopify products, audit cost/vendor/retail, and update inventory safely."
+description: "Process supplier purchase orders from Discord, understand packs/combo deals, match Shopify products, audit cost/vendor/retail, inventory, and preorder state safely."
 ---
 
 # NTA supplier order processing
@@ -13,11 +13,11 @@ Read [references/workflow.md](references/workflow.md) before making Shopify chan
 
 Turn a supplier document into a verified Shopify change set without blindly assuming that supplier order quantities equal Shopify sellable units.
 
-The workflow must understand packs, cartons, trays, pairs, trios, assorted bundles, bonus quantities, free goods, and other supplier ordering units.
+The workflow must understand packs, cartons, trays, pairs, trios, assorted bundles, bonus quantities, free goods, supplier availability, backorders, uncertain ETAs, and other supplier ordering units/states.
 
 ## Non-negotiable rules
 
-- Shopify is the live source of truth for existing products, variants, inventory units, vendor, cost and retail.
+- Shopify is the live source of truth for existing products, variants, inventory units, vendor, cost, retail, inventory policy, and preorder metafields.
 - Never create a new Shopify product merely because a supplier line cannot be matched. Flag it for review unless creation was explicitly requested.
 - SKU/barcode/vendor SKU match wins over title matching. Exact product + variant match is next. Fuzzy title matching may suggest a candidate but must not silently write when ambiguous.
 - Supplier **order quantity** and Shopify **sellable quantity** are different concepts. Resolve the unit conversion before any inventory write.
@@ -33,6 +33,22 @@ The workflow must understand packs, cartons, trays, pairs, trios, assorted bundl
 - If part of an order is short supplied, damaged, substituted or backordered, inventory must use the physically received quantity, not the ordered quantity.
 - The same supplier order must be idempotent. Build a fingerprint from supplier + order/invoice number where available, otherwise supplier + document date + normalized line items + total. Refuse a duplicate inventory application unless explicitly overridden.
 - Never report completion until every write is re-read from Shopify and verified.
+- Preorder state is variant-level. Read and verify `custom.preorder_eligible` and `custom.preorder_status_override` before changing them.
+- Allowed preorder overrides are `automatic`, `eta_tbc`, and `disabled` only.
+- Bettas and other individually identified one-off livestock must never be made preorder eligible.
+- Clearance, discontinued, internal-use, explicitly one-off, and non-replenishable lines must not be auto-enabled for preorder.
+
+## Supplier availability → preorder rules
+
+After matching the exact Shopify variant, resolve supplier availability separately from physical inventory:
+
+- **Normal / available / routinely replenished:** keep or set `custom.preorder_eligible = true`. If inventory is `<= 0`, use inventory policy `CONTINUE` and `custom.preorder_status_override = automatic` so the storefront shows **Pre-order**.
+- **Backordered / no firm ETA / supplier says unavailable for a while / timing uncertain:** if NTA still wants to accept customer orders, keep `custom.preorder_eligible = true`, keep inventory policy `CONTINUE`, and set `custom.preorder_status_override = eta_tbc` so the storefront shows **Available to Order – ETA TBC**.
+- **Confirmed incoming with a reliable normal replenishment path:** use `automatic`; do not use `eta_tbc` merely because stock is currently zero.
+- **Cannot source / discontinued / supplier permanently stopped / NTA does not want further orders:** set `custom.preorder_status_override = disabled`, set `custom.preorder_eligible = false` when the line is genuinely non-replenishable, and use inventory policy `DENY` where appropriate.
+- **Received stock above zero:** if the variant was temporarily `eta_tbc`, return it to `automatic` unless David explicitly wants the warning retained.
+- Never invent an ETA from a PO date, invoice date, supplier lead-time guess, or previous delivery pattern.
+- If supplier wording is ambiguous, keep the existing preorder state and flag the uncertainty instead of silently changing it.
 
 ## Pack and combo intelligence
 
@@ -73,9 +89,12 @@ Optional operator phrases:
 - `ordered` — document is a purchase order/inbound order; do not add available inventory.
 - `received` — stock is physically present; inventory may be updated after unit conversion.
 - `received partial` — use only quantities explicitly confirmed as received.
+- `eta tbc` — supplier timing is uncertain; keep eligible products orderable but set `custom.preorder_status_override = eta_tbc`.
+- `normal preorder` — clear a temporary ETA-TBC state back to `automatic` when justified.
+- `stop preorder` — set `disabled` and stop overselling for that exact variant/product where appropriate.
 - `dry run` — prepare the full proposed change set but make no Shopify writes.
 
-If state is genuinely unclear, default to `ORDERED` rather than falsely increasing available inventory.
+If state is genuinely unclear, default to `ORDERED` rather than falsely increasing available inventory, and preserve the existing preorder override unless supplier availability evidence is clear.
 
 ## Output
 
@@ -90,6 +109,8 @@ Post a concise Discord reconciliation report containing:
 - vendor changes
 - retail changes or recommendations
 - inventory action and whether it was withheld because the order is not yet received
+- supplier availability interpretation
+- preorder state applied: `automatic`, `eta_tbc`, `disabled`, or unchanged
 - duplicate-order status
 - Shopify verification result
 
