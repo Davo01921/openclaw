@@ -26,6 +26,8 @@ Unless David specifies otherwise:
 
 ## Live Shopify discovery
 
+Use `nta-product-resolver` for the exact product/variant selection and duplicate-risk outcome; the discovery observations below are its required evidence.
+
 Search by product name and confirm:
 
 - exact product title and GID
@@ -98,6 +100,8 @@ For standard intake labels include:
 Physical label counts follow received units: 10 pairs = 10 labels, 200 shrimp = 200 labels. If David asks for a two-line livestock shelf label, use the existing NTA two-line convention. Do not mix formats without instruction.
 
 ## Mandatory final audit
+
+Run the approved change set through `nta-shopify-write-verifier`. Its fresh read-back result is the completion gate for this audit.
 
 Reread all changed Shopify products and compare expected versus live for:
 

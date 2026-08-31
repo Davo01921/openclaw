@@ -22,7 +22,8 @@ deterministic orchestrator
         |
         +--> CSV builder
         +--> image pipeline
-        +--> Shopify adapter
+        +--> nta-product-resolver
+        +--> Shopify adapter / nta-shopify-write-verifier
         +--> assertion/read-back layer
         +--> archive manager
         +--> Discord reporter
@@ -43,6 +44,7 @@ Build or adapt these typed operations:
 - `cheap_visual_catalogue(image_paths)`
 - `cheap_visual_retry(image_path, field)`
 - `sol_review(exception_packet)`
+- `resolve_nta_product(identity_evidence)`
 - `shopify_find_exact_tank(tank_id)`
 - `build_inventory_csv(items)`
 - `prepare_reference(item)`
@@ -72,6 +74,8 @@ It must not:
 The Sol reviewer may diagnose exceptions but should not receive unrestricted mutation authority merely because it is the stronger model.
 
 The orchestrator is responsible for enforcing invariants.
+
+For every mutation, create the shared verifier operation record with the batch ID as job ID and a stable per-fish idempotency key. The Shopify adapter is an implementation detail of `nta-shopify-write-verifier`; the Betta-specific assertions supplement, but must not bypass, the verifier's fresh read-back.
 
 ## Cost telemetry
 

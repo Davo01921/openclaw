@@ -108,6 +108,8 @@ Do not arbitrarily allocate general overhead to landed cost.
 
 ## 6. Dropship Products
 
+For order-level dropship execution, delegate to `nta-dropship-order-processing`. This pricing skill retains only pricing and fulfilment-economics decisions; it must not create supplier orders or update fulfilment state.
+
 Dropship is NOT a pricing category.
 
 Dropship products follow the same pricing methodology as equivalent stocked products. Classify the product according to what it actually is.
@@ -445,6 +447,8 @@ A failed atomic validation is preferable to a partial write. If the platform rej
 Pricing logic must not use raw inventory quantity as a substitute for a separately managed customer-facing availability classification unless the store explicitly defines that relationship.
 
 ## 29. Post-Write Verification
+
+All approved Shopify price changes must use `nta-shopify-write-verifier`, which invokes the product writer and independent QA auditor. The checks below define the expected values for that verifier.
 
 A successful API response is not sufficient proof that pricing is correct.
 

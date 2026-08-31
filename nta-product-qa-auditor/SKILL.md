@@ -1,7 +1,7 @@
 ---
 name: "nta-product-qa-auditor"
-version: "1.0"
-description: "Independently re-read Shopify after NTA product writes and verify expected vs live state for every changed field."
+version: "1.1"
+description: "Independent verification-phase implementation for nta-shopify-write-verifier."
 ---
 
 # NTA Product QA Auditor — v1.0
@@ -9,6 +9,8 @@ description: "Independently re-read Shopify after NTA product writes and verify 
 ## Purpose
 
 Verify product changes after writing. A successful API response is not proof that Shopify contains the intended state.
+
+New workflows call `nta-shopify-write-verifier`, which invokes this module after the writer. This module retains independent read-back responsibility and must not become a decision or repair engine.
 
 ## Required output
 

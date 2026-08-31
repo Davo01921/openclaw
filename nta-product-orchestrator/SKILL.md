@@ -1,7 +1,7 @@
 ---
 name: "nta-product-orchestrator"
-version: "1.0"
-description: "Route NTA product work through canonical modular skills, minimise duplicated logic, and ensure Shopify changes are proposed, written, and verified safely."
+version: "1.1"
+description: "Coordinate NTA product decisions through canonical modules and the shared Shopify write-verification boundary."
 ---
 
 # NTA Product Orchestrator — v1.0
@@ -22,7 +22,7 @@ Do not duplicate child-skill rules here. When a canonical child skill changes, t
 
 Use these modules where applicable:
 
-1. `nta-product-identity-resolver` — match/create decision, SKU, vendor identity, duplicate prevention.
+1. `nta-product-resolver` — match/create decision, SKU, vendor identity, duplicate prevention. `nta-product-identity-resolver` is a compatible legacy entry point.
 2. `nta-product-classifier` — category, subtype, one-off/replenishable classification.
 3. `nta-supplier-unit-cost-normalizer` — GST, packs, retail-unit conversion, landed cost inputs.
 4. `nta-retail-pricing-standard` — final retail-pricing decision and price confidence.
@@ -32,9 +32,8 @@ Use these modules where applicable:
 8. `nta-product-availability` — preorder/orderability state independent of physical stock.
 9. `nta-product-merchandising` — tags, collections and customer-facing merchandising classifications.
 10. `nta-product-metafields` — map approved product state to Shopify metafields.
-11. `nta-shopify-product-writer` — perform only authorised Shopify writes and preserve untouched fields.
-12. `nta-product-qa-auditor` — re-read Shopify and compare expected vs live state.
-13. `nta-product-exception-gate` — AUTO_APPROVE / WARNING / REVIEW_REQUIRED / BLOCK.
+11. `nta-shopify-write-verifier` — the only canonical Shopify mutation boundary: authorised write then fresh live-state assertion.
+12. `nta-product-exception-gate` — AUTO_APPROVE / WARNING / REVIEW_REQUIRED / BLOCK.
 
 Existing specialist workflows remain valid entry points but must call these modules instead of maintaining conflicting copies of the same rules:
 
@@ -43,7 +42,7 @@ Existing specialist workflows remain valid entry points but must call these modu
 - `nta-betta-picture-processing-v2`
 - `nta-individual-betta-shopify-update`
 
-Use `adaptive-model-router` for model delegation where a task genuinely needs an AI model.
+Use `adaptive-model-router` for model delegation where a task genuinely needs an AI model. `nta-automation-orchestrator` is the parent router when the request is not already known to be product work.
 
 ## Shared Product State
 
@@ -60,6 +59,7 @@ product:
     title:
     shopify_product_id:
     shopify_variant_id:
+    resolution_status:
     sku:
     barcode:
     vendor:
@@ -254,9 +254,8 @@ A job is complete only when:
 
 1. all required modules returned a state;
 2. exception status allows the intended action;
-3. authorised writes succeeded;
-4. live Shopify was re-read;
-5. expected and live values match for every changed field;
+3. `nta-shopify-write-verifier` returned `VERIFIED` or an explicitly acceptable `VERIFIED_WITH_WARNING`;
+4. expected and live values match for every changed field;
 6. unresolved warnings/review items are reported explicitly.
 
 A successful API response alone is not proof of completion.

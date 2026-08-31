@@ -23,6 +23,16 @@ Do not use GPT-5.6 Sol for routine file handling, CSV construction, Shopify API 
 
 Do not spawn one subagent per fish. Treat one Discord thread as one batch and process fish in a single cheap-model batch pass where practical.
 
+## Shared-module integration
+
+This workflow remains the canonical owner of Betta image integrity, batch ledger, media ordering, archive behaviour and Discord reporting. For Shopify product state it must use the shared contracts:
+
+- resolve the exact individual product/variant through `nta-product-resolver` before mutation;
+- use `nta-inventory-state`, `nta-product-availability` and `nta-product-metafields` for the individual-fish inventory, availability and arrival-date decision;
+- submit the authorised media/inventory/metafield change set through `nta-shopify-write-verifier`.
+
+The specialised identity assertions below are additional protected-field checks; they do not replace the shared write/read-back operation record.
+
 Read [references/delegation-policy.md](references/delegation-policy.md) before processing.
 Read [references/state-machine.md](references/state-machine.md) before any Shopify write.
 For batches or handle anomalies, also read [references/batch-integrity.md](references/batch-integrity.md).
@@ -168,7 +178,7 @@ This preview is informational unless an item is `BLOCKED`. Routine PASS items do
 
 # 4. Shopify discovery — NONE
 
-For each accepted tank ID:
+For each accepted tank ID, call `nta-product-resolver` using the normalized tank ID and live Shopify evidence. Then:
 
 1. Query Shopify by exact normalized tank ID.
 2. Confirm exactly one existing individual-Betta product.
@@ -318,7 +328,7 @@ Do not overwrite existing output unless:
 
 # 7. Shopify Files and mutation — NONE
 
-For each confirmed Product ID:
+For each confirmed Product ID, build an explicit authorised change set. Submit it through `nta-shopify-write-verifier`; its writer phase may use the stable typed media and inventory functions below.
 
 1. Query Shopify Files first.
 2. Reuse an exact READY asset when identity is established by stable file metadata/hash/name association.
@@ -351,7 +361,7 @@ No AI should generate routine GraphQL/REST payloads dynamically once the impleme
 
 # 8. Read-back verification — NONE
 
-Freshly query Shopify after each product mutation.
+Freshly query Shopify after each product mutation through the verifier's independent auditor phase, then perform these Betta-specific assertions.
 
 Verify with exact assertions:
 

@@ -1,10 +1,14 @@
 ---
 name: "nta-product-identity-resolver"
-version: "1.0"
-description: "Resolve NTA product and variant identity, supplier mappings, SKU relationships, and duplicate risk before downstream product actions."
+version: "1.1"
+description: "Compatibility entry point for the canonical nta-product-resolver identity, supplier mapping, SKU, and duplicate-risk contract."
 ---
 
-# NTA Product Identity Resolver — v1.0
+# NTA Product Identity Resolver — v1.1
+
+## Compatibility status
+
+`nta-product-resolver` is the canonical module for new workflows. This skill remains available for existing callers and uses the same match priority, output contract, duplicate prevention, and review gates. Do not add independent rules here; update the canonical resolver contract instead.
 
 ## Purpose
 

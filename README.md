@@ -2,14 +2,22 @@
 
 This private repository is the source of truth for David's custom OpenClaw skills.
 
-## NTA product system
+## NTA automation system
 
-Use `nta-product-orchestrator` as the top-level router for product work. It delegates to canonical modules rather than duplicating domain rules.
+Use `nta-automation-orchestrator` as the top-level router for all non-financial NTA automation. Product work enters `nta-product-orchestrator`; specialist workflows retain their own intake and external-system semantics, but consume shared modules rather than copy product or Shopify rules.
 
-Core product modules:
+Financial, debt, repayment, banking, and accounting workflows are deliberately outside this repository architecture.
 
-- `nta-product-orchestrator`
-- `nta-product-identity-resolver`
+### Control plane
+
+- `nta-automation-orchestrator` — selects the workflow, establishes the job envelope and completion contract.
+- `adaptive-model-router` — selects a configured execution route; models never receive authority merely because they are expensive.
+- `nta-product-orchestrator` — coordinates product-domain modules.
+
+### Canonical shared modules
+
+- `nta-product-resolver` — canonical exact product/variant resolution and duplicate prevention.
+- `nta-product-identity-resolver` — compatibility entry point for the resolver.
 - `nta-product-classifier`
 - `nta-supplier-unit-cost-normalizer`
 - `nta-retail-pricing-standard`
@@ -20,8 +28,9 @@ Core product modules:
 - `nta-product-merchandising`
 - `nta-product-metafields`
 - `nta-product-exception-gate`
-- `nta-shopify-product-writer`
-- `nta-product-qa-auditor`
+- `nta-shopify-write-verifier` — canonical write boundary: authorised change set → write → fresh read-back assertion.
+- `nta-shopify-product-writer` — write-phase implementation used by the verifier.
+- `nta-product-qa-auditor` — verification-phase implementation used by the verifier.
 
 Specialist product workflows that sit on top of the modular system:
 
@@ -29,12 +38,16 @@ Specialist product workflows that sit on top of the modular system:
 - `nta-inventory-update`
 - `nta-betta-picture-processing-v2` (exposes `betta-picture-processing`)
 - `nta-individual-betta-shopify-update`
+- `nta-dropship-order-processing`
+- `nta-shipping-fulfilment`
 
 Core architecture rule:
 
 **Skills decide. Writers write. Auditors verify.**
 
 Physical inventory and customer availability/preorder state are separate concerns. Product-domain rules should have one canonical source of truth and should be referenced by specialist workflows rather than copied into them.
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) for routing, ownership and model-cost rules, and [GAPS_AND_DUPLICATES.md](GAPS_AND_DUPLICATES.md) for the current migration register.
 
 ## Other active skills
 

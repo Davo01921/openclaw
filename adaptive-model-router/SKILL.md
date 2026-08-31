@@ -7,6 +7,8 @@ description: "Routes deep tasks through Gemini→OpenAI failover and keeps light
 
 Route each request through a configured agent topology with verified fallback behavior.
 
+This is the shared execution-routing module for `nta-automation-orchestrator`. It selects a configured model route; it never grants product, Shopify, supplier, shipping, or customer-notification authority.
+
 ## Active routes
 
 - **Mundane/lightweight:** handle on the stable `main` agent (`openai/gpt-5.6-sol`). Do not route to Llama until a constrained `light` agent is configured with no tools, lean local-model mode, and sufficient Ollama context.
@@ -14,7 +16,7 @@ Route each request through a configured agent topology with verified fallback be
 
 ## Procedure
 
-1. Classify the request:
+1. First classify deterministic work (arithmetic, payload construction, API calls, idempotency, comparisons and verification) as `NONE`; execute it without a model. Then classify any remaining request:
    - Mundane/lightweight: short rewriting, formatting, extraction, simple summaries, routine lookups, or low-risk clerical work.
    - In-depth: multi-step reasoning, coding, research synthesis, architecture, debugging, or consequential decisions.
 2. Verify the target agent/model availability before dispatch. Never invent model identifiers.

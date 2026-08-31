@@ -13,7 +13,7 @@ This is a specialist entry-point workflow. It does not own product-domain rules 
 
 Read and use `nta-product-orchestrator` first. Delegate each line to the applicable modules:
 
-- `nta-product-identity-resolver`
+- `nta-product-resolver`
 - `nta-product-classifier`
 - `nta-supplier-unit-cost-normalizer`
 - `nta-retail-pricing-standard` when a retail-price decision is needed
@@ -21,8 +21,7 @@ Read and use `nta-product-orchestrator` first. Delegate each line to the applica
 - `nta-product-availability` when supplier availability/orderability changes
 - `nta-product-metafields`
 - `nta-product-exception-gate`
-- `nta-shopify-product-writer`
-- `nta-product-qa-auditor`
+- `nta-shopify-write-verifier`
 
 Do not copy or reinterpret those modules' rules here.
 
@@ -74,7 +73,7 @@ A purchase order is not proof of physical stock.
 
 ## Product matching
 
-Use `nta-product-identity-resolver`. SKU/barcode/supplier SKU evidence outranks title similarity. An unmatched supplier line is not automatic authority to create a new Shopify product.
+Use `nta-product-resolver`. SKU/barcode/supplier SKU evidence outranks title similarity. An unmatched supplier line is not automatic authority to create a new Shopify product.
 
 ## Cost and retail
 
@@ -118,7 +117,7 @@ If physical state is unclear, default to `ORDERED` rather than falsely increasin
 
 ## Write and verification
 
-All approved Shopify mutations must go through `nta-shopify-product-writer` and then `nta-product-qa-auditor`.
+All approved Shopify mutations must go through `nta-shopify-write-verifier`. The verifier invokes the writer and independent read-back auditor.
 
 Do not report completion until live Shopify has been re-read and all intended changes pass QA.
 

@@ -13,7 +13,7 @@ This is a specialist intake workflow, not the source of truth for product-domain
 
 Read `nta-product-orchestrator` first and use:
 
-- `nta-product-identity-resolver`
+- `nta-product-resolver`
 - `nta-product-classifier`
 - `nta-supplier-unit-cost-normalizer` when supplier cost is supplied
 - `nta-retail-pricing-standard` when retail review is required
@@ -21,8 +21,7 @@ Read `nta-product-orchestrator` first and use:
 - `nta-product-availability`
 - `nta-product-metafields`
 - `nta-product-exception-gate`
-- `nta-shopify-product-writer`
-- `nta-product-qa-auditor`
+- `nta-shopify-write-verifier`
 
 Do not maintain separate pricing, preorder, or write rules here.
 
@@ -42,7 +41,7 @@ Parse where available:
 
 ## Workflow
 
-1. Resolve exact Shopify identity and duplicate risk with `nta-product-identity-resolver`.
+1. Resolve exact Shopify identity and duplicate risk with `nta-product-resolver`.
 2. Classify product and replenishment/one-off state with `nta-product-classifier`.
 3. If cost is supplied, normalize GST and units with `nta-supplier-unit-cost-normalizer`.
 4. If price review is required, use `nta-retail-pricing-standard` with normalized cost and current live price.
@@ -50,8 +49,7 @@ Parse where available:
 6. Resolve customer orderability/preorder separately with `nta-product-availability`.
 7. Map arrival date, tank/location and availability outputs with `nta-product-metafields`.
 8. Run `nta-product-exception-gate`.
-9. Apply approved changes only through `nta-shopify-product-writer`.
-10. Re-read and verify all changed fields using `nta-product-qa-auditor`.
+9. Apply and freshly verify approved changes only through `nta-shopify-write-verifier`.
 
 ## Intake-specific rules
 
@@ -64,6 +62,6 @@ Parse where available:
 
 ## Completion
 
-Do not mark complete until expected-vs-live Shopify state passes `nta-product-qa-auditor` for every changed field.
+Do not mark complete until `nta-shopify-write-verifier` returns verified expected-vs-live Shopify state for every changed field.
 
 Report genuine exceptions rather than guessing.

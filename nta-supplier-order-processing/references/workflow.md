@@ -50,6 +50,8 @@ Never use the pack number by itself to decide Shopify inventory. Compare the sup
 
 ## 5. Match Shopify
 
+Use `nta-product-resolver` as the canonical identity interface. The confidence labels below are supplier-intake evidence; Shopify write authority still requires the resolver's `RESOLVED` outcome.
+
 For each line search Shopify using, in order:
 
 1. supplier SKU / barcode mapped to Shopify SKU
@@ -124,6 +126,8 @@ Use physically received quantities after pack conversion. Follow the NTA invento
 Only process lines/quantities explicitly confirmed received. Keep the remainder outstanding.
 
 ## 10. Verification
+
+Submit the approved change set through `nta-shopify-write-verifier`, which invokes the writer and independent fresh read-back auditor. Do not call supplier intake complete from a successful mutation response.
 
 After writes, re-read every changed Shopify product/variant and verify:
 

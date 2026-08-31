@@ -12,7 +12,7 @@ Use the Shopify API access configured for Betta processing. Live Shopify is the 
 ## Required workflow
 
 1. Inspect every supplied photo and message. Determine the best-guess species/strain, quantity, and tank if visible or stated.
-2. Search live Shopify and match the exact active product and variant. Check nearby candidates and current inventory. Never guess an exact variant when the evidence is ambiguous.
+2. Resolve the exact active product and variant with `nta-product-resolver`. Check nearby candidates and current inventory. Never guess an exact variant when the evidence is ambiguous.
 3. When the fish or tank produces a clear exact Shopify match and quantity is known, proceed automatically without asking David for confirmation. Record the identification confidence and evidence in the order note.
 4. Create the loss as a Shopify order:
    - customer: `NTA Losses`
@@ -22,7 +22,7 @@ Use the Shopify API access configured for Betta processing. Live Shopify is the 
    - tags: `NTA Loss`, `Death`, and `Tank {tank}` when known
    - order note: fish, quantity, tank, cause, identification confidence, evidence, and source channel/context
 5. Process the order as paid and fulfilled so Shopify records the loss and removes the inventory through the order workflow.
-6. Reread the completed order and exact inventory item. Verify customer, line item, quantity, discount, zero total, paid status, fulfilment status, tags, note, and live available/on-hand/committed quantities.
+6. Submit authorised Shopify order/fulfilment changes through `nta-shopify-write-verifier`, then reread the completed order and exact inventory item. Verify customer, line item, quantity, discount, zero total, paid status, fulfilment status, tags, note, and live available/on-hand/committed quantities.
 7. Report the order number and verified before/after inventory values.
 
 ## Safety rules
