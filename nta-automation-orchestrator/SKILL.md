@@ -1,6 +1,6 @@
 ---
 name: "nta-automation-orchestrator"
-version: "1.0"
+version: "1.1"
 description: "Route non-financial NTA automation jobs through specialist workflows and shared product, Shopify, and model-delegation modules."
 ---
 
@@ -39,9 +39,16 @@ Use the supplier document fingerprint, Shopify order ID, Discord thread ID, or e
 | Supplier purchase order/invoice | `nta-supplier-order-processing` | `nta-product-orchestrator` |
 | Standard stock intake | `nta-inventory-update` | `nta-product-orchestrator` |
 | Individual or batch Betta media/intake | `nta-betta-picture-processing-v2` | resolver, inventory/availability/metafields, write verifier |
+| Shopify dropship trigger / recent-order scan | `nta-dropship-order-trigger` | dispatches candidates to `nta-dropship-order-processing`; no direct Shopify writes |
 | Dropship order | `nta-dropship-order-processing` | resolver and write verifier only for authorised product/order updates |
 | Shipping/fulfilment | `nta-shipping-fulfilment` | write verifier only for authorised Shopify fulfilment state |
 | Death/loss order | `nta-death-loss-order` | exact variant resolution and fresh Shopify verification |
+
+## Dropship trigger rule
+
+When the source is a Shopify order event, scheduled recent-order scan, or manual order recheck intended to detect dropship work, route first to `nta-dropship-order-trigger`. The trigger may only detect and dispatch. Supplier hand-off remains exclusively owned by `nta-dropship-order-processing` and its configured supplier adapter.
+
+A webhook payload is a wake-up signal, not authoritative product state. Before a consequential action, downstream processing must re-read the live Shopify order and live dropship product metafields.
 
 ## Dispatch rules
 
