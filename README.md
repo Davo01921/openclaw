@@ -39,6 +39,7 @@ Specialist product workflows that sit on top of the modular system:
 - `nta-betta-picture-processing-v2` (exposes `betta-picture-processing`)
 - `nta-individual-betta-shopify-update`
 - `nta-dropship-order-processing`
+  - supplier adapter: `nta-dropship-supplier-aqua-premium`
 - `nta-shipping-fulfilment`
 
 Core architecture rule:
