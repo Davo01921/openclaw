@@ -1,7 +1,6 @@
 ---
 name: "betta-picture-processing"
-description: "Cost-optimised NTA Betta workflow: deterministic processing first, cheap vision for catalogue work, Sol only for genuine exceptions."
-version: "2.0.0"
+description: "Cost-optimised NTA Betta workflow with mandatory image-fidelity QA before Shopify upload."
 user-invocable: true
 ---
 
@@ -306,19 +305,56 @@ use the configured image-editing capability for that fish only.
 
 Never instruct a generative image model to redesign, recolour, extend, replace, beautify, or recreate the Betta.
 
-## Image identity checks — NONE + cheap vision only when needed
+A generated or edited result is only a candidate. It must pass the same identity and presentation QA below before it may be uploaded. If an image-editing result changes pose, anatomy, finnage, markings, colour distribution, or unique visible traits, reject it immediately and fall back to genuine source pixels or mark `FIX_REQUIRED`.
 
-Programmatically verify:
-- dimensions;
-- filenames;
-- expected tank label text;
-- file existence;
-- non-zero size;
-- one hero/reference pair per accepted tank.
+Do not upscale a crop beyond credible source detail. Prefer a smaller authentic fish with clean negative space over a large soft, noisy, or artificially sharpened fish.
 
-Use `VISION_CHEAP` to compare hero/reference/source only where identity fidelity cannot be established deterministically.
+## Mandatory pre-upload image QA — NONE + VISION_CHEAP
 
-Escalate to Sol only when a material identity conflict remains after cheap comparison.
+Run this gate for every hero and reference before any Shopify Files upload.
+
+### Deterministic checks
+
+Verify:
+- exact 2048 × 2048 output dimensions where required;
+- expected filenames;
+- file existence and non-zero size;
+- one hero/reference pair per accepted tank;
+- expected tank ID and photo date label text;
+- a single clean label render with no duplicated, clipped, ghosted, malformed, or overlapping glyphs;
+- the complete fish is inside frame with room around every fin;
+- no unintended black bars, asymmetric padding, neighbouring tanks, or accidental crop boundaries;
+- no obvious overexposure, crushed detail, excessive saturation, excessive sharpening, or enlargement artifacts.
+
+Dimensions, filenames, and file existence alone are never sufficient for PASS.
+
+### Mandatory visual comparison
+
+Use `VISION_CHEAP` to compare source, hero, and reference side by side at useful/full resolution for every fish. Return structured PASS/FAIL fields for:
+
+- same fish identity;
+- same pose and orientation;
+- same body proportions and anatomy;
+- same fin shape, length, edges, and extent;
+- same scale pattern and unique markings;
+- photo-faithful colour distribution;
+- complete subject framing;
+- realistic detail without blur, plastic texture, halos, noise amplification, or invented detail;
+- clean background and professional composition;
+- correct, legible, single-rendered label.
+
+Any material change to fish identity, pose, anatomy, finnage, markings, or colour is an automatic rejection. A changed fish may never be accepted because it looks cleaner or more attractive.
+
+If the cheap comparison is uncertain, run one focused cheap retry. Escalate to Sol only when material identity ambiguity remains. If still unresolved, set `FIX_REQUIRED_IMAGE_QA` or `BLOCKED_IMAGE_IDENTITY`.
+
+### Gate outcome
+
+Persist the QA result and evidence in the batch ledger.
+
+- All deterministic and visual assertions PASS → continue to Shopify upload.
+- Presentation defect with intact identity → rebuild deterministically and rerun the full gate.
+- Identity change, invented detail, or unresolved comparison → reject the candidate; do not upload.
+- Any failed image assertion → item state `FIX_REQUIRED`; the batch may not be archived or marked DONE.
 
 Do not overwrite existing output unless:
 - it belongs to the same current source hash and is a resumable partial batch; or
@@ -357,6 +393,23 @@ For each confirmed Product ID, build an explicit authorised change set. Submit i
 
 No AI should generate routine GraphQL/REST payloads dynamically once the implementation has stable typed functions for these mutations.
 
+## Correcting an already-live bad hero
+
+When David explicitly requests correction of an already-live hero:
+
+1. Rebuild a versioned candidate from the genuine archived source.
+2. Run the complete mandatory pre-upload image QA.
+3. Query fresh live product/media state and protect Product ID, tank mapping, title, price, cost, description, vendor, product type, handle, status, inventory, arrival date, reference media, and useful extra angles.
+4. Upload the corrected candidate as a new READY Shopify File.
+5. Add it as product media and wait for READY.
+6. Feature and move the corrected hero to Image 1.
+7. Keep the genuine natural reference at Image 2.
+8. Delete only the specifically superseded bad hero after the replacement is READY and ordered.
+9. Perform the complete fresh read-back verification.
+10. Preserve the rejected candidate only for diagnosis; never upload it.
+
+A failed correction leaves the existing live media intact whenever possible and records `FIX_REQUIRED`.
+
 ---
 
 # 8. Read-back verification — NONE
@@ -379,6 +432,9 @@ Verify with exact assertions:
 - hero is featured;
 - reference is Image 2;
 - media belong to the intended fish;
+- the uploaded hero is the exact image-QA-approved file/version;
+- the approved hero and reference still satisfy the mandatory visual identity assertions;
+- label rendering remains correct in the delivered asset;
 - no unexpected media loss.
 
 Classify each ledger item:
@@ -517,39 +573,3 @@ Batch summary:
 - `total_ai_cost_usd`
 - `pass_betta_count`
 - `ai_cost_per_pass_betta_usd`
-
-If exact provider cost is unavailable, calculate an estimate from a configurable price table. Mark estimates as estimates.
-
-Never hard-code model prices into the workflow logic. Store them in configuration so pricing can be updated without rewriting this skill.
-
-## Cost guard
-
-Default policy:
-
-- routine Sol calls permitted: `0`;
-- Sol calls only from an explicit escalation branch;
-- if Sol escalation exceeds `max(2, ceil(batch_fish_count * 0.15))`, stop further Sol escalation and report `COST_GUARD_TRIGGERED` unless continued escalation is necessary to prevent a destructive Shopify action;
-- a destructive-risk ambiguity always stops rather than guessing.
-
----
-
-# 13. Final safety invariants
-
-Never:
-
-- guess tank IDs;
-- shift photos to adjacent tanks;
-- infer identity from upload order;
-- create Shopify products unless explicitly requested;
-- change live title/price/cost merely because the CSV proposes them;
-- overwrite images casually;
-- recreate a "natural reference" with AI;
-- let a generative edit materially change the fish;
-- treat a Shopify mutation request as successful without read-back;
-- ignore `userErrors`;
-- archive partial batches;
-- let cheap-model confidence override deterministic contradictory evidence;
-- let Sol override missing evidence with a guess;
-- expose credentials.
-
-The goal is not the fewest possible model calls at any cost. The goal is the **lowest-cost workflow that preserves fish identity, Shopify integrity, and auditability**.
