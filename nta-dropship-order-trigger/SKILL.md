@@ -1,6 +1,6 @@
 ---
 name: "nta-dropship-order-trigger"
-version: "1.0"
+version: "1.1"
 description: "Detect recent Shopify orders that may contain dropship items and dispatch them idempotently to the NTA dropship order processor."
 ---
 
@@ -20,6 +20,17 @@ This module detects candidate orders only. It never sends supplier orders and ne
 
 Until a verified public webhook receiver exists, use `poll` as the production-compatible fallback.
 
+## Activation boundary
+
+Production configuration MUST set a durable `activation_at` timestamp before automatic supplier hand-off is enabled.
+
+- Orders with `createdAt >= activation_at` may follow normal automatic processing.
+- Orders created before `activation_at` are historical/backfill items and MUST NOT automatically submit to a supplier, even when their dropship metadata is valid and no Shopify supplier status is recorded.
+- Historical candidates may be evaluated in `dry_run` or `manual` mode and returned as `HISTORICAL_REVIEW_REQUIRED`.
+- Changing or removing `activation_at` must not be used to force a resend. A historical order needs an explicit manual recovery decision after checking external supplier evidence.
+
+This boundary protects against duplicate supplier orders that were handled manually before this automation existed.
+
 ## Polling contract
 
 Default scan window: orders created or updated since the last successful checkpoint, with a 10-minute overlap to protect against clock skew and delayed writes.
@@ -28,6 +39,7 @@ Persist a checkpoint containing:
 
 ```yaml
 checkpoint:
+  activation_at:
   last_successful_scan_at:
   last_seen_order_created_at:
   last_seen_order_id:
@@ -52,6 +64,69 @@ Read recent orders from Shopify including at minimum:
 
 The runtime may use Shopify GraphQL, a native Shopify connector, or an equivalent verified store adapter. It must read live product metafields; vendor name alone is not a qualification signal.
 
+### Validated Shopify Admin GraphQL read shape
+
+This query shape was schema-validated against the connected Shopify Admin API on 2026-09-01:
+
+```graphql
+query DropshipDryRun($ids: [ID!]!) {
+  nodes(ids: $ids) {
+    ... on Order {
+      id
+      name
+      createdAt
+      updatedAt
+      cancelledAt
+      displayFinancialStatus
+      displayFulfillmentStatus
+      tags
+      dropshipStatus: metafield(namespace: "custom", key: "dropship_status") {
+        value
+        type
+      }
+      supplierOrderNumber: metafield(namespace: "custom", key: "supplier_order_number") {
+        value
+        type
+      }
+      lineItems(first: 50) {
+        nodes {
+          id
+          title
+          variantTitle
+          sku
+          currentQuantity
+          unfulfilledQuantity
+          product {
+            id
+            title
+            vendor
+            dropship: metafield(namespace: "custom", key: "dropship") {
+              value
+              type
+            }
+            dropshipSupplier: metafield(namespace: "custom", key: "dropship_supplier") {
+              value
+              type
+            }
+          }
+          variant {
+            id
+            title
+            sku
+          }
+        }
+        pageInfo {
+          hasNextPage
+          endCursor
+        }
+      }
+    }
+  }
+}
+```
+
+If `lineItems.pageInfo.hasNextPage` is true, the candidate is incomplete until all pages are read. Do not make a supplier hand-off decision from a truncated order.
+
 ## Fast rejection rules
 
 Skip without downstream dispatch when any of the following is true:
@@ -64,9 +139,11 @@ Skip without downstream dispatch when any of the following is true:
 
 Do not use `supplier_order_number` alone to infer fulfilment.
 
+An order older than `activation_at` is not a fast rejection; return `HISTORICAL_REVIEW_REQUIRED` so it remains visible without automatic submission.
+
 ## Dispatch rules
 
-For every remaining candidate:
+For every remaining candidate created at or after `activation_at`:
 
 1. Create an orchestrator job with `source: shopify` and workflow `nta-dropship-order-processing`.
 2. Use Shopify order ID as the trigger correlation key.
@@ -98,6 +175,7 @@ A trigger-layer duplicate may safely dispatch for re-evaluation only if the proc
 
 - Shopify read failure: `BLOCKED`, retain checkpoint.
 - Partial line-item/metafield read: `REVIEW_REQUIRED`, do not send supplier request.
+- Historical qualifying order: `HISTORICAL_REVIEW_REQUIRED`, no automatic supplier submission.
 - Processor returns `AMBIGUOUS`/`BLOCKED`/`REVIEW_REQUIRED`: retain the affected order in the retry/review queue and do not advance irreversibly past it.
 - Processor returns `NO_ELIGIBLE_LINES`, `SENT_TO_SUPPLIER`, or `SUPPLIER_ACKNOWLEDGED`: record result and continue.
 
@@ -106,6 +184,7 @@ A trigger-layer duplicate may safely dispatch for re-evaluation only if the proc
 ```yaml
 trigger_result:
   mode: poll | webhook | manual
+  activation_at:
   scan_started_at:
   scan_completed_at:
   orders_scanned:
@@ -115,6 +194,7 @@ trigger_result:
     cancelled:
     already_sent:
     acknowledged:
+  historical_review_orders: []
   review_orders: []
   blocked_orders: []
   checkpoint_committed: true | false
@@ -128,6 +208,7 @@ This trigger never:
 - mutates Shopify;
 - marks fulfilment;
 - invents a supplier SKU;
-- retries an ambiguous external submission.
+- retries an ambiguous external submission;
+- auto-submits historical orders from before `activation_at`.
 
 All consequential actions remain in the specialist processor and supplier adapter behind `nta-shopify-write-verifier`.
