@@ -2,6 +2,10 @@
 
 This private repository is the source of truth for David's custom OpenClaw skills.
 
+## Operating principles
+
+Before reasoning about or executing work from this repository, consult [`SOUL.md`](SOUL.md). It defines the default decision style, challenge standard, evidence discipline, communication approach, and operating philosophy for David's OpenClaw/Codex workflows. Skills provide task-specific rules; `SOUL.md` provides the behavioural layer above them.
+
 ## NTA automation system
 
 Use `nta-automation-orchestrator` as the top-level router for all non-financial NTA automation. Product work enters `nta-product-orchestrator`; specialist workflows retain their own intake and external-system semantics, but consume shared modules rather than copy product or Shopify rules.
