@@ -86,18 +86,17 @@ Where used, set:
 
 If established NTA rules require preserving an active tank assignment, preserve it and explain that choice.
 
-## Labels
+## DYMO tank labels
 
-For standard intake labels include:
+When a DYMO livestock tank label is requested, call `nta-dymo-tank-label` after
+the Shopify write/read-back boundary (or against the planned Shopify state in a
+dry run). Its exact two-line output is the label contract; do not add vendor,
+cost, tank/location, a physical-arrival date, or availability text.
 
-- product name
-- vendor
-- cost
-- retail
-- arrival date
-- tank/location
-
-Physical label counts follow received units: 10 pairs = 10 labels, 200 shrimp = 200 labels. If David asks for a two-line livestock shelf label, use the existing NTA two-line convention. Do not mix formats without instruction.
+Use `custom.arrival_date` as the single arrival-date source. Quantity is the
+received count in the exact Shopify selling unit. Physical label counts follow
+received units: 10 pair units = 10 labels and 200 individually sold shrimp =
+200 labels.
 
 ## Mandatory final audit
 

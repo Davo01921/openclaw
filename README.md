@@ -31,6 +31,7 @@ Financial, debt, repayment, banking, and accounting workflows are deliberately o
 - `nta-shopify-write-verifier` — canonical write boundary: authorised change set → write → fresh read-back assertion.
 - `nta-shopify-product-writer` — write-phase implementation used by the verifier.
 - `nta-product-qa-auditor` — verification-phase implementation used by the verifier.
+- `nta-dymo-tank-label` — read-only deterministic two-line DYMO livestock tank-label formatter; Shopify `custom.arrival_date` is its only arrival-date source.
 
 Specialist product workflows that sit on top of the modular system:
 

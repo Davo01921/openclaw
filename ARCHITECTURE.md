@@ -32,6 +32,7 @@ nta-automation-orchestrator
 | Description and content QA | `nta-product-description-standard` | Betta and catalogue workflows |
 | Physical stock | `nta-inventory-state` | availability and shipping |
 | Customer availability/preorder | `nta-product-availability` | inventory and supplier parser |
+| DYMO tank-label rendering | `nta-dymo-tank-label` | inventory intake and product orchestrator |
 | Shopify write/read-back | `nta-shopify-write-verifier` | every specialist workflow |
 
 ## Cost-efficient delegation

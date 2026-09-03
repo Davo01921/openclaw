@@ -34,6 +34,8 @@ Use these modules where applicable:
 10. `nta-product-metafields` — map approved product state to Shopify metafields.
 11. `nta-shopify-write-verifier` — the only canonical Shopify mutation boundary: authorised write then fresh live-state assertion.
 12. `nta-product-exception-gate` — AUTO_APPROVE / WARNING / REVIEW_REQUIRED / BLOCK.
+13. `nta-dymo-tank-label` — deterministic read-only two-line DYMO tank-label
+    output from approved livestock intake state and Shopify arrival-date state.
 
 Existing specialist workflows remain valid entry points but must call these modules instead of maintaining conflicting copies of the same rules:
 
@@ -87,6 +89,8 @@ product:
   pricing:
     current_price:
     proposed_price:
+    bulk_price:
+    bulk_min_quantity:
     decision:
     confidence:
 
@@ -128,6 +132,13 @@ product:
     warnings: []
     errors: []
     final_status:
+
+  labels:
+    dymo_tank:
+      status:
+      text:
+      source:
+      warnings: []
 ```
 
 A module may update only its own responsibility unless explicitly defined otherwise.
@@ -154,7 +165,7 @@ Do not increase available inventory from an order alone.
 
 Run:
 
-`supplier-order parser/intake → identity → classifier → cost normalizer → inventory state → pricing if required → availability → metafields → exception gate → Shopify writer → QA auditor`
+`supplier-order parser/intake → identity → classifier → cost normalizer → inventory state → pricing if required → availability → metafields → exception gate → Shopify writer → QA auditor → DYMO tank label when requested`
 
 ### Existing-product catalogue cleanup
 
@@ -188,6 +199,10 @@ Betta image processing remains specialised and is not replaced by this orchestra
 - Description generation must consume verified facts rather than invent missing specifications.
 - Shopify Writer must receive an explicit authorised field list.
 - QA Auditor must independently re-read changed fields after writing.
+- DYMO tank-label generation is read-only and occurs after QA in write mode so
+  it consumes the verified `custom.arrival_date`. In dry-run mode it consumes
+  the proposed value for that same field; it must not invent a second arrival
+  or availability date.
 
 ## Write safety
 

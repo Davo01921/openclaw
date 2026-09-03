@@ -37,7 +37,7 @@ Use the supplier document fingerprint, Shopify order ID, Discord thread ID, or e
 |---|---|---|
 | Catalogue, pricing, description, inventory or availability | `nta-product-orchestrator` | `nta-product-resolver`, `nta-shopify-write-verifier` |
 | Supplier purchase order/invoice | `nta-supplier-order-processing` | `nta-product-orchestrator` |
-| Standard stock intake | `nta-inventory-update` | `nta-product-orchestrator` |
+| Standard stock intake (including requested DYMO tank labels) | `nta-inventory-update` | `nta-product-orchestrator`; labels use `nta-dymo-tank-label` after verified Shopify state, or planned Shopify state in dry-run mode |
 | Individual or batch Betta media/intake | `nta-betta-picture-processing-v2` | resolver, inventory/availability/metafields, write verifier |
 | Dropship order | `nta-dropship-order-processing` | resolver and write verifier only for authorised product/order updates |
 | Shipping/fulfilment | `nta-shipping-fulfilment` | write verifier only for authorised Shopify fulfilment state |
