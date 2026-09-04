@@ -22,7 +22,7 @@ Process one Discord thread as one traceable batch. Produce a polished studio her
 
 Read [references/state-machine.md](references/state-machine.md) before processing and [references/shopify-contract.md](references/shopify-contract.md) before any Shopify write.
 
-Use `scripts/betta_batch.py` as the authoritative transition and evidence validator. A model's prose verdict never substitutes for a successful validator exit.
+Use `scripts/vision_review.py` for recorded catalogue/QA inference and `scripts/betta_batch.py` as the authoritative transition and evidence validator. A model's prose verdict never substitutes for a successful validator exit.
 
 ## 1. Intake and traceability
 

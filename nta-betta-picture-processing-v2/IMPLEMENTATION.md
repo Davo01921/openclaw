@@ -39,6 +39,10 @@ Build or adapt these typed operations. `scripts/betta_batch.py` provides the
 authoritative local validation, transition gate, and mutation-envelope check;
 runtime adapters remain responsible for Discord, image editing, and Shopify API calls:
 
+`scripts/vision_review.py` is the supported provider route. It attaches the actual
+image files to a stateless OpenClaw model invocation, records hashes and invocation
+evidence, and falls back to the next configured reviewer on provider failure.
+
 - `collect_discord_batch(thread_id)`
 - `save_source_attachment(...)`
 - `hash_source(path)`
