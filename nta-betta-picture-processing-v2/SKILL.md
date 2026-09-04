@@ -1,575 +1,134 @@
 ---
 name: "betta-picture-processing"
-description: "Cost-optimised NTA Betta workflow with mandatory image-fidelity QA before Shopify upload."
+description: "Process labelled Betta photos into studio heroes, update matched Shopify products, verify, and archive the batch."
 user-invocable: true
 ---
 
-# NTA Betta Picture Processing v2
+# NTA Betta Picture Processing
 
-Run one end-to-end workflow for labelled individual-Betta photographs while minimising AI cost without weakening identity, Shopify, or archival integrity.
+Process one Discord thread as one traceable batch. Produce a polished studio hero and a natural reference for each identifiable fish, change only the authorised Shopify fields, verify fresh live state, then archive.
 
-## Core operating rule
+## Non-negotiable contract
 
-Use the cheapest reliable mechanism for each step:
+- Match every fish through `Discord attachment → source hash → physical tank/date → exact Shopify Product ID`.
+- Create a catalogue-style hero matching [references/image-standard.md](references/image-standard.md); do not require pixel-identical pose preservation.
+- Change the product title to the accepted photo-based suggestion.
+- Preserve the complete description, live retail price, live cost, vendor, product type, handle, and status exactly.
+- Set `custom.arrival_date` from the physical photo label in `YYYY-MM-DD`.
+- Set individual-fish inventory to exactly `1`.
+- Keep the natural source-derived reference as Image 2.
+- Stop before Shopify whenever identity, image QA, authorised changes, or required runtime components are unresolved.
+- Never create a product, alter protected fields, or archive a failed item.
 
-1. **Code / deterministic tools first.**
-2. **Cheap vision model for genuine visual interpretation.**
-3. **Retry cheap vision once when uncertainty may be recoverable.**
-4. **GPT-5.6 Sol only for material ambiguity, conflict, or high-consequence diagnosis.**
-5. **Ask David only when model escalation still cannot establish a safe answer.**
+Read [references/state-machine.md](references/state-machine.md) before processing and [references/shopify-contract.md](references/shopify-contract.md) before any Shopify write.
 
-Do not use GPT-5.6 Sol for routine file handling, CSV construction, Shopify API calls, formatting, resizing, renaming, archiving, ordinary status messages, or successful verification.
+## 1. Intake and traceability
 
-Do not spawn one subagent per fish. Treat one Discord thread as one batch and process fish in a single cheap-model batch pass where practical.
+Accept source photographs only from the designated private Discord processing thread or `/Users/davidlo/Documents/Betta Processing`. Treat one thread as one batch; never mix messages, threads, prior batches, or filesystem ordering.
 
-## Shared-module integration
+Save originals without overwriting and record batch/thread/message/attachment IDs, local path, MIME type, byte size, and SHA-256. Reject non-images from fish identification while retaining their ledger entries.
 
-This workflow remains the canonical owner of Betta image integrity, batch ledger, media ordering, archive behaviour and Discord reporting. For Shopify product state it must use the shared contracts:
+**Complete when:** every candidate source has a stable ID and hash and the accepted source set is unique.
 
-- resolve the exact individual product/variant through `nta-product-resolver` before mutation;
-- use `nta-inventory-state`, `nta-product-availability` and `nta-product-metafields` for the individual-fish inventory, availability and arrival-date decision;
-- submit the authorised media/inventory/metafield change set through `nta-shopify-write-verifier`.
+## 2. Visual catalogue
 
-The specialised identity assertions below are additional protected-field checks; they do not replace the shared write/read-back operation record.
+Use the cheapest configured image-capable model for the first pass. For each source return structured tank ID, physical photo date, one-fish visibility, proposed title, optional sex, field confidences, and uncertainty reasons.
 
-Read [references/delegation-policy.md](references/delegation-policy.md) before processing.
-Read [references/state-machine.md](references/state-machine.md) before any Shopify write.
-For batches or handle anomalies, also read [references/batch-integrity.md](references/batch-integrity.md).
+Normalize tank IDs (`2 BT 14` → `2BT14`) and dates (`21/8/2026` → `2026-08-21`). Never infer an adjacent tank.
 
----
+Build the title only from visible dominant colour, visible pattern, and apparent tail form. Add `Male` or `Female` only at confidence `>= 0.85`; otherwise omit sex. Do not claim genetics, lineage, grade, colour stability, or a specialist variety that the photograph does not support.
 
-# 0. Model roles
+Accept tank/date at confidence `>= 0.90`. At `0.70–0.89`, run one focused cheap retry. Below `0.70`, retry once and then escalate the minimal evidence to the configured reasoning reviewer. If unresolved, mark `BLOCKED_VISUAL`.
 
-The implementation must expose these logical roles. Provider/model IDs are configuration, not hard-coded workflow logic.
+Send David the mapping preview:
 
-- `VISION_CHEAP`: default visual worker. Prefer the configured Qwen vision-capable model.
-- `VISION_CHEAP_RETRY`: same model or another cheap vision-capable model.
-- `REASONING_ESCALATION`: GPT-5.6 Sol.
-- `UTILITY_CHEAP`: low-cost text model for concise Discord/status wording where code templates are insufficient.
-- `NONE`: deterministic code/tool execution; no model call.
+`source → tank → photo date → proposed new title → sex/confidence`
 
-If the configured Qwen model cannot accept images, route visual work to the cheapest configured image-capable model rather than silently sending every image to Sol.
+Routine accepted mappings do not require approval unless David asks for an approval gate.
 
-The main OpenClaw agent may remain GPT-5.6 Sol, but this skill must not treat the main model as permission to use Sol for every stage.
+**Complete when:** every item is accepted with evidence or explicitly blocked, and the preview has been sent before writes.
 
----
+## 3. Shopify discovery
 
-# 1. Intake — NONE
+Resolve each accepted tank against live Shopify. Require exactly one existing individual-Betta product; never create one implicitly. Record the Product ID and a full pre-write snapshot: title, description, price, cost, vendor, product type, handle, status, media/order, inventory state, and arrival date.
 
-## Discord source
+Use Product ID as primary identity. Treat stale-looking handles or conflicting titles as evidence to diagnose, not permission to switch products. Follow [references/batch-integrity.md](references/batch-integrity.md).
 
-- Discord intake uses only the private channel ID David designates for `#betta-processing`; never trust a channel name alone.
-- One Discord thread = one batch.
-- Collect all thread attachments until David posts exactly or semantically equivalently: `@FRED process this Betta batch`.
-- Process only genuine source photographs attached in that thread.
-- Never mix attachments from other threads, channels, messages, filesystem order, or prior batches.
-- Preserve Discord attachment/message IDs in the batch ledger so every local file remains traceable to its source.
+**Complete when:** every accepted tank maps unambiguously to one snapshotted Product ID or is `BLOCKED_PRODUCT`.
 
-## Local paths
+## 4. CSV
 
-- Local fallback source: `/Users/davidlo/Documents/Betta Processing`
-- Enhanced output: `/Users/davidlo/Documents/Betta Processed`
-- Inventory CSV: `/Users/davidlo/Documents/Betta Processing/betta-inventory.csv`
-- Archive root: `/Users/davidlo/Documents/Archived Bettas`
-- Shopify credentials: `/Users/davidlo/.openclaw/workspace/nta-betta-picture-processor/.env`
-
-## Intake actions
-
-Use deterministic filesystem/Discord tooling only.
-
-1. Create a unique `batch_id`.
-2. Save Discord originals into the source folder without overwriting collisions.
-3. Hash every source file with SHA-256.
-4. Record:
-   - batch ID
-   - Discord thread ID
-   - Discord message ID
-   - attachment ID/name
-   - local source path
-   - SHA-256
-   - file size
-   - MIME/type
-5. Reject non-image attachments from fish identification while retaining them in the batch ledger.
-6. Never use upload sequence to infer tank identity.
-
-No AI call is permitted in this stage.
-
----
-
-# 2. Visual catalogue — VISION_CHEAP
-
-Open every genuine source photograph and return structured data only.
-
-For each source image determine:
-
-- normalized physical tank ID, e.g. `2 BT 14` → `2BT14`;
-- physical photo date;
-- whether one identifiable Betta is visible;
-- concise customer-friendly proposed title based only on visible colour, pattern, and apparent tail form;
-- probable sex: `Male`, `Female`, or `Uncertain`;
-- confidence for:
-  - tank ID
-  - photo date
-  - fish identity
-  - title
-  - sex
-- short reason for any uncertainty.
-
-Do not make unsupported strain, genetic, grade, lineage, or colour-stability claims.
-
-## Visual confidence gates
-
-### Tank ID
-- `>= 0.90`: accept.
-- `0.70–0.89`: run one cheap second pass focused only on the physical label.
-- `< 0.70`: cheap retry, then escalate to Sol if still unresolved.
-- Never infer an adjacent tank number.
-
-### Photo date
-- `>= 0.90`: accept.
-- `0.70–0.89`: cheap focused retry.
-- `< 0.70`: cheap retry, then Sol.
-- If still unclear: `BLOCKED`.
-
-### Fish identity
-If the image may contain multiple fish, reflection duplicates, a fish inconsistent with another photo mapped to the same tank, or insufficient visual evidence:
-- cheap focused retry;
-- then Sol;
-- then `BLOCKED` if unresolved.
-
-### Sex
-Sex is a catalogue recommendation, not a fact to invent.
-
-- `>= 0.85`: accept `Male` or `Female`.
-- `0.60–0.84`: one cheap second visual pass.
-- `< 0.60`: use `Uncertain`; escalate to Sol only if the title genuinely requires sex.
-- If Sol remains uncertain, do not guess. Set `Sex = Uncertain` and mark `NEEDS_HUMAN_TITLE_CONFIRMATION` if David requires sex in every title.
-
-Long fins or vivid colour alone are not sufficient evidence. Plakats, juveniles, stress, finnage condition, and female morphology can make sex inference unreliable.
-
-## Batch efficiency
-
-Where supported, analyse multiple images in one cheap-model request while keeping a stable `source_file_id` for every result.
-
-Do not resend:
-- the whole conversation;
-- Shopify product descriptions;
-- unrelated historical batch data;
-- already accepted images
-
-unless required to resolve a specific conflict.
-
----
-
-# 3. Human mapping preview — UTILITY_CHEAP or template
-
-Before any Shopify write, tell David the interpreted mapping for the batch:
-
-`source → tank → photo date → proposed title → sex → confidence`
-
-Use a deterministic message template when possible. A cheap text model may be used only to make the message readable.
-
-Do not use Sol merely to compose the preview.
-
-This preview is informational unless an item is `BLOCKED`. Routine PASS items do not require manual approval unless David has separately requested an approval gate.
-
----
-
-# 4. Shopify discovery — NONE
-
-For each accepted tank ID, call `nta-product-resolver` using the normalized tank ID and live Shopify evidence. Then:
-
-1. Query Shopify by exact normalized tank ID.
-2. Confirm exactly one existing individual-Betta product.
-3. Never create a product unless David explicitly requests creation.
-4. Store in the batch ledger:
-   - Shopify Product ID
-   - original title
-   - tank/title association
-   - handle
-   - status
-   - price
-   - cost
-   - description
-   - vendor
-   - product type
-   - media IDs/order
-   - featured media
-   - inventory item/location state
-   - arrival date
-
-## Discovery decision
-
-- Exactly one unambiguous product → continue.
-- Zero products → `BLOCKED_PRODUCT_NOT_FOUND`.
-- More than one plausible product → `BLOCKED_PRODUCT_AMBIGUOUS` and escalate to Sol for diagnosis.
-- Tank/product identity conflict → Sol.
-- Handle anomaly with stable Product ID → diagnose using [references/batch-integrity.md](references/batch-integrity.md); never repair merely because the handle "looks wrong".
-
-Sol may diagnose a conflict, but it must not override a missing identity chain with a guess.
-
----
-
-# 5. CSV — NONE
-
-Create or update:
-
-`/Users/davidlo/Documents/Betta Processing/betta-inventory.csv`
-
-with exactly:
+Write `/Users/davidlo/Documents/Betta Processing/betta-inventory.csv` with exactly:
 
 `Tank Number,Proposed Title,Cost,Retail Price`
 
-For every clearly identified fish:
+Use the accepted tank and proposed new title. Copy cost and retail from the live pre-write Shopify snapshot; do not insert fixed recommendations. Verify exact headers, four fields per row, one unique row per accepted tank, and CSV tank-set equality.
 
-- normalized physical tank ID;
-- concise photo-faithful proposed title;
-- append `Male` or `Female` only when accepted by the sex gate;
-- if sex remains uncertain and David has not approved a title, keep the ledger blocked rather than silently inventing sex;
-- cost `15.00`;
-- retail price `35.00`;
-- one row per tank;
-- preserve valid rows while the thread batch is still being assembled;
-- quote CSV fields correctly.
+**Complete when:** deterministic validation passes and no CSV value authorizes a Shopify price or cost change.
 
-Programmatically verify:
-- exact headers;
-- exactly four fields per row;
-- one row per accepted source fish;
-- no duplicate tank rows;
-- no invented tanks;
-- fixed cost/retail values;
-- no blank accepted tank IDs;
-- CSV tank set equals the accepted batch tank set.
-
-The CSV values are recommendations. Do not change live Shopify title, cost, or price unless David explicitly requests it.
+## 5. Image production
 
-No LLM may write or validate CSV syntax when code can do it.
+Create:
 
----
+- `<Tank ID>.png` — 2048 × 2048 studio hero.
+- `<Tank ID> Reference.png` — source-derived natural reference, 2048 × 2048 where practical.
 
-# 6. Image preparation
+Follow [references/image-standard.md](references/image-standard.md). The hero may use controlled image editing to achieve the approved studio presentation; the reference must remain documentary source evidence.
 
-## 6A. Natural reference — NONE by default
+Persist source, candidate, reference, renderer/editor method, version, and hashes. Never reuse hard-coded tank IDs, dates, crop coordinates, masks, or geometry across fish.
 
-Output:
+**Complete when:** exactly one versioned hero/reference pair exists for each accepted source.
 
-`<Tank ID> Reference.png`
+## 6. Mandatory image QA
 
-Derive only from the genuine source photo.
+Run deterministic checks and one recorded full-resolution visual comparison per source/hero/reference triple. Validate dimensions, filenames, label content, framing, source-specific processing, and clean composition.
 
-Use deterministic image tooling for:
-- orientation;
-- crop/straighten;
-- canvas sizing;
-- light exposure;
-- white balance;
-- modest contrast;
-- modest sharpness;
-- export.
+Evaluate hero identity using stable characteristics: body proportions, head/body relationship, distinctive scale layout, unique markings, colour distribution, tail type, and visible anatomical integrity. A changed pose, fin spread, isolation, crop, or exposure is allowed when plausible and consistent with the source fish; it is not by itself a failure. Reject changed identity, invented identifying markings, implausible anatomy, wrong tail form, materially recoloured regions, plastic texture, severe halos, or unsupported detail presented as fact.
 
-Rules:
-- retain useful aquarium context;
-- retain the physical tank/date card when reasonably legible;
-- never AI-recreate the fish;
-- do not replace the background;
-- do not materially intensify colour;
-- do not alter anatomy/finnage;
-- do not remove the physical card;
-- do not add a redundant digital label;
-- output 2048 × 2048 where practical without destroying useful natural context.
+Persist provider/model/call ID, timestamp, hashes, per-assertion results, overall outcome, and retry/escalation evidence. Missing evidence or zero comparison calls is automatic `FIX_REQUIRED`.
 
-## 6B. Hero — deterministic first, image tool only if needed
+**Complete when:** the ledger schema validates and every mandatory assertion is PASS; otherwise no upload is permitted.
 
-Output:
-
-`<Tank ID>.png`
-
-Target:
-- 2048 × 2048 PNG;
-- real fish only;
-- clean black background;
-- room for fins;
-- legible bottom-left tank ID and physical photo-date label;
-- realistic exposure/colour/contrast/sharpness.
-
-First attempt deterministic segmentation/background cleanup where reliable.
-
-If deterministic segmentation cannot safely distinguish:
-- fish from reflection;
-- fins from background;
-- debris from anatomy;
-- duplicate/reflected fish from the real subject;
-
-use the configured image-editing capability for that fish only.
-
-Never instruct a generative image model to redesign, recolour, extend, replace, beautify, or recreate the Betta.
-
-A generated or edited result is only a candidate. It must pass the same identity and presentation QA below before it may be uploaded. If an image-editing result changes pose, anatomy, finnage, markings, colour distribution, or unique visible traits, reject it immediately and fall back to genuine source pixels or mark `FIX_REQUIRED`.
-
-Do not upscale a crop beyond credible source detail. Prefer a smaller authentic fish with clean negative space over a large soft, noisy, or artificially sharpened fish.
-
-## Mandatory pre-upload image QA — NONE + VISION_CHEAP
-
-Run this gate for every hero and reference before any Shopify Files upload.
-
-### Deterministic checks
-
-Verify:
-- exact 2048 × 2048 output dimensions where required;
-- expected filenames;
-- file existence and non-zero size;
-- one hero/reference pair per accepted tank;
-- expected tank ID and photo date label text;
-- a single clean label render with no duplicated, clipped, ghosted, malformed, or overlapping glyphs;
-- the complete fish is inside frame with room around every fin;
-- no unintended black bars, asymmetric padding, neighbouring tanks, or accidental crop boundaries;
-- no obvious overexposure, crushed detail, excessive saturation, excessive sharpening, or enlargement artifacts.
-
-Dimensions, filenames, and file existence alone are never sufficient for PASS.
-
-### Mandatory visual comparison
-
-Use `VISION_CHEAP` to compare source, hero, and reference side by side at useful/full resolution for every fish. Return structured PASS/FAIL fields for:
-
-- same fish identity;
-- same pose and orientation;
-- same body proportions and anatomy;
-- same fin shape, length, edges, and extent;
-- same scale pattern and unique markings;
-- photo-faithful colour distribution;
-- complete subject framing;
-- realistic detail without blur, plastic texture, halos, noise amplification, or invented detail;
-- clean background and professional composition;
-- correct, legible, single-rendered label.
-
-Any material change to fish identity, pose, anatomy, finnage, markings, or colour is an automatic rejection. A changed fish may never be accepted because it looks cleaner or more attractive.
-
-If the cheap comparison is uncertain, run one focused cheap retry. Escalate to Sol only when material identity ambiguity remains. If still unresolved, set `FIX_REQUIRED_IMAGE_QA` or `BLOCKED_IMAGE_IDENTITY`.
-
-### Gate outcome
-
-Persist the QA result and evidence in the batch ledger.
-
-- All deterministic and visual assertions PASS → continue to Shopify upload.
-- Presentation defect with intact identity → rebuild deterministically and rerun the full gate.
-- Identity change, invented detail, or unresolved comparison → reject the candidate; do not upload.
-- Any failed image assertion → item state `FIX_REQUIRED`; the batch may not be archived or marked DONE.
-
-Do not overwrite existing output unless:
-- it belongs to the same current source hash and is a resumable partial batch; or
-- David approved replacement.
-
----
-
-# 7. Shopify Files and mutation — NONE
-
-For each confirmed Product ID, build an explicit authorised change set. Submit it through `nta-shopify-write-verifier`; its writer phase may use the stable typed media and inventory functions below.
-
-1. Query Shopify Files first.
-2. Reuse an exact READY asset when identity is established by stable file metadata/hash/name association.
-3. Upload only missing assets.
-4. Wait for all expected assets to become READY.
-5. Replace the superseded hero.
-6. Feature the new hero.
-7. Put the genuine natural reference at Image 2.
-8. Preserve useful genuine extra angles.
-9. Remove only obsolete duplicates or clearly superseded photographs of that individual fish.
-10. Set `custom.arrival_date` from the physical photo date using `YYYY-MM-DD`.
-11. Set individual-fish inventory exactly `1`.
-12. Preserve:
-    - title
-    - price
-    - cost
-    - description
-    - vendor
-    - product type
-    - handle
-    - status
-    unless David explicitly requests a change or approves a verified repair.
-13. Inspect every mutation response.
-14. Inspect every `userErrors` array.
-15. A non-empty material `userErrors` array is a hard failure. Do not continue as PASS.
+## 7. Authorised Shopify update
 
-No AI should generate routine GraphQL/REST payloads dynamically once the implementation has stable typed functions for these mutations.
+Build an explicit per-product change set containing only:
 
-## Correcting an already-live bad hero
+- `title` → accepted proposed title;
+- `custom.arrival_date` → accepted physical photo date;
+- inventory → `1`;
+- approved hero/reference media and ordering.
 
-When David explicitly requests correction of an already-live hero:
+Upload only the QA-approved file hashes. Feature the hero as Image 1 and place the genuine reference as Image 2. Preserve useful genuine extra angles; remove only the specifically superseded old hero after its replacement is READY.
 
-1. Rebuild a versioned candidate from the genuine archived source.
-2. Run the complete mandatory pre-upload image QA.
-3. Query fresh live product/media state and protect Product ID, tank mapping, title, price, cost, description, vendor, product type, handle, status, inventory, arrival date, reference media, and useful extra angles.
-4. Upload the corrected candidate as a new READY Shopify File.
-5. Add it as product media and wait for READY.
-6. Feature and move the corrected hero to Image 1.
-7. Keep the genuine natural reference at Image 2.
-8. Delete only the specifically superseded bad hero after the replacement is READY and ordered.
-9. Perform the complete fresh read-back verification.
-10. Preserve the rejected candidate only for diagnosis; never upload it.
+Require the pre-write snapshot and contract validator to pass before mutation. Inspect transport errors, top-level GraphQL errors, and every `userErrors` array; any material error stops the item.
 
-A failed correction leaves the existing live media intact whenever possible and records `FIX_REQUIRED`.
+**Complete when:** every submitted change is authorised and every response is error-free.
 
----
+## 8. Fresh read-back verification
 
-# 8. Read-back verification — NONE
+Query Shopify again independently and assert:
 
-Freshly query Shopify after each product mutation through the verifier's independent auditor phase, then perform these Betta-specific assertions.
+- Product ID and tank mapping unchanged;
+- title equals the accepted proposed title;
+- description, price, cost, vendor, product type, handle, and status equal the pre-write snapshot;
+- arrival date equals the physical photo date;
+- inventory equals `1`;
+- approved hero hash/version is featured at Image 1;
+- natural reference is Image 2;
+- no unintended media loss occurred.
 
-Verify with exact assertions:
+Record exact expected/actual values. Prose cannot convert a failed assertion to PASS.
 
-- Product ID unchanged;
-- tank/product mapping unchanged;
-- title preserved;
-- price preserved;
-- cost preserved where exposed;
-- handle preserved unless approved repair;
-- status preserved;
-- inventory = `1`;
-- arrival date = physical photo date;
-- expected hero exists;
-- expected reference exists;
-- hero is featured;
-- reference is Image 2;
-- media belong to the intended fish;
-- the uploaded hero is the exact image-QA-approved file/version;
-- the approved hero and reference still satisfy the mandatory visual identity assertions;
-- label rendering remains correct in the delivered asset;
-- no unexpected media loss.
+**Complete when:** every assertion passes from fresh live data or the item is `FIX_REQUIRED`.
 
-Classify each ledger item:
+## 9. Archive and Discord result
 
-- `PASS`
-- `FIX_REQUIRED`
-- `BLOCKED`
+Archive only when every item is PASS. Rename originals to `<Tank ID> Original <ARCHIVE-DATE>.<extension>` using the current Australia/Sydney archive date, which is separate from the physical photo/arrival date. Move the completed source set and CSV under `Archived Bettas/YYYY-MM-DD/Betta Processing` and outputs under `Archived Bettas/YYYY-MM-DD/Betta Processed`; verify file hashes and tank-set equality after moving.
 
-A failed assertion is never converted to PASS by prose reasoning.
+Reply in the originating thread with counts, PASS tanks/photo dates/new titles, preserved price/cost/description confirmation, inventory, arrival date, media status, storefront links from final live handles, model-call telemetry, genuine exceptions, and the CSV attachment.
 
-## When Sol is allowed here
+**Complete when:** the archive is verified, the ledger is saved with it, and the Discord result accurately reflects live read-back.
 
-Use Sol only to diagnose:
-- contradictory API state;
-- uncertain product/media identity;
-- a handle/product mismatch;
-- destructive-update risk;
-- a state impossible to reconcile from deterministic API responses.
+## Runtime readiness
 
-After diagnosis, execute the correction deterministically and read it back again.
-
----
-
-# 9. Retry and resumability — NONE
-
-The workflow must be idempotent.
-
-Persist a batch ledger after every material transition.
-
-On rerun:
-- match source files by SHA-256 and Discord attachment ID;
-- reuse accepted catalogue data unless the source changed;
-- do not duplicate CSV rows;
-- do not duplicate Shopify Files;
-- do not duplicate product media;
-- do not repeat a successful mutation merely because a later fish failed;
-- continue from the first non-PASS state.
-
-A partially completed batch remains resumable and must not be archived.
-
-See [references/state-machine.md](references/state-machine.md).
-
----
-
-# 10. Rename and archive — NONE
-
-Rename each original to:
-
-`<Tank ID> Original <ARCHIVE-DATE>.<actual extension>`
-
-where `<ARCHIVE-DATE>` is the current `Australia/Sydney` calendar date at the time of archive.
-
-This archive filename date is intentionally distinct from the physical photo date used for `custom.arrival_date`.
-
-Never overwrite a collision. Add a deterministic suffix if needed and record it in the ledger.
-
-Archive only when every ledger item is PASS and all batch-level assertions pass.
-
-Move source contents, including CSV and hidden metadata, to:
-
-`Archived Bettas/YYYY-MM-DD/Betta Processing`
-
-Move hero/reference outputs to:
-
-`Archived Bettas/YYYY-MM-DD/Betta Processed`
-
-After move, verify:
-
-- active source folder contains no files belonging to the completed batch;
-- active processed folder contains no files belonging to the completed batch;
-- archived original tank set = archived hero tank set = archived reference tank set = CSV tank set;
-- every archived file hash can be read;
-- ledger is saved in the archive.
-
-Do not archive a batch containing `BLOCKED` or `FIX_REQUIRED`.
-
----
-
-# 11. Discord result — template / UTILITY_CHEAP
-
-Reply in the originating Discord thread.
-
-Include:
-
-- complete or incomplete batch status;
-- processed count;
-- catalogued count;
-- skipped count;
-- uploaded count;
-- reused count;
-- updated count;
-- archived count;
-- Sol escalation count;
-- cheap vision call count;
-- estimated AI cost for the batch;
-- estimated AI cost per PASS Betta;
-- CSV attachment;
-- every PASS tank/date;
-- inventory = 1;
-- hero/reference live;
-- title/price preserved;
-- live storefront link using only the handle returned by the final Shopify read-back;
-- only genuine `BLOCKED` or `FIX_REQUIRED` exceptions.
-
-Use a deterministic template unless wording genuinely requires a model.
-
-A batch is DONE only when every fish is PASS.
-
-Never expose Shopify credentials, tokens, `.env` contents, hidden authorization headers, or model-provider secrets.
-
----
-
-# 12. Cost telemetry
-
-The implementation must record actual usage whenever the provider/runtime exposes it.
-
-Per model call capture when available:
-
-- provider;
-- model;
-- purpose;
-- source/tank IDs;
-- input tokens;
-- output tokens;
-- image/input units if exposed;
-- provider-reported cost;
-- retry flag;
-- escalation flag.
-
-Batch summary:
-
-- `cheap_vision_calls`
-- `cheap_vision_retries`
-- `sol_calls`
-- `utility_calls`
-- `total_ai_cost_usd`
-- `pass_betta_count`
-- `ai_cost_per_pass_betta_usd`
+Before a live batch, verify required image-capable review, Shopify resolver/writer/read-back operations, ledger validation, and dry-run mode are available. If any component is missing, remain in dry-run and report the blocker. Never substitute an unrecorded manual PASS.

@@ -61,13 +61,13 @@ Build or adapt these typed operations:
 
 ## Important authority split
 
-The cheap vision worker may return observations only.
+The cheap vision worker may return observations and title suggestions only.
 
 It must not:
 - issue Shopify mutations;
 - create products;
 - decide to ignore API errors;
-- change price/title/cost;
+- change price/cost or directly mutate a title;
 - archive;
 - invent missing mappings.
 
@@ -106,7 +106,7 @@ BETTA_SOL_MIN_CAP=2
 4. Run a dry-run batch with Shopify mutations disabled.
 5. Compare interpreted tank/date/title/sex against the source photos.
 6. Enable Shopify writes for one small batch.
-7. Confirm media order, inventory, arrival date, title/price preservation, and archive set equality.
+7. Confirm media order, inventory, physical-photo arrival date, accepted title replacement, protected description/price/cost, and archive set equality.
 8. Review cost telemetry after 20-30 Bettas and adjust thresholds based on real false-positive/false-negative behaviour.
 
 ## Do not over-optimise too early

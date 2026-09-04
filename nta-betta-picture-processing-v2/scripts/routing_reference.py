@@ -60,10 +60,22 @@ def can_archive(item_states: list[str]) -> bool:
     return bool(item_states) and all(s == "PASS" for s in item_states)
 
 def assert_preserved(before: dict, after: dict, approved_changes: set[str]) -> list[str]:
-    protected = {"title", "price", "cost", "description", "vendor",
+    protected = {"price", "cost", "description", "vendor",
                  "product_type", "handle", "status"}
     errors = []
     for key in protected - approved_changes:
         if before.get(key) != after.get(key):
             errors.append(f"Unexpected change: {key}")
+    return errors
+
+def assert_authorised_change_set(changes: dict) -> list[str]:
+    """Reject mutation payloads outside the confirmed Betta contract."""
+    authorised = {"title", "arrival_date", "inventory", "media"}
+    errors = [f"Unauthorised change: {key}" for key in changes if key not in authorised]
+    if changes.get("inventory") != 1:
+        errors.append("Inventory must equal 1")
+    if not changes.get("title"):
+        errors.append("Accepted proposed title is required")
+    if not changes.get("arrival_date"):
+        errors.append("Physical photo date is required")
     return errors

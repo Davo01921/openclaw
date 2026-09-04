@@ -10,14 +10,16 @@ Persist a machine-readable batch ledger. Recommended item states:
 6. `PRODUCT_RESOLVED`
 7. `BLOCKED_PRODUCT`
 8. `CSV_READY`
-9. `IMAGES_READY`
-10. `FILES_READY`
-11. `MUTATION_PENDING`
-12. `MUTATED`
-13. `VERIFIED`
-14. `PASS`
-15. `FIX_REQUIRED`
-16. `ARCHIVED`
+9. `IMAGE_CANDIDATE_READY`
+10. `IMAGE_QA_PENDING`
+11. `IMAGES_READY`
+12. `FILES_READY`
+13. `MUTATION_PENDING`
+14. `MUTATED`
+15. `VERIFIED`
+16. `PASS`
+17. `FIX_REQUIRED`
+18. `ARCHIVED`
 
 Batch states:
 
@@ -32,52 +34,50 @@ Batch states:
 
 - Never move to `PRODUCT_RESOLVED` without accepted tank identity.
 - Never mutate Shopify before `PRODUCT_RESOLVED`, `CSV_READY`, and `IMAGES_READY`.
-- Never set `PASS` before fresh Shopify read-back succeeds.
+- `CSV_READY` requires cost and retail copied from the live pre-write snapshot; fixed recommendations are prohibited.
+- `IMAGE_CANDIDATE_READY` requires source, hero, and reference hashes plus renderer parameters.
+- `IMAGES_READY` requires complete deterministic checks and one recorded source/hero/reference visual comparison with every mandatory assertion PASS.
+- Missing QA, incomplete QA, zero visual comparison calls, or an unapproved candidate version forces `FIX_REQUIRED`.
+- Never set `PASS` before image QA and fresh Shopify read-back both succeed.
+- The only authorised product changes are accepted title, physical-photo arrival date, inventory `1`, and approved media/order.
+- Description, price, cost, vendor, product type, handle, and status must match the pre-write snapshot.
 - Never archive unless every fish is `PASS`.
 - `FIX_REQUIRED` and `BLOCKED_*` are terminal for the current automated pass.
 - Reruns continue from persisted state rather than restarting successful stages.
 
-## Suggested ledger fields
+## Mandatory image QA ledger shape
+
+Each item must include:
 
 ```json
 {
-  "batch_id": "",
-  "thread_id": "",
-  "created_at": "",
-  "updated_at": "",
-  "batch_state": "ASSEMBLING",
-  "items": [
-    {
-      "source_file_id": "",
-      "discord_message_id": "",
-      "discord_attachment_id": "",
-      "source_path": "",
-      "source_sha256": "",
-      "tank_id": null,
-      "photo_date": null,
-      "proposed_title": null,
-      "sex": "Uncertain",
-      "confidence": {
-        "tank": 0,
-        "date": 0,
-        "identity": 0,
-        "title": 0,
-        "sex": 0
-      },
-      "shopify_product_id": null,
-      "original_shopify": {},
-      "hero_path": null,
-      "reference_path": null,
-      "shopify_file_ids": {},
-      "media_ids": {},
-      "state": "DISCOVERED",
-      "errors": [],
-      "cost": {
-        "cheap_calls": 0,
-        "sol_calls": 0,
-        "usd": 0
-      }
-    }
-  ]
+  "image_qa": {
+    "source_sha256": "",
+    "hero_sha256": "",
+    "reference_sha256": "",
+    "candidate_version": "",
+    "deterministic": {
+      "dimensions": "PASS",
+      "filenames": "PASS",
+      "label": "PASS",
+      "framing": "PASS",
+      "source_specific_crop": "PASS"
+    },
+    "visual": {
+      "provider": "",
+      "model": "",
+      "call_id": "",
+      "timestamp": "",
+      "assertions": {},
+      "overall": "PASS"
+    },
+    "outcome": "PASS"
+  }
 }
 ```
+
+An absent/empty value is not PASS. Schema validation must fail closed.
+
+## Suggested ledger fields
+
+Retain identity, catalogue confidence, product evidence, paths, hashes, Shopify IDs, errors, and cost telemetry for each item.
