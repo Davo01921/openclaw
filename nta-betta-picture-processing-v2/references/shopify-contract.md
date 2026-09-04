@@ -7,7 +7,7 @@ For one resolved individual-Betta Product ID, authorize only:
 1. title = accepted photo-based proposed title;
 2. `custom.arrival_date` = accepted physical photo date;
 3. inventory = `1` at the resolved individual-fish location;
-4. media = the exact image-QA-approved hero/reference versions and their required order.
+4. media = the exact image-QA-approved hero followed by the byte-identical complete original source.
 
 ## Protected fields
 

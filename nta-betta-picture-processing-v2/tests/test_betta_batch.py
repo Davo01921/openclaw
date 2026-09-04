@@ -15,9 +15,10 @@ class LedgerTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         root = Path(self.tmp.name)
         assets = {}
-        for role in ("source", "hero", "reference"):
+        for role in ("source", "hero"):
             path = root / f"{role}.png"; path.write_bytes(role.encode())
             assets[role] = {"path": str(path), "sha256": hashlib.sha256(role.encode()).hexdigest()}
+        assets["reference"] = dict(assets["source"])
         protected = {k: f"before-{k}" for k in bb.PROTECTED}
         self.item = {
             "id": "4BT41", "state": "MUTATION_PENDING",
@@ -34,7 +35,7 @@ class LedgerTests(unittest.TestCase):
             "mutation": {"title": "Turquoise, White & Red Marble Betta", "arrival_date": "2026-09-04", "inventory": 1,
                          "media": [assets["hero"]["sha256"], assets["reference"]["sha256"]]},
         }
-        self.ledger = {"schema_version": 1, "batch_id": "test", "batch_state": "PROCESSING", "items": [self.item]}
+        self.ledger = {"schema_version": 2, "batch_id": "test", "batch_state": "PROCESSING", "items": [self.item]}
 
     def tearDown(self): self.tmp.cleanup()
     def test_valid_mutation_pending(self): bb.validate_ledger(self.ledger)
@@ -53,6 +54,29 @@ class LedgerTests(unittest.TestCase):
     def test_rejects_wrong_arrival_date(self):
         self.item["mutation"]["arrival_date"] = "2026-09-05"
         with self.assertRaises(bb.LedgerError): bb.validate_ledger(self.ledger)
+    def test_rejects_derived_or_cropped_reference(self):
+        path = Path(self.tmp.name) / "cropped.png"; path.write_bytes(b"cropped")
+        self.item["images"]["reference"] = {"path": str(path), "sha256": hashlib.sha256(b"cropped").hexdigest()}
+        with self.assertRaises(bb.LedgerError): bb.validate_ledger(self.ledger)
+    def test_rejects_duplicate_shopify_product(self):
+        duplicate = copy.deepcopy(self.item); duplicate["id"] = "4BT42"
+        duplicate["catalogue"]["tank_id"] = "4BT42"
+        duplicate["catalogue"]["evidence"]["call_id"] = "cat-2"
+        duplicate["image_qa"]["visual"]["call_id"] = "qa-2"
+        self.ledger["items"].append(duplicate)
+        with self.assertRaises(bb.LedgerError): bb.validate_ledger(self.ledger)
+    def test_execution_plan_caps_workers(self):
+        items = []
+        for n in range(9):
+            item = copy.deepcopy(self.item); item["id"] = f"4BT{n}"
+            item["product"]["id"] = f"gid://shopify/Product/{n}"
+            item["catalogue"]["evidence"]["call_id"] = f"cat-{n}"
+            item["image_qa"]["visual"]["call_id"] = f"qa-{n}"
+            items.append(item)
+        self.ledger["items"] = items
+        bb.validate_ledger(self.ledger)
+        groups = [items[n:n + 4] for n in range(0, len(items), 4)]
+        self.assertEqual([len(group) for group in groups], [4, 4, 1])
     def test_verified_requires_preserved_fields(self):
         item = copy.deepcopy(self.item); item["state"] = "VERIFIED"
         item["readback"] = dict(item["product"]["before"], product_id=item["product"]["id"],

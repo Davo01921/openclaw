@@ -13,19 +13,19 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-DEFAULT_MODELS = "openai/gpt-5.6-sol,google/gemini-3.5-flash"
+DEFAULT_MODELS = "google/gemini-3.5-flash,openai/gpt-5.6-sol"
 
 CATALOGUE_PROMPT = """Return JSON only. Inspect the labelled Betta source and return:
 {"tank_id":"","tank_confidence":0.0,"photo_date":"YYYY-MM-DD","date_confidence":0.0,
 "one_fish_visible":true,"proposed_title":"","sex":null,"sex_confidence":0.0,
 "uncertainty_reasons":[]}. Use only visible evidence; never infer an adjacent label."""
 
-QA_PROMPT = """Return JSON only. Compare images in this exact order: source, hero, reference.
+QA_PROMPT = """Return JSON only. Compare images in this exact order: source, hero, original.
 Return {"assertions":{ "same_identity":"PASS|FAIL", "body_anatomy":"PASS|FAIL",
 "scale_markings":"PASS|FAIL", "regional_colour":"PASS|FAIL", "tail_fins_pose":"PASS|FAIL",
 "complete_framing":"PASS|FAIL", "realistic_texture":"PASS|FAIL", "hero_composition":"PASS|FAIL",
 "label":"PASS|FAIL", "reference_integrity":"PASS|FAIL"},"overall":"PASS|FAIL","reasons":[]}.
-Fail uncertain identity. Judge against the NTA Betta image standard; do not invent evidence."""
+The third image must be the complete original source, not a crop or edited derivative. Fail uncertain identity. Judge against the NTA Betta image standard; do not invent evidence."""
 
 
 def digest(path: Path) -> str:
@@ -48,7 +48,7 @@ def run_review(files: list[Path], mode: str, agent: str, models: list[str]) -> d
                "--prompt", prompt, "--json"]
         for path in files:
             cmd.extend(["--file", str(path)])
-        completed = subprocess.run(cmd, capture_output=True, text=True, timeout=120, env=child_env)
+        completed = subprocess.run(cmd, capture_output=True, text=True, timeout=90, env=child_env)
         try:
             envelope = json.loads(completed.stdout)
         except json.JSONDecodeError:

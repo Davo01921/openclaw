@@ -37,7 +37,7 @@ Batch states:
 - Never move to `PRODUCT_RESOLVED` without accepted tank identity.
 - Never mutate Shopify before `PRODUCT_RESOLVED`, `CSV_READY`, and `IMAGES_READY`.
 - `CSV_READY` requires cost and retail copied from the live pre-write snapshot; fixed recommendations are prohibited.
-- `IMAGE_CANDIDATE_READY` requires source, hero, and reference hashes plus renderer parameters.
+- `IMAGE_CANDIDATE_READY` requires source and hero hashes, a reference record with the identical source hash, plus renderer parameters.
 - `IMAGES_READY` requires complete deterministic checks and one recorded source/hero/reference visual comparison with every mandatory assertion PASS.
 - Missing QA, incomplete QA, zero visual comparison calls, or an unapproved candidate version forces `FIX_REQUIRED`.
 - Never set `PASS` before image QA and fresh Shopify read-back both succeed.
@@ -63,7 +63,7 @@ Each item must include:
       "filenames": "PASS",
       "label": "PASS",
       "framing": "PASS",
-      "source_specific_crop": "PASS"
+      "original_reference_hash": "PASS"
     },
     "visual": {
       "provider": "",

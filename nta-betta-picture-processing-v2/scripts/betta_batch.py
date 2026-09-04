@@ -25,7 +25,7 @@ ITEM_STATES = (
 )
 TERMINAL = {"BLOCKED_VISUAL", "BLOCKED_PRODUCT", "FIX_REQUIRED"}
 NEXT = dict(zip(ITEM_STATES, ITEM_STATES[1:]))
-QA_DETERMINISTIC = {"dimensions", "filenames", "label", "framing", "source_specific_crop"}
+QA_DETERMINISTIC = {"dimensions", "filenames", "label", "framing", "original_reference_hash"}
 QA_VISUAL = {
     "same_identity", "body_anatomy", "scale_markings", "regional_colour",
     "tail_fins_pose", "complete_framing", "realistic_texture",
@@ -113,6 +113,10 @@ def validate_item(item: dict) -> None:
     if item["state"] in ITEM_STATES[ITEM_STATES.index("IMAGE_CANDIDATE_READY"):]:
         for role in ("hero", "reference"):
             validate_file(item.get("images", {}).get(role, {}), role)
+        require(
+            item["images"]["reference"]["sha256"] == item["source"]["sha256"],
+            "reference must be the byte-identical original source",
+        )
     if item["state"] in ITEM_STATES[ITEM_STATES.index("IMAGES_READY"):]:
         qa = item.get("image_qa", {})
         require(set(qa.get("deterministic", {})) == QA_DETERMINISTIC, "QA deterministic assertion set mismatch")
@@ -151,13 +155,17 @@ def verify_readback(item: dict) -> None:
 
 
 def validate_ledger(data: dict) -> None:
-    require(data.get("schema_version") == 1, "unsupported ledger schema")
+    require(data.get("schema_version") == 2, "unsupported ledger schema")
     require(data.get("batch_id") and isinstance(data.get("items"), list) and data["items"], "batch/items required")
-    ids, calls = set(), set()
+    ids, calls, product_ids = set(), set(), set()
     for item in data["items"]:
         validate_item(item)
         require(item["id"] not in ids, "duplicate item id")
         ids.add(item["id"])
+        product_id = item.get("product", {}).get("id")
+        if product_id:
+            require(product_id not in product_ids, "duplicate Shopify product id across batch")
+            product_ids.add(product_id)
         for call in (item.get("catalogue", {}).get("evidence"), item.get("image_qa", {}).get("visual")):
             if call:
                 require(call["call_id"] not in calls, "vision call_id reused across evidence records")
@@ -188,6 +196,7 @@ def main() -> int:
     p = sub.add_parser("validate"); p.add_argument("ledger", type=Path)
     p = sub.add_parser("advance"); p.add_argument("ledger", type=Path); p.add_argument("item"); p.add_argument("target")
     p = sub.add_parser("mutation-envelope"); p.add_argument("ledger", type=Path); p.add_argument("item")
+    p = sub.add_parser("execution-plan"); p.add_argument("ledger", type=Path); p.add_argument("--workers", type=int, default=4)
     args = parser.parse_args()
     try:
         data = load(args.ledger)
@@ -198,6 +207,16 @@ def main() -> int:
             item = next(i for i in data["items"] if i["id"] == args.item)
             require(item["state"] == "MUTATION_PENDING", "item is not mutation-ready")
             print(json.dumps({"batch_id": data["batch_id"], "item_id": item["id"], "product_id": item["product"]["id"], "changes": item["mutation"]}, sort_keys=True))
+        elif args.cmd == "execution-plan":
+            validate_ledger(data)
+            workers = max(1, min(args.workers, 4))
+            runnable = [i for i in data["items"] if i["state"] not in TERMINAL and i["state"] != "ARCHIVED"]
+            waves = []
+            for state in ITEM_STATES:
+                group = [i["id"] for i in runnable if i["state"] == state]
+                for start in range(0, len(group), workers):
+                    waves.append({"state": state, "items": group[start:start + workers]})
+            print(json.dumps({"batch_id": data["batch_id"], "workers": workers, "waves": waves}, sort_keys=True))
         else:
             validate_ledger(data)
         return 0

@@ -29,9 +29,9 @@ Reject a candidate that substitutes a generic fish, changes the tail type, inven
 
 Pose, fin spread, crop, lighting, background, and display scale may differ when the edited result remains anatomically plausible and recognizably the same individual.
 
-## Natural reference
+## Original reference
 
-Derive the reference only from genuine source pixels. Retain useful aquarium context and the physical tank/date card when legible. Permit crop, straighten, orientation, light white-balance/exposure/contrast correction, modest sharpening, and canvas padding. Do not replace the background, recreate the fish, remove the card, materially intensify colour, alter anatomy, or add a second digital label.
+Use the complete original attachment as Shopify Image 2. Preserve its exact bytes, dimensions, orientation, framing, aquarium context, tank/date card, metadata, and SHA-256. Do not crop, straighten, resize, pad, recompress, colour-correct, sharpen, relabel, convert, or otherwise derive a replacement reference. The archive copy may be renamed after verified Shopify read-back, but its bytes and hash must remain unchanged.
 
 ## QA evidence
 
@@ -46,6 +46,6 @@ Compare source, hero, and reference at useful/full resolution. Record PASS/FAIL 
 - realistic texture without severe blur, halos, plastic texture, noise amplification, or deceptive invented detail;
 - clean professional hero composition;
 - correct single-rendered label;
-- documentary integrity of the reference.
+- exact byte/hash identity between the source and Image 2 reference record.
 
 Any uncertainty about identity receives one focused cheap retry, then the configured reasoning review. Unresolved identity is `BLOCKED_IMAGE_IDENTITY`.

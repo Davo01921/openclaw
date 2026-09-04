@@ -53,7 +53,7 @@ evidence, and falls back to the next configured reviewer on provider failure.
 - `resolve_nta_product(identity_evidence)`
 - `shopify_find_exact_tank(tank_id)`
 - `build_inventory_csv(items)`
-- `prepare_reference(item)`
+- `bind_original_reference(item)` (records the source path/hash unchanged)
 - `prepare_hero(item)`
 - `shopify_find_ready_file(asset)`
 - `shopify_upload_missing_file(asset)`
@@ -114,6 +114,12 @@ BETTA_SOL_MIN_CAP=2
 6. Enable Shopify writes for one small batch.
 7. Confirm media order, inventory, physical-photo arrival date, accepted title replacement, protected description/price/cost, and archive set equality.
 8. Review cost telemetry after 20-30 Bettas and adjust thresholds based on real false-positive/false-negative behaviour.
+
+## Throughput model
+
+Use bounded stage-level concurrency (`4` workers by default), not 24 end-to-end serial pipelines. Group items by current ledger state, run independent work for one state as a wave, persist each result immediately, then ask `execution-plan` for the next wave. Batch catalogue calls only when every image remains individually addressable in the response; otherwise use four parallel single-image calls. Never combine different fish into one fidelity-QA evidence record.
+
+Do deterministic work once per batch: attachment collection, CSV emission, archive verification, and final Discord reporting. Cache source hashes and Shopify READY-file lookups so retries do not regenerate, re-review, or re-upload passed assets.
 
 ## Do not over-optimise too early
 

@@ -6,7 +6,7 @@ user-invocable: true
 
 # NTA Betta Picture Processing
 
-Process one Discord thread as one traceable batch. Produce a polished studio hero and a natural reference for each identifiable fish, change only the authorised Shopify fields, verify fresh live state, then archive.
+Process one Discord thread as one traceable batch: create each hero, upload the complete original as Image 2, apply authorised Shopify changes, verify, and archive.
 
 ## Non-negotiable contract
 
@@ -16,13 +16,13 @@ Process one Discord thread as one traceable batch. Produce a polished studio her
 - Preserve the complete description, live retail price, live cost, vendor, product type, handle, and status exactly.
 - Set `custom.arrival_date` from the physical photo label in `YYYY-MM-DD`.
 - Set individual-fish inventory to exactly `1`.
-- Keep the natural source-derived reference as Image 2.
+- Upload the complete, uncropped original attachment as Image 2; its bytes and SHA-256 must equal the saved source.
 - Stop before Shopify whenever identity, image QA, authorised changes, or required runtime components are unresolved.
 - Never create a product, alter protected fields, or archive a failed item.
 
 Read [references/state-machine.md](references/state-machine.md) before processing and [references/shopify-contract.md](references/shopify-contract.md) before any Shopify write.
 
-Use `scripts/vision_review.py` for recorded catalogue/QA inference and `scripts/betta_batch.py` as the authoritative transition and evidence validator. A model's prose verdict never substitutes for a successful validator exit.
+Use `scripts/vision_review.py` for one recorded catalogue/QA inference, `scripts/vision_batch.py` for bounded parallel review, and `scripts/betta_batch.py` as the authoritative transition and evidence validator. A model's prose verdict never substitutes for a successful validator exit.
 
 ## 1. Intake and traceability
 
@@ -73,17 +73,17 @@ Use the accepted tank and proposed new title. Copy cost and retail from the live
 Create:
 
 - `<Tank ID>.png` — 2048 × 2048 studio hero.
-- `<Tank ID> Reference.png` — source-derived natural reference, 2048 × 2048 where practical.
+- the original attachment — unchanged source bytes for Shopify Image 2; do not crop, resize, recompress, relabel, or convert it.
 
-Follow [references/image-standard.md](references/image-standard.md). The hero may use controlled image editing to achieve the approved studio presentation; the reference must remain documentary source evidence.
+Follow [references/image-standard.md](references/image-standard.md). The hero may use controlled image editing to achieve the approved studio presentation. Use the saved original itself as the reference asset.
 
-Persist source, candidate, reference, renderer/editor method, version, and hashes. Never reuse hard-coded tank IDs, dates, crop coordinates, masks, or geometry across fish.
+Persist source, candidate, renderer/editor method, version, and hashes. Record the reference path/hash as the same original source path/hash. Never reuse hard-coded tank IDs, dates, crop coordinates, masks, or geometry across fish.
 
-**Complete when:** exactly one versioned hero/reference pair exists for each accepted source.
+**Complete when:** exactly one versioned hero exists and the reference record byte-matches the complete original for each accepted source.
 
 ## 6. Mandatory image QA
 
-Run deterministic checks and one recorded full-resolution visual comparison per source/hero/reference triple. Validate dimensions, filenames, label content, framing, source-specific processing, and clean composition.
+Run deterministic checks and one recorded full-resolution visual comparison per source/hero/original triple. Validate hero dimensions, filenames, label content, framing, source-specific processing, clean composition, and exact original-reference hash equality.
 
 Evaluate hero identity using stable characteristics: body proportions, head/body relationship, distinctive scale layout, unique markings, colour distribution, tail type, and visible anatomical integrity. A changed pose, fin spread, isolation, crop, or exposure is allowed when plausible and consistent with the source fish; it is not by itself a failure. Reject changed identity, invented identifying markings, implausible anatomy, wrong tail form, materially recoloured regions, plastic texture, severe halos, or unsupported detail presented as fact.
 
@@ -100,7 +100,7 @@ Build an explicit per-product change set containing only:
 - inventory → `1`;
 - approved hero/reference media and ordering.
 
-Upload only the QA-approved file hashes. Feature the hero as Image 1 and place the genuine reference as Image 2. Preserve useful genuine extra angles; remove only the specifically superseded old hero after its replacement is READY.
+Upload only the QA-approved file hashes. Feature the hero as Image 1 and place the complete uncropped original attachment as Image 2. Preserve useful genuine extra angles; remove only the specifically superseded old hero or derived/cropped reference after its replacement is READY.
 
 Require the pre-write snapshot and contract validator to pass before mutation. Inspect transport errors, top-level GraphQL errors, and every `userErrors` array; any material error stops the item.
 
@@ -116,7 +116,7 @@ Query Shopify again independently and assert:
 - arrival date equals the physical photo date;
 - inventory equals `1`;
 - approved hero hash/version is featured at Image 1;
-- natural reference is Image 2;
+- the complete original attachment is Image 2 and its recorded hash equals the source hash;
 - no unintended media loss occurred.
 
 Record exact expected/actual values. Prose cannot convert a failed assertion to PASS.
@@ -133,4 +133,10 @@ Reply in the originating thread with counts, PASS tanks/photo dates/new titles, 
 
 ## Runtime readiness
 
-Before a live batch, verify an approved image-capable reviewer, Shopify resolver/writer/read-back operations, executable `scripts/betta_batch.py` ledger validation, and dry-run mode are available. Prefer the configured cheap worker; a recorded Sol review is an allowed fallback when the cheap worker is unavailable. If no approved reviewer or validator is available, remain in dry-run and report the blocker. Never substitute an unrecorded manual PASS.
+Before a live batch, verify an approved vision reviewer, Shopify resolve/write/read-back operations, `scripts/betta_batch.py`, and dry-run mode. Prefer the cheap worker; allow recorded Sol fallback. Without a reviewer or validator, remain in dry-run. Never substitute an unrecorded manual PASS.
+
+## Batch throughput
+
+Run stage-wise bounded concurrency following [IMPLEMENTATION.md](IMPLEMENTATION.md), not one fish end-to-end at a time. Use `scripts/betta_batch.py execution-plan <ledger> --workers 4`; run only its next independent wave. Use `scripts/vision_batch.py` for parallel catalogue/QA calls. Keep evidence per fish, reuse validated stages/files on retry, and retain the all-PASS archive gate.
+
+**Complete when:** no stage exceeds four concurrent external operations and retries resume at the last validated state.
