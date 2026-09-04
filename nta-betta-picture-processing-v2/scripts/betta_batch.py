@@ -111,19 +111,14 @@ def validate_item(item: dict) -> None:
         require(product.get("id") and isinstance(product.get("before"), dict), "product id/snapshot required")
         require(PROTECTED <= set(product["before"]), "pre-write protected snapshot incomplete")
     if item["state"] in ITEM_STATES[ITEM_STATES.index("IMAGE_CANDIDATE_READY"):]:
-        for role in ("hero", "reference"):
-            validate_file(item.get("images", {}).get(role, {}), role)
-        require(
-            item["images"]["reference"]["sha256"] == item["source"]["sha256"],
-            "reference must be the byte-identical original source",
-        )
+        validate_file(item["images"]["hero"], "hero")
     if item["state"] in ITEM_STATES[ITEM_STATES.index("IMAGES_READY"):]:
         qa = item.get("image_qa", {})
         require(set(qa.get("deterministic", {})) == QA_DETERMINISTIC, "QA deterministic assertion set mismatch")
         require(all(v == "PASS" for v in qa["deterministic"].values()), "deterministic QA failed")
         validate_vision_call(qa.get("visual", {}), QA_VISUAL)
         require(qa.get("outcome") == "PASS", "image QA outcome must PASS")
-        expected = [item["source"]["sha256"], item["images"]["hero"]["sha256"], item["images"]["reference"]["sha256"]]
+        expected = [item["source"]["sha256"], item["images"]["hero"]["sha256"], item["source"]["sha256"]]
         require(qa["visual"]["input_hashes"] == expected, "QA input hashes/version mismatch")
     if item["state"] in ITEM_STATES[ITEM_STATES.index("MUTATION_PENDING"):]:
         validate_mutation(item)
@@ -138,8 +133,8 @@ def validate_mutation(item: dict) -> None:
     require(mutation["title"] == cat["title"], "mutation title differs from accepted title")
     require(mutation["arrival_date"] == cat["photo_date"], "arrival date must equal physical photo date")
     require(mutation["inventory"] == 1, "inventory must equal 1")
-    approved = [item["images"]["hero"]["sha256"], item["images"]["reference"]["sha256"]]
-    require(mutation["media"] == approved, "mutation media must be approved hero/reference hashes in order")
+    approved = [item["images"]["hero"]["sha256"], item["source"]["sha256"]]
+    require(mutation["media"] == approved, "mutation media must be approved hero/source hashes in order")
 
 
 def verify_readback(item: dict) -> None:
@@ -151,7 +146,10 @@ def verify_readback(item: dict) -> None:
     require(after.get("title") == item["mutation"]["title"], "read-back title mismatch")
     require(after.get("arrival_date") == item["mutation"]["arrival_date"], "read-back arrival date mismatch")
     require(after.get("inventory") == 1, "read-back inventory mismatch")
-    require(after.get("media_hashes", [])[:2] == item["mutation"]["media"], "read-back media/order mismatch")
+    require(
+        after.get("media_hashes", [])[:2] == [item["images"]["hero"]["sha256"], item["source"]["sha256"]],
+        "read-back media/order mismatch",
+    )
 
 
 def validate_ledger(data: dict) -> None:

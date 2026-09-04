@@ -18,7 +18,8 @@ class LedgerTests(unittest.TestCase):
         for role in ("source", "hero"):
             path = root / f"{role}.png"; path.write_bytes(role.encode())
             assets[role] = {"path": str(path), "sha256": hashlib.sha256(role.encode()).hexdigest()}
-        assets["reference"] = dict(assets["source"])
+        # Image 2 is now the original source photograph itself.
+        assets["original"] = dict(assets["source"])
         protected = {k: f"before-{k}" for k in bb.PROTECTED}
         self.item = {
             "id": "4BT41", "state": "MUTATION_PENDING",
@@ -27,13 +28,13 @@ class LedgerTests(unittest.TestCase):
             "catalogue": {"tank_id": "4BT41", "photo_date": "2026-09-04", "title": "Turquoise, White & Red Marble Betta",
                 "evidence": {"provider": "google", "model": "gemini", "call_id": "cat-1", "timestamp": bb.now(), "input_hashes": [assets["source"]["sha256"]], "output": {"tank_id": "4BT41"}}},
             "product": {"id": "gid://shopify/Product/1", "before": protected},
-            "images": {"hero": assets["hero"], "reference": assets["reference"]},
+            "images": {"hero": assets["hero"]},
             "image_qa": {"deterministic": {k: "PASS" for k in bb.QA_DETERMINISTIC},
                 "visual": {"provider": "google", "model": "gemini", "call_id": "qa-1", "timestamp": bb.now(),
-                    "input_hashes": [assets["source"]["sha256"], assets["hero"]["sha256"], assets["reference"]["sha256"]],
+                    "input_hashes": [assets["source"]["sha256"], assets["hero"]["sha256"], assets["source"]["sha256"]],
                     "output": {"verdict": "PASS"}, "assertions": {k: "PASS" for k in bb.QA_VISUAL}, "overall": "PASS"}, "outcome": "PASS"},
             "mutation": {"title": "Turquoise, White & Red Marble Betta", "arrival_date": "2026-09-04", "inventory": 1,
-                         "media": [assets["hero"]["sha256"], assets["reference"]["sha256"]]},
+                         "media": [assets["hero"]["sha256"], assets["source"]["sha256"]]},
         }
         self.ledger = {"schema_version": 2, "batch_id": "test", "batch_state": "PROCESSING", "items": [self.item]}
 
@@ -54,9 +55,9 @@ class LedgerTests(unittest.TestCase):
     def test_rejects_wrong_arrival_date(self):
         self.item["mutation"]["arrival_date"] = "2026-09-05"
         with self.assertRaises(bb.LedgerError): bb.validate_ledger(self.ledger)
-    def test_rejects_derived_or_cropped_reference(self):
+    def test_rejects_derived_or_cropped_original(self):
         path = Path(self.tmp.name) / "cropped.png"; path.write_bytes(b"cropped")
-        self.item["images"]["reference"] = {"path": str(path), "sha256": hashlib.sha256(b"cropped").hexdigest()}
+        self.item["source"] = {"path": str(path), "sha256": hashlib.sha256(b"cropped").hexdigest()}
         with self.assertRaises(bb.LedgerError): bb.validate_ledger(self.ledger)
     def test_rejects_duplicate_shopify_product(self):
         duplicate = copy.deepcopy(self.item); duplicate["id"] = "4BT42"
