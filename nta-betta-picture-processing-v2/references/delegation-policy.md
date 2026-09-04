@@ -13,7 +13,7 @@ This reference defines the model-routing contract for `betta-picture-processing`
 | Sex suggestion | cheap vision | cheap retry → Sol only if needed → human |
 | CSV generation/validation | deterministic | none |
 | Basic image crop/resize/colour correction | deterministic | image editor only if required |
-| Fish/source identity comparison | cheap vision if needed | Sol on unresolved conflict |
+| Fish/source identity comparison | dedicated vision worker | recorded Sol fallback on unavailability or unresolved conflict |
 | Shopify search/read | deterministic API | Sol only to diagnose conflict |
 | Shopify mutation | deterministic API | stop on anomaly |
 | Read-back/assertions | deterministic API/code | Sol only to diagnose contradiction |
@@ -21,6 +21,11 @@ This reference defines the model-routing contract for `betta-picture-processing`
 | Discord summary | template/utility | none normally |
 
 ## Cheap-model prompt discipline
+
+Persist provider, model, call ID, timestamp, exact input hashes, and the complete
+structured output for every catalogue or QA call. If the dedicated worker is
+unavailable, one recorded Sol comparison is an allowed availability fallback.
+An unrecorded manual PASS is never allowed.
 
 Cheap visual calls must receive the smallest useful context:
 - image(s);

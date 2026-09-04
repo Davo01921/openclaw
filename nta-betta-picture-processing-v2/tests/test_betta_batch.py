@@ -1,0 +1,65 @@
+import copy
+import hashlib
+import importlib.util
+import tempfile
+import unittest
+from pathlib import Path
+
+SCRIPT = Path(__file__).parents[1] / "scripts" / "betta_batch.py"
+spec = importlib.util.spec_from_file_location("betta_batch", SCRIPT)
+bb = importlib.util.module_from_spec(spec); spec.loader.exec_module(bb)
+
+
+class LedgerTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        root = Path(self.tmp.name)
+        assets = {}
+        for role in ("source", "hero", "reference"):
+            path = root / f"{role}.png"; path.write_bytes(role.encode())
+            assets[role] = {"path": str(path), "sha256": hashlib.sha256(role.encode()).hexdigest()}
+        protected = {k: f"before-{k}" for k in bb.PROTECTED}
+        self.item = {
+            "id": "4BT41", "state": "MUTATION_PENDING",
+            "history": [{"from": None, "to": "DISCOVERED", "at": bb.now()}],
+            "source": assets["source"],
+            "catalogue": {"tank_id": "4BT41", "photo_date": "2026-09-04", "title": "Turquoise, White & Red Marble Betta",
+                "evidence": {"provider": "google", "model": "gemini", "call_id": "cat-1", "timestamp": bb.now(), "input_hashes": [assets["source"]["sha256"]], "output": {"tank_id": "4BT41"}}},
+            "product": {"id": "gid://shopify/Product/1", "before": protected},
+            "images": {"hero": assets["hero"], "reference": assets["reference"]},
+            "image_qa": {"deterministic": {k: "PASS" for k in bb.QA_DETERMINISTIC},
+                "visual": {"provider": "google", "model": "gemini", "call_id": "qa-1", "timestamp": bb.now(),
+                    "input_hashes": [assets["source"]["sha256"], assets["hero"]["sha256"], assets["reference"]["sha256"]],
+                    "output": {"verdict": "PASS"}, "assertions": {k: "PASS" for k in bb.QA_VISUAL}, "overall": "PASS"}, "outcome": "PASS"},
+            "mutation": {"title": "Turquoise, White & Red Marble Betta", "arrival_date": "2026-09-04", "inventory": 1,
+                         "media": [assets["hero"]["sha256"], assets["reference"]["sha256"]]},
+        }
+        self.ledger = {"schema_version": 1, "batch_id": "test", "batch_state": "PROCESSING", "items": [self.item]}
+
+    def tearDown(self): self.tmp.cleanup()
+    def test_valid_mutation_pending(self): bb.validate_ledger(self.ledger)
+    def test_rejects_description_mutation(self):
+        self.item["mutation"]["description"] = "changed"
+        with self.assertRaises(bb.LedgerError): bb.validate_ledger(self.ledger)
+    def test_rejects_fake_missing_call(self):
+        self.item["image_qa"]["visual"]["call_id"] = ""
+        with self.assertRaises(bb.LedgerError): bb.validate_ledger(self.ledger)
+    def test_rejects_reused_call_id(self):
+        self.item["image_qa"]["visual"]["call_id"] = "cat-1"
+        with self.assertRaises(bb.LedgerError): bb.validate_ledger(self.ledger)
+    def test_rejects_changed_file(self):
+        Path(self.item["images"]["hero"]["path"]).write_bytes(b"tampered")
+        with self.assertRaises(bb.LedgerError): bb.validate_ledger(self.ledger)
+    def test_rejects_wrong_arrival_date(self):
+        self.item["mutation"]["arrival_date"] = "2026-09-05"
+        with self.assertRaises(bb.LedgerError): bb.validate_ledger(self.ledger)
+    def test_verified_requires_preserved_fields(self):
+        item = copy.deepcopy(self.item); item["state"] = "VERIFIED"
+        item["readback"] = dict(item["product"]["before"], product_id=item["product"]["id"],
+            title=item["mutation"]["title"], arrival_date=item["mutation"]["arrival_date"], inventory=1, media_hashes=item["mutation"]["media"])
+        bb.validate_item(item)
+        item["readback"]["description"] = "changed"
+        with self.assertRaises(bb.LedgerError): bb.validate_item(item)
+
+
+if __name__ == "__main__": unittest.main()

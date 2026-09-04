@@ -4,23 +4,20 @@
 
 {
   agents: {
-    defaults: {
-      // Keep the main agent capable for general work.
-      // If the existing primary is GPT-5.6 Sol, it can remain so.
-      utilityModel: "<CHEAP_TEXT_MODEL>"
-    },
-
     entries: {
       "betta-vision-worker": {
         name: "Betta Vision Worker",
         model: {
-          primary: "<QWEN_VISION_MODEL>",
-          fallbacks: []
+          primary: "google/gemini-3.5-flash",
+          fallbacks: ["openai/gpt-5.6-sol"]
         },
-        utilityModel: "<CHEAP_TEXT_MODEL>",
-        // Give this worker only the tools needed to inspect batch images.
-        // It should not have Shopify mutation authority.
-        skills: ["betta-picture-processing"]
+        thinkingDefault: "low",
+        skills: [],
+        tools: {
+          profile: "minimal",
+          allow: ["read", "view_image"],
+          deny: ["write", "edit", "apply_patch", "exec_command", "process", "browser", "message", "gateway", "cron", "sessions_spawn"]
+        }
       },
 
       "betta-escalation": {
@@ -32,6 +29,12 @@
         // Restrict this agent to diagnosis/review tools where practical.
         skills: ["betta-picture-processing"]
       }
+    }
+  },
+  tools: {
+    agentToAgent: {
+      enabled: true,
+      allow: ["betta-vision-worker"]
     }
   }
 }

@@ -2,6 +2,8 @@
 
 Persist a machine-readable batch ledger. Recommended item states:
 
+`scripts/betta_batch.py` is the authoritative validator and transition gate. Run `validate` after recording evidence and before every mutation or archive transition. Use `mutation-envelope` to emit the only permitted Shopify change set.
+
 1. `DISCOVERED`
 2. `SAVED`
 3. `VISUAL_PENDING`

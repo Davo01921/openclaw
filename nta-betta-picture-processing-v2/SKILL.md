@@ -22,6 +22,8 @@ Process one Discord thread as one traceable batch. Produce a polished studio her
 
 Read [references/state-machine.md](references/state-machine.md) before processing and [references/shopify-contract.md](references/shopify-contract.md) before any Shopify write.
 
+Use `scripts/betta_batch.py` as the authoritative transition and evidence validator. A model's prose verdict never substitutes for a successful validator exit.
+
 ## 1. Intake and traceability
 
 Accept source photographs only from the designated private Discord processing thread or `/Users/davidlo/Documents/Betta Processing`. Treat one thread as one batch; never mix messages, threads, prior batches, or filesystem ordering.
@@ -131,4 +133,4 @@ Reply in the originating thread with counts, PASS tanks/photo dates/new titles, 
 
 ## Runtime readiness
 
-Before a live batch, verify required image-capable review, Shopify resolver/writer/read-back operations, ledger validation, and dry-run mode are available. If any component is missing, remain in dry-run and report the blocker. Never substitute an unrecorded manual PASS.
+Before a live batch, verify an approved image-capable reviewer, Shopify resolver/writer/read-back operations, executable `scripts/betta_batch.py` ledger validation, and dry-run mode are available. Prefer the configured cheap worker; a recorded Sol review is an allowed fallback when the cheap worker is unavailable. If no approved reviewer or validator is available, remain in dry-run and report the blocker. Never substitute an unrecorded manual PASS.

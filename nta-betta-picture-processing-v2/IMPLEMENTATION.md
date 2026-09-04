@@ -35,7 +35,9 @@ OpenClaw skills are instructions, while tools/plugins perform actions. OpenClaw 
 
 ## Suggested implementation boundary
 
-Build or adapt these typed operations:
+Build or adapt these typed operations. `scripts/betta_batch.py` provides the
+authoritative local validation, transition gate, and mutation-envelope check;
+runtime adapters remain responsible for Discord, image editing, and Shopify API calls:
 
 - `collect_discord_batch(thread_id)`
 - `save_source_attachment(...)`
@@ -84,7 +86,7 @@ Wrap every model invocation with a usage recorder. Prefer provider-reported usag
 Suggested environment/config values:
 
 ```text
-BETTA_VISION_MODEL=<qwen vision-capable model id>
+BETTA_VISION_MODEL=google/gemini-3.5-flash
 BETTA_SOL_MODEL=<gpt-5.6-sol model id>
 BETTA_UTILITY_MODEL=<cheap text model id>
 
@@ -102,7 +104,7 @@ BETTA_SOL_MIN_CAP=2
 
 1. Install the v2 skill directory in the workspace skills path.
 2. Confirm `openclaw skills list` sees `betta-picture-processing`.
-3. Configure the cheap vision and Sol reviewer agents/model IDs.
+3. Configure the dedicated `betta-vision-worker` and recorded Sol fallback.
 4. Run a dry-run batch with Shopify mutations disabled.
 5. Compare interpreted tank/date/title/sex against the source photos.
 6. Enable Shopify writes for one small batch.
