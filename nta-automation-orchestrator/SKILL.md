@@ -1,14 +1,14 @@
 ---
 name: "nta-automation-orchestrator"
-version: "1.1"
-description: "Route non-financial NTA automation jobs through specialist workflows and shared product, Shopify, and model-delegation modules."
+version: "1.2"
+description: "Route non-financial NTA automation jobs through specialist workflows and shared product, Shopify, customer-service, and model-delegation modules."
 ---
 
 # NTA Automation Orchestrator
 
 ## Purpose
 
-This is the sole top-level NTA automation entry point. It routes a job; it does not repeat supplier, pricing, content, inventory, image, Shopify, shipping, or model rules.
+This is the sole top-level NTA automation entry point. It routes a job; it does not repeat supplier, pricing, content, inventory, image, Shopify, shipping, customer-service, or model rules.
 
 Financial, debt, repayment, banking, accounting, and reconciliation jobs are out of scope. Return `OUT_OF_SCOPE_FINANCIAL` without invoking any NTA workflow.
 
@@ -43,12 +43,17 @@ Use the supplier document fingerprint, Shopify order ID, Discord thread ID, or e
 | Dropship order | `nta-dropship-order-processing` | resolver and write verifier only for authorised product/order updates |
 | Shipping/fulfilment | `nta-shipping-fulfilment` | write verifier only for authorised Shopify fulfilment state |
 | Death/loss order | `nta-death-loss-order` | exact variant resolution and fresh Shopify verification |
+| Customer complaint, refund, replacement, livestock-health concern, service dispute or goodwill request | `nta-customer-service` | live Shopify/order evidence where relevant; write verifier for any authorised Shopify mutation |
 
 ## Dropship trigger rule
 
 When the source is a Shopify order event, scheduled recent-order scan, or manual order recheck intended to detect dropship work, route first to `nta-dropship-order-trigger`. The trigger may only detect and dispatch. Supplier hand-off remains exclusively owned by `nta-dropship-order-processing` and its configured supplier adapter.
 
 A webhook payload is a wake-up signal, not authoritative product state. Before a consequential action, downstream processing must re-read the live Shopify order and live dropship product metafields.
+
+## Customer-service routing rule
+
+When the request concerns a complaint, refund, replacement, livestock health/DOA issue, fulfilment dispute, product representation, pickup/shipping misunderstanding, or goodwill request, route to `nta-customer-service` before drafting the customer response or making a remedy decision. The customer-service skill must gather the relevant live evidence, classify responsibility, run the ACL/policy and devil's-advocate checks, and determine the recommended remedy before any consequential Shopify write is authorised.
 
 ## Dispatch rules
 
