@@ -58,6 +58,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for routing, ownership and model-cost rul
 ## Other active skills
 
 - `adaptive-model-router`
+- `nta-customer-service` — evidence-first customer-service decision engine with responsibility classification, ACL-aware review, proportionate remedies, and anonymised precedent patterns.
 - `nta-death-loss-order`
 - `nta-gumtree-listing`
 
