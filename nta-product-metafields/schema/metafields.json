@@ -1,0 +1,34 @@
+{
+  "version": "1.1",
+  "fields": {
+    "preorder_eligible": {
+      "namespace": "custom",
+      "key": "preorder_eligible",
+      "source_path": "availability.preorder_eligible",
+      "validator": "boolean",
+      "definition_metadata_required": true
+    },
+    "preorder_status_override": {
+      "namespace": "custom",
+      "key": "preorder_status_override",
+      "source_path": "availability.status_override",
+      "validator": "enum",
+      "allowed_values": ["automatic", "eta_tbc", "disabled"],
+      "definition_metadata_required": true
+    },
+    "arrival_date": {
+      "namespace": "custom",
+      "key": "arrival_date",
+      "source_path": "product_state.arrival_date",
+      "validator": "iso_date",
+      "definition_metadata_required": true
+    },
+    "in_store_location_tank_number": {
+      "namespace": "custom",
+      "key": "in_store_location_tank_number",
+      "source_path": "product_state.in_store_location_tank_number",
+      "validator": "nonempty_string",
+      "definition_metadata_required": true
+    }
+  }
+}
