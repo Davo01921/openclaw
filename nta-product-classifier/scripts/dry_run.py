@@ -16,7 +16,7 @@ def expect(name, payload, status, primary=None, pricing=None, replenishable=None
 
 fish = expect(
     "common livestock",
-    {"shopify_product_type": "Fish", "reorderable": True},
+    {"shopify_product_type": "Fish", "individually_identified": False, "reorderable": True},
     "CLASSIFIED",
     "LIVESTOCK",
     "COMMON_LIVESTOCK",
@@ -55,6 +55,23 @@ betta = expect(
     False,
 )
 
+unknown_betta = expect(
+    "betta with unknown individual-identification state",
+    {
+        "shopify_product_type": "Fish",
+        "title": "Premium Rare Betta",
+        "individually_identified": "unknown",
+        "reorderable": "unknown",
+        "premium_rare": "unknown",
+    },
+    "REVIEW_REQUIRED",
+    "LIVESTOCK",
+)
+assert unknown_betta["classification"]["pricing_category"] is None, unknown_betta
+assert unknown_betta["classification"]["individually_identified"] == "unknown", unknown_betta
+assert unknown_betta["classification"]["replenishable"] == "unknown", unknown_betta
+assert "individually_identified" in unknown_betta["missing_or_conflicting_fields"], unknown_betta
+
 ambiguous = expect(
     "title only",
     {"title": "Premium Rare Betta Tissue Culture Special"},
@@ -74,10 +91,13 @@ dry_ambiguous = expect(
     "DRY_GOODS",
 )
 
-print("DRY_RUN_PASS: deterministic-first product classifier; livestock, tissue culture, food, individual betta, title-only ambiguity, conflicting category evidence, and dry-goods pricing ambiguity; no Shopify writes, network calls, or model calls")
+print("DRY_RUN_PASS: deterministic-first product classifier; livestock, tissue culture, food, individual betta, unresolved-betta tri-state gate, title-only ambiguity, conflicting category evidence, and dry-goods pricing ambiguity; no Shopify writes, network calls, or model calls")
 print("Common livestock:", fish["classification"]["pricing_category"])
 print("Tissue culture:", tissue["classification"]["pricing_category"])
 print("Fish food:", food["classification"]["pricing_category"])
 print("Individual betta replenishable:", betta["classification"]["replenishable"])
+print("Unknown betta status:", unknown_betta["status"])
+print("Unknown betta individual identification:", unknown_betta["classification"]["individually_identified"])
+print("Unknown betta pricing category:", unknown_betta["classification"]["pricing_category"])
 print("Title-only status:", ambiguous["status"])
 print("Conflicting evidence status:", conflict["status"])
