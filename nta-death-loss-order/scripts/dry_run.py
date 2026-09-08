@@ -48,6 +48,16 @@ bad_qty = {**base_item, "quantity": 0}
 r = build_loss_plan({**base, "loss_items": [bad_qty]})
 expect(r["status"] == "REVIEW_REQUIRED", "non-positive quantity must review")
 
+r = build_loss_plan({**base, "source_event_id": ""})
+expect(r["status"] == "REVIEW_REQUIRED", "missing source event id must review")
+
+r = build_loss_plan({
+    **base,
+    "prior_manual_deduction_found": True,
+    "manual_reversal_verified": False,
+})
+expect(r["status"] == "REVIEW_REQUIRED", "unreconciled manual deduction must block even dry run readiness")
+
 write_base = {
     **base,
     "mode": "write",
@@ -90,10 +100,11 @@ expect(r["status"] == "READY", "multi-line write preflight should be READY")
 expect(len(r["order_plan"]["line_items"]) == 2, "multi-line plan missing items")
 expect("Tank 13" in r["order_plan"]["tags"] and "Tank 14" in r["order_plan"]["tags"], "multi-tank tags missing")
 
-print("DRY_RUN_PASS: deterministic death-loss order planning; canonical customer/discount/tags, positive quantity and resolved-variant gates, duplicate no-op, write-capability and zero-total gates, manual-deduction reversal gate, multi-line planning; no Shopify writes, network calls, or model calls")
+print("DRY_RUN_PASS: deterministic death-loss order planning; canonical customer/discount/tags, stable source-event and positive-quantity gates, resolved-variant gate, duplicate no-op, manual-deduction reconciliation, write-capability and zero-total gates, multi-line planning; no Shopify writes, network calls, or model calls")
 print("Resolved dry-run status:", build_loss_plan(base)["status"])
 print("Duplicate status:", build_loss_plan({**base, "prior_loss_order_found": True})["status"])
 print("Unresolved variant status:", build_loss_plan({**base, "loss_items": [bad_item]})["status"])
+print("Missing source-event status:", build_loss_plan({**base, "source_event_id": ""})["status"])
+print("Manual deduction without reversal status:", build_loss_plan({**base, "prior_manual_deduction_found": True, "manual_reversal_verified": False})["status"])
 print("Write preflight status:", build_loss_plan(write_base)["status"])
 print("Unverified order-writer status:", build_loss_plan({**write_base, "order_write_capability_verified": False})["status"])
-print("Manual deduction without reversal status:", build_loss_plan({**write_base, "prior_manual_deduction_found": True, "manual_reversal_verified": False})["status"])
