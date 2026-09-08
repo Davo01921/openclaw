@@ -1,6 +1,6 @@
 ---
 name: "nta-dymo-tank-label"
-version: "1.0"
+version: "1.1"
 description: "Render deterministic two-line DYMO livestock tank-label text from approved NTA intake state without mutating Shopify or making product decisions."
 ---
 
@@ -18,6 +18,18 @@ after the intake state has been resolved. In write mode, use the fresh Shopify
 read-back value for `custom.arrival_date`; in dry-run mode, use the proposed
 value for that same Shopify field. There is no separate physical arrival or
 availability date for labels.
+
+## Execution rule
+
+Use `scripts/label_formatter.py` as the canonical runtime formatter. Label
+rendering is deterministic and must not consume a model call. If identity,
+price, quantity, selling-unit conversion, arrival date, or another upstream
+field is ambiguous, stop at the upstream review boundary rather than asking a
+model to guess inside this skill.
+
+If an upstream workflow genuinely requires model reasoning before this skill is
+called, use the narrowest configured general model that can safely resolve that
+upstream ambiguity. The formatter itself never selects or calls a model.
 
 ## Required input
 
