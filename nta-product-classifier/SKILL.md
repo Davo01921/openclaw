@@ -22,6 +22,8 @@ Titles, common names, scientific names and free-form supplier wording are eviden
 
 If evidence is insufficient or conflicting, return `REVIEW_REQUIRED` rather than guessing.
 
+Unknown is not false. Tri-state fields must preserve `true`, `false`, or `unknown` where the distinction can affect downstream behaviour.
+
 ## Implementation
 
 Production files:
@@ -45,7 +47,7 @@ shopify_product_type:
 shopify_category:
 verified_supplier_category:
 authoritative_primary: null
-intended_subtype: null
+authoritative_subtype: null
 pricing_category: null
 reorderable: null
 individually_identified: null
@@ -73,7 +75,7 @@ classification:
   subtype:
   pricing_category:
   replenishable: true | false | unknown
-  individually_identified: true | false
+  individually_identified: true | false | unknown
   tissue_culture: true | false
   evidence: []
 missing_or_conflicting_fields: []
@@ -124,7 +126,10 @@ This skill must not copy margin percentages or price rules from the pricing stan
 
 ### Important safeguards
 
-- `Betta` does not by itself mean `INDIVIDUAL_BETTAS`. The item must also be explicitly individually identified.
+- `Betta` does not by itself mean `INDIVIDUAL_BETTAS`.
+- When authoritative evidence establishes livestock/fish and the title or subtype indicates Betta, but `individually_identified` is unknown, retain the safe livestock/fish classification but return `REVIEW_REQUIRED`, leave `pricing_category` null, and preserve `individually_identified: unknown`.
+- Only explicit `individually_identified: true` may drive `INDIVIDUAL_BETTAS`.
+- Explicit `individually_identified: false` may permit the non-individual livestock path where no other review gate applies.
 - `Premium`, `rare`, or similar wording in a title does not by itself mean `PREMIUM_RARE_LIVESTOCK`; use an explicit trusted flag/category.
 - Generic equipment does not automatically become commodity or specialist equipment. That distinction requires explicit structured evidence.
 - Tissue culture should come from an explicit structured flag or authoritative category/type, not a casual title keyword.
@@ -159,6 +164,7 @@ Use when:
 
 - primary-category evidence conflicts;
 - only weak/free-form title evidence exists;
+- a Betta context exists but individual-identification state is unknown;
 - a pricing category materially affects downstream pricing but cannot be established safely;
 - tissue-culture or individual-identification flags conflict with the primary category;
 - an explicit canonical category value is invalid;
@@ -201,10 +207,11 @@ python3 scripts/dry_run.py
 
 The regression suite covers:
 
-- common livestock;
+- common livestock with explicit non-individual state;
 - tissue culture;
 - fish food;
-- individually identified one-off betta;
+- individually identified one-off Betta;
+- Betta with unknown individual-identification state;
 - title-only ambiguity;
 - conflicting primary-category evidence;
 - generic dry-goods pricing ambiguity;
