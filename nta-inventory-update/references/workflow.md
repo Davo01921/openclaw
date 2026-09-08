@@ -1,139 +1,87 @@
-# Detailed NTA inventory workflow
+# NTA inventory-update workflow reference
 
-Owner: Nano Tanks Australia (NTA)  
-Source version: 1.0
+Owner: Nano Tanks Australia (NTA)
+Version: 1.1
 
-## Defaults
+This reference describes orchestration only. Product-domain rules belong to the canonical child skills and must not be duplicated here.
 
-Unless David specifies otherwise:
+## Scope
 
-- Arrival date: today
-- Tank/location: `OFFLOCATION1`
-- Vendor: exactly as supplied
-- Preserve existing category, status, description, images, handle, collections, and valid historical setup
-- Preserve retail unless strong Australian market evidence supports a change
-- Update cost only when Shopify differs from supplied cost
-- Set inventory to received quantity unless David explicitly requests an addition
+Use `nta-inventory-update` for stock that has physically arrived, a verified physical count, or an authorised inventory correction.
 
-## Quantity interpretation
+Do not use this workflow for `ORDERED` stock that has not physically arrived. Route that case to `nta-supplier-order-processing`.
 
-- “10 pairs” means pair-variant inventory = 10.
-- Do not create 10 male and 10 female inventory from 10 pairs.
-- Individual livestock targets the single/default variant.
-- “Arrived” or “received” means set inventory.
-- Only “add,” “plus,” “increase by,” or “another … on top” means increment.
-- If live inventory is negative or corrupted, set it to the physical received quantity and disclose the correction.
+## Structured intake
 
-## Live Shopify discovery
+Provide, where applicable:
 
-Use `nta-product-resolver` for the exact product/variant selection and duplicate-risk outcome; the discovery observations below are its required evidence.
+- exact product/variant evidence;
+- vendor/supplier;
+- received or counted physical quantity in the Shopify selling unit;
+- supplier cost and GST basis when supplied;
+- whether retail review is required;
+- confirmed arrival date when supplied;
+- authorised tank/location when supplied;
+- supplier availability/ETA evidence;
+- inventory job state and quantity basis;
+- correction authorisation when applicable;
+- dry-run or write mode;
+- whether a DYMO tank label is requested.
 
-Search by product name and confirm:
+Do not invent missing dates, tank locations, supplier ETAs, selling-unit conversions, correction authority, or product identity.
 
-- exact product title and GID
-- actual handle
-- vendor and status
-- all variants and titles
-- retail prices
-- inventory
-- costs
-- relevant metafields
+## Canonical route
 
-When similar products exist, select the active like-for-like strain and size. Never create a new product until duplicates are ruled out.
+For received/count/correction work:
 
-## Inventory safety
+1. `nta-product-resolver`
+2. `nta-product-classifier`
+3. `nta-supplier-unit-cost-normalizer` only when supplier cost is supplied
+4. `nta-retail-pricing-standard` only when a retail review is required
+5. `nta-inventory-state`
+6. `nta-product-availability`
+7. `nta-product-metafields`
+8. `nta-product-exception-gate`
+9. `nta-shopify-write-verifier` in write mode only
+10. `nta-dymo-tank-label` when requested; after verified Shopify state in write mode, or from proposed state in dry-run mode
 
-Before writing, retrieve:
+Use `scripts/route_plan.py` when the routing flags are already structured.
 
-- `inventoryItemId`
-- `locationId`
-- available
-- committed
-- on-hand
+## Responsibility boundaries
 
-Record the current available quantity. Update the correct location and variant, pass the current available quantity as comparison value when supported, set the new available quantity, and use reason `received`.
+- Identity and duplicate risk: `nta-product-resolver`.
+- Classification and replenishment/one-off state: `nta-product-classifier`.
+- Supplier-unit arithmetic: `nta-supplier-unit-cost-normalizer`.
+- Retail decisions: `nta-retail-pricing-standard`.
+- Physical quantity operation (`SET`, `ADD`, `NONE`): `nta-inventory-state`.
+- Customer orderability/preorder state: `nta-product-availability`.
+- Shopify metafield mapping: `nta-product-metafields`.
+- Exception disposition: `nta-product-exception-gate`.
+- Shopify mutation plus fresh verification: `nta-shopify-write-verifier`.
+- DYMO text formatting: `nta-dymo-tank-label`.
 
-## Cost and vendor
+This workflow must not maintain its own competing rules for any of those domains.
 
-Compare supplier cost in the same unit as the target variant:
+## Arrival date and location
 
-- identical: no write; report “Cost already correct”
-- different: update and reread to verify
+A supplied/confirmed arrival date may flow to `nta-product-metafields`. Never default a missing arrival date to today.
 
-Set the relevant product vendor to the exact supplied name. Do not rename unrelated products or suppliers.
+A tank/location must come from authorised upstream state. Never default a missing location to `OFFLOCATION1` or another invented value.
 
-## Australian retail review
+## Inventory corrections
 
-Use multiple credible Australian aquarium retailers where possible. Compare like-for-like:
+Do not repair negative or corrupted inventory inside this workflow. Pass the state to `nta-inventory-state`, which owns correction rules and required authorisation.
 
-- strain and grade
-- size
-- sex
-- each vs pair vs group
-- standard vs ribbon/dumbo/longfin form
-- availability
-- regular vs sale price
-- bulk vs single pricing
+## Writes and completion
 
-Do not blindly use out-of-stock prices or unit-mismatched listings. Change retail only when the evidence is strong; otherwise preserve the live price and provide a recommendation.
+In dry-run mode, stop before Shopify mutation and return the proposed route/state.
 
-## Metafields
+In write mode, all approved changes must pass through `nta-shopify-write-verifier`. Do not declare completion from a successful mutation request alone.
 
-Where used, set:
+A write-mode item is complete only when expected-vs-live verification succeeds for every changed field or an explicit accepted warning state is returned. Unresolved review items or blocks must be reported.
 
-- `custom.arrival_date`: supplied date or today
-- `custom.in_store_location_tank_number`: supplied tank or `OFFLOCATION1`
+## Model use
 
-If established NTA rules require preserving an active tank assignment, preserve it and explain that choice.
+Routing itself is deterministic and should use zero model calls.
 
-## DYMO tank labels
-
-When a DYMO livestock tank label is requested, call `nta-dymo-tank-label` after
-the Shopify write/read-back boundary (or against the planned Shopify state in a
-dry run). Its exact two-line output is the label contract; do not add vendor,
-cost, tank/location, a physical-arrival date, or availability text.
-
-Use `custom.arrival_date` as the single arrival-date source. Quantity is the
-received count in the exact Shopify selling unit. Physical label counts follow
-received units: 10 pair units = 10 labels and 200 individually sold shrimp =
-200 labels.
-
-## Mandatory final audit
-
-Run the approved change set through `nta-shopify-write-verifier`. Its fresh read-back result is the completion gate for this audit.
-
-Reread all changed Shopify products and compare expected versus live for:
-
-- vendor
-- cost
-- retail
-- exact variant inventory
-- arrival date
-- tank/location
-- active status
-- actual handle
-
-Fix mismatches before reporting completion. If they cannot be fixed, report an exception and do not call the batch complete.
-
-Use the actual handle to construct:
-
-`https://nanotanksaustralia.com.au/products/{LIVE_SHOPIFY_HANDLE}`
-
-Never derive a handle from the title.
-
-## Completion report
-
-For each product report:
-
-- vendor before → after
-- cost before → after, or already correct
-- retail before → after, or unchanged
-- inventory before → after
-- expected vs live with PASS/FAIL
-- arrival date
-- tank
-- actual product link
-
-Also report the observed Australian market range, whether retail changed, recommendation if unchanged, and genuine exceptions such as corrected negative inventory, old handles, duplicates, weak evidence, missing metafields, or variant ambiguity.
-
-A batch succeeds only when every item is correctly matched, costs/vendor are correct, market pricing is reviewed, inventory is written and live-verified, labels are generated, actual links are supplied, and exceptions are disclosed.
+AI may be used upstream only when genuinely needed to turn ambiguous free-form supplier/operator material into structured evidence. Once structured, arithmetic, routing, state decisions, mapping, writing and verification should use the relevant canonical deterministic components wherever available.
