@@ -90,6 +90,8 @@ def bool_or_none(value: Any) -> Optional[bool]:
             return True
         if n in {"false", "no", "0"}:
             return False
+        if n in {"unknown", "null", "none", "unset"}:
+            return None
     return None
 
 
@@ -100,6 +102,10 @@ def add_candidate(candidates: List[Tuple[str, str, str]], source: str, value: An
     mapped = PRIMARY_MAP.get(n)
     if mapped:
         candidates.append((mapped[0], mapped[1], f"{source}={value}"))
+
+
+def tri_state(value: Optional[bool]) -> Any:
+    return "unknown" if value is None else value
 
 
 def classify(data: Dict[str, Any]) -> Dict[str, Any]:
@@ -143,9 +149,8 @@ def classify(data: Dict[str, Any]) -> Dict[str, Any]:
     subtype = next(iter(subtype_candidates)) if len(subtype_candidates) == 1 else (str(data.get("authoritative_subtype") or "").strip().upper() or "UNKNOWN")
     evidence.extend(c[2] for c in candidates)
 
+    # Preserve tri-state values. Unknown is not false.
     individually_identified = bool_or_none(data.get("individually_identified"))
-    if individually_identified is None:
-        individually_identified = False
 
     tissue_culture = bool_or_none(data.get("tissue_culture"))
     if tissue_culture is None:
@@ -153,13 +158,20 @@ def classify(data: Dict[str, Any]) -> Dict[str, Any]:
 
     if tissue_culture and primary != "PLANTS":
         issues.append("tissue_culture_conflicts_with_primary")
-    if individually_identified and primary != "LIVESTOCK":
+    if individually_identified is True and primary != "LIVESTOCK":
         issues.append("individually_identified_conflicts_with_primary")
 
     premium_rare = bool_or_none(data.get("premium_rare")) or False
     specialist_niche = bool_or_none(data.get("specialist_niche")) or False
     low_cost_accessory = bool_or_none(data.get("low_cost_accessory")) or False
     commodity_branded = bool_or_none(data.get("commodity_branded")) or False
+
+    # A Betta hint in free-form text is never classification authority. It is only
+    # a safety gate: if individual-identification state is unresolved, pricing
+    # classification must stop because COMMON_LIVESTOCK vs INDIVIDUAL_BETTAS
+    # cannot be decided safely.
+    title_words = set(norm(data.get("title")).split())
+    betta_context = subtype == "BETTA" or (primary == "LIVESTOCK" and "betta" in title_words)
 
     explicit_pricing = data.get("pricing_category")
     pricing_category: Optional[str] = None
@@ -173,7 +185,10 @@ def classify(data: Dict[str, Any]) -> Dict[str, Any]:
 
     if pricing_category is None:
         if primary == "LIVESTOCK":
-            if individually_identified and subtype == "BETTA":
+            if betta_context and individually_identified is None:
+                issues.append("individually_identified")
+                notes.append("Betta context detected; explicit individual-identification state is required before pricing category can be determined.")
+            elif individually_identified is True and betta_context:
                 pricing_category = "INDIVIDUAL_BETTAS"
             elif subtype in {"SHRIMP", "SNAIL", "CRAYFISH", "CRAB", "OTHER_LIVESTOCK"}:
                 pricing_category = "SHRIMP_SPECIALIST_INVERTEBRATES"
@@ -192,13 +207,11 @@ def classify(data: Dict[str, Any]) -> Dict[str, Any]:
                 pricing_category = "SPECIALIST_NICHE_EQUIPMENT"
             elif commodity_branded and subtype in {"EQUIPMENT", "ACCESSORY", "AQUARIUM", "STAND_CABINET", "SPARE_PART", "OTHER_DRY_GOODS"}:
                 pricing_category = "COMMODITY_BRANDED_EQUIPMENT"
-            elif subtype == "ACCESSORY" and low_cost_accessory:
-                pricing_category = "LOW_COST_ACCESSORIES"
             else:
                 issues.append("pricing_category_evidence")
 
     false_replenishment_flags = {
-        "individually_identified": individually_identified,
+        "individually_identified": individually_identified is True,
         "discontinued": bool_or_none(data.get("discontinued")) or False,
         "clearance_only": bool_or_none(data.get("clearance_only")) or False,
         "internal_use": bool_or_none(data.get("internal_use")) or False,
@@ -211,33 +224,27 @@ def classify(data: Dict[str, Any]) -> Dict[str, Any]:
     else:
         replenishable = "unknown"
 
+    classification = {
+        "primary": primary,
+        "subtype": subtype,
+        "pricing_category": pricing_category,
+        "replenishable": replenishable,
+        "individually_identified": tri_state(individually_identified),
+        "tissue_culture": tissue_culture,
+        "evidence": evidence,
+    }
+
     if issues:
         return {
             "status": "REVIEW_REQUIRED",
-            "classification": {
-                "primary": primary,
-                "subtype": subtype,
-                "pricing_category": pricing_category,
-                "replenishable": replenishable,
-                "individually_identified": individually_identified,
-                "tissue_culture": tissue_culture,
-                "evidence": evidence,
-            },
+            "classification": classification,
             "missing_or_conflicting_fields": sorted(set(issues)),
             "notes": notes,
         }
 
     return {
         "status": "CLASSIFIED",
-        "classification": {
-            "primary": primary,
-            "subtype": subtype,
-            "pricing_category": pricing_category,
-            "replenishable": replenishable,
-            "individually_identified": individually_identified,
-            "tissue_culture": tissue_culture,
-            "evidence": evidence,
-        },
+        "classification": classification,
         "missing_or_conflicting_fields": [],
         "notes": notes,
     }
