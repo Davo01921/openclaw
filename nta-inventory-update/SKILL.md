@@ -1,10 +1,10 @@
 ---
 name: "nta-inventory-update"
-version: "1.1"
-description: "Coordinate received/count/correction inventory work through canonical NTA modules without duplicating product-domain rules."
+version: "1.2"
+description: "Coordinate received/count/correction inventory work through canonical NTA modules without duplicating product-domain rules, with fail-fast dependency handling."
 ---
 
-# NTA Inventory Update — v1.1
+# NTA Inventory Update — v1.2
 
 ## Purpose
 
@@ -69,6 +69,30 @@ For valid received/count/correction work run, as applicable:
 
 Do not maintain separate child-skill rules here.
 
+## Fail-fast execution gate
+
+The planned route is a maximum route, not an instruction to call every child after a prerequisite has failed.
+
+Execute child skills sequentially. After every required child result:
+
+- `BLOCK` → stop immediately and return workflow `BLOCK`;
+- `REVIEW_REQUIRED` → stop immediately before dependent downstream children and return workflow `REVIEW_REQUIRED`;
+- missing required structured output → stop as `REVIEW_REQUIRED`;
+- otherwise continue only when that child's own documented success contract is satisfied.
+
+Use `child_result_gate()` from `scripts/route_plan.py` for the shared `REVIEW_REQUIRED` / `BLOCK` terminal check when useful.
+
+Critical examples:
+
+- unresolved product/variant identity → stop after `nta-product-resolver`; do not call classifier, inventory, availability, metafields, exception gate, writer, or label;
+- unresolved classification required for the workflow → stop before inventory/availability/metafields;
+- unresolved inventory-state decision → stop before availability/metafields/write;
+- unresolved availability → stop before availability-derived metafields/write;
+- unresolved metafield mapping → stop before mutation;
+- exception-gate `BLOCK` or `REVIEW_REQUIRED` → do not mutate Shopify.
+
+Do not cascade the same known prerequisite failure through multiple downstream skills merely to obtain repeated `REVIEW_REQUIRED` results. Fail fast to reduce model/tool usage and keep the reason for stopping clear.
+
 ## Intake evidence
 
 Pass structured evidence where available:
@@ -100,7 +124,7 @@ Free-form supplier/operator text may require upstream extraction, but once struc
 
 ## Dry-run mode
 
-Run decision modules and exception gate only. Do not route to Shopify mutation. A requested DYMO label may use the proposed `custom.arrival_date` and resolved approved state.
+Run only the decision modules that remain reachable under the fail-fast gate. Do not route to Shopify mutation. A requested DYMO label may use the proposed `custom.arrival_date` and resolved approved state only when all prerequisite state required by the label is valid.
 
 ## Write mode
 
@@ -110,12 +134,13 @@ All approved mutations must pass through `nta-shopify-write-verifier`. DYMO labe
 
 Do not mark a write-mode item complete until:
 
-1. required child modules returned valid state;
-2. exception status permits the intended action;
-3. `nta-shopify-write-verifier` confirms expected-vs-live state for every changed field, or returns an explicitly acceptable verified warning state;
-4. unresolved review/block conditions are reported;
-5. requested label output is generated from approved/verified state.
+1. required child modules that were reached returned valid state;
+2. no unresolved prerequisite has stopped the route;
+3. exception status permits the intended action;
+4. `nta-shopify-write-verifier` confirms expected-vs-live state for every changed field, or returns an explicitly acceptable verified warning state;
+5. unresolved review/block conditions are reported;
+6. requested label output is generated from approved/verified state.
 
 A successful API response alone is not proof of completion.
 
-See `references/workflow.md` for the lean orchestration reference. Run `python3 scripts/dry_run.py` for deterministic routing regression.
+See `references/workflow.md` for the lean orchestration reference. Run `python3 scripts/dry_run.py` for deterministic routing and fail-fast regression.
