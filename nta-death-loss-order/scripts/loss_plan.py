@@ -132,6 +132,17 @@ def build_loss_plan(data: dict) -> dict:
             "notes": ["A loss order for this source event/items is already recorded; do not deduct inventory again."],
         }
 
+    if prior_manual_deduction_found and not manual_reversal_verified:
+        return {
+            "status": "REVIEW_REQUIRED",
+            "write_ready": False,
+            "order_plan": None,
+            "missing_or_conflicting_fields": ["manual_reversal_verified"],
+            "notes": [
+                "A prior manual deduction for this loss is recorded but its reversal is not verified; stop to prevent a double inventory reduction."
+            ],
+        }
+
     idempotency_key = _idempotency_key(source_event_id.strip(), items)
 
     tags = list(BASE_TAGS)
@@ -198,8 +209,6 @@ def build_loss_plan(data: dict) -> dict:
         data.get("fulfilment_write_capability_verified"), "fulfilment_write_capability_verified", write_errors
     )
 
-    if prior_manual_deduction_found and not manual_reversal_verified:
-        write_errors.append("manual_reversal_verified")
     if customer_verified is False:
         write_errors.append("customer_verified:false")
     if discount_zero_verified is False:
