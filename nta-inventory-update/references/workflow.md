@@ -1,7 +1,7 @@
 # NTA inventory-update workflow reference
 
 Owner: Nano Tanks Australia (NTA)
-Version: 1.1
+Version: 1.2
 
 This reference describes orchestration only. Product-domain rules belong to the canonical child skills and must not be duplicated here.
 
@@ -32,7 +32,7 @@ Do not invent missing dates, tank locations, supplier ETAs, selling-unit convers
 
 ## Canonical route
 
-For received/count/correction work:
+For received/count/correction work, the maximum planned route is:
 
 1. `nta-product-resolver`
 2. `nta-product-classifier`
@@ -46,6 +46,29 @@ For received/count/correction work:
 10. `nta-dymo-tank-label` when requested; after verified Shopify state in write mode, or from proposed state in dry-run mode
 
 Use `scripts/route_plan.py` when the routing flags are already structured.
+
+## Fail-fast execution
+
+The maximum route is not a requirement to invoke every child after a prerequisite fails.
+
+Run children sequentially and stop dependent work immediately when:
+
+- a required child returns `REVIEW_REQUIRED`;
+- any child returns `BLOCK`;
+- required structured output for the next dependency is missing.
+
+Continue only when the reached child has satisfied its own documented success contract.
+
+Examples:
+
+- unresolved exact product/variant identity → stop after `nta-product-resolver`;
+- unresolved classification → stop before inventory/availability/metafield work that depends on it;
+- unresolved inventory state → stop before downstream availability/metafield/write work;
+- unresolved availability → do not generate availability-derived metafield changes;
+- unresolved metafield mapping → do not write;
+- exception gate `REVIEW_REQUIRED` or `BLOCK` → do not write.
+
+Do not call downstream skills simply to reproduce a failure already established by a prerequisite. This keeps the workflow cheaper, faster, and easier to audit.
 
 ## Responsibility boundaries
 
@@ -74,7 +97,7 @@ Do not repair negative or corrupted inventory inside this workflow. Pass the sta
 
 ## Writes and completion
 
-In dry-run mode, stop before Shopify mutation and return the proposed route/state.
+In dry-run mode, stop before Shopify mutation and return the approved proposed state reached before any fail-fast condition.
 
 In write mode, all approved changes must pass through `nta-shopify-write-verifier`. Do not declare completion from a successful mutation request alone.
 
@@ -82,6 +105,6 @@ A write-mode item is complete only when expected-vs-live verification succeeds f
 
 ## Model use
 
-Routing itself is deterministic and should use zero model calls.
+Routing and terminal child-result gating are deterministic and should use zero model calls.
 
 AI may be used upstream only when genuinely needed to turn ambiguous free-form supplier/operator material into structured evidence. Once structured, arithmetic, routing, state decisions, mapping, writing and verification should use the relevant canonical deterministic components wherever available.
