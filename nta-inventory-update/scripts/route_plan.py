@@ -2,6 +2,7 @@ from __future__ import annotations
 
 VALID_JOB_STATES = {"RECEIVED", "RECEIVED_PARTIAL", "COUNTED", "CORRECTION"}
 VALID_MODES = {"dry_run", "write"}
+TERMINAL_CHILD_STATUSES = {"REVIEW_REQUIRED", "BLOCK"}
 
 
 def _as_bool(value, field, errors):
@@ -9,6 +10,36 @@ def _as_bool(value, field, errors):
         return value
     errors.append(field)
     return None
+
+
+def child_result_gate(child_name: str, child_status: str) -> dict:
+    """Return the deterministic fail-fast action for a child result.
+
+    This gate intentionally recognizes only the two terminal statuses shared by
+    the inventory-update orchestration contract. A non-terminal result is not
+    proof that a child succeeded; the caller must still validate that child's
+    documented output contract before continuing.
+    """
+    if child_status == "BLOCK":
+        return {
+            "action": "STOP",
+            "workflow_status": "BLOCK",
+            "stop_after": child_name,
+            "reason": "child_block",
+        }
+    if child_status == "REVIEW_REQUIRED":
+        return {
+            "action": "STOP",
+            "workflow_status": "REVIEW_REQUIRED",
+            "stop_after": child_name,
+            "reason": "required_child_review",
+        }
+    return {
+        "action": "CONTINUE",
+        "workflow_status": None,
+        "stop_after": None,
+        "reason": None,
+    }
 
 
 def build_route(data: dict) -> dict:
@@ -67,6 +98,7 @@ def build_route(data: dict) -> dict:
         "missing_or_conflicting_fields": [],
         "notes": [
             "Route planning is deterministic; child modules own all product-domain decisions.",
+            "Execute sequentially and stop dependent work immediately when a required child returns REVIEW_REQUIRED or BLOCK.",
             "In write mode, DYMO label generation occurs only after verified Shopify state; in dry_run it uses proposed state.",
         ],
     }
