@@ -1,76 +1,121 @@
 ---
 name: "nta-inventory-update"
-description: "Handle NTA livestock/product stock intake as a specialist workflow that delegates identity, cost, pricing, inventory, availability, metafields, writes, and QA to canonical product modules."
+version: "1.1"
+description: "Coordinate received/count/correction inventory work through canonical NTA modules without duplicating product-domain rules."
 ---
 
-# NTA inventory update
+# NTA Inventory Update — v1.1
 
-Use when incoming livestock or other received stock must be reconciled against Shopify.
+## Purpose
 
-This is a specialist intake workflow, not the source of truth for product-domain rules.
+Specialist orchestration workflow for stock that has physically arrived, a verified physical count, or an authorised correction.
+
+This skill does not own product identity, pricing, inventory arithmetic, availability, metafield, write, or label rules. It routes structured intake state to the canonical modules.
+
+Core principle: **Skills decide. Writers write. Auditors verify.**
+
+## Scope gate
+
+Accepted job states:
+
+- `RECEIVED`
+- `RECEIVED_PARTIAL`
+- `COUNTED`
+- `CORRECTION`
+
+`ORDERED` stock that has not physically arrived is not an inventory-update receipt. Return `REVIEW_REQUIRED` and redirect to `nta-supplier-order-processing`; never increase physical inventory from an order alone.
+
+## Deterministic route planner
+
+When routing flags are already structured, use `scripts/route_plan.py`.
+
+Input:
+
+```yaml
+route_input:
+  job_state: RECEIVED | RECEIVED_PARTIAL | COUNTED | CORRECTION | ORDERED
+  mode: dry_run | write
+  supplier_cost_supplied: true | false
+  price_review_required: true | false
+  label_requested: true | false
+```
+
+Output:
+
+```yaml
+status: READY | REVIEW_REQUIRED
+route: []
+redirect: null
+missing_or_conflicting_fields: []
+notes: []
+```
+
+Route planning requires zero model calls, zero network calls, and zero Shopify writes.
 
 ## Canonical dependencies
 
-Read `nta-product-orchestrator` first and use:
+For valid received/count/correction work run, as applicable:
 
-- `nta-product-resolver`
-- `nta-product-classifier`
-- `nta-supplier-unit-cost-normalizer` when supplier cost is supplied
-- `nta-retail-pricing-standard` when retail review is required
-- `nta-inventory-state`
-- `nta-product-availability`
-- `nta-product-metafields`
-- `nta-product-exception-gate`
-- `nta-shopify-write-verifier`
-- `nta-dymo-tank-label` when a DYMO tank label is requested
+1. `nta-product-resolver`
+2. `nta-product-classifier`
+3. `nta-supplier-unit-cost-normalizer` only when supplier cost is supplied
+4. `nta-retail-pricing-standard` only when retail review is required
+5. `nta-inventory-state`
+6. `nta-product-availability`
+7. `nta-product-metafields`
+8. `nta-product-exception-gate`
+9. `nta-shopify-write-verifier` in write mode only
+10. `nta-dymo-tank-label` when requested; after verified Shopify state in write mode, or from proposed state in dry-run mode
 
-Do not maintain separate pricing, preorder, or write rules here.
+Do not maintain separate child-skill rules here.
 
-## Intake fields
+## Intake evidence
 
-Parse where available:
+Pass structured evidence where available:
 
+- exact product/variant evidence;
 - vendor/supplier;
-- product and exact variant;
-- size/sex/pack/sell unit;
-- received physical quantity;
-- supplier cost and GST basis;
-- arrival date, which maps to Shopify `custom.arrival_date`;
-- tank/location;
+- received or counted quantity in the Shopify selling unit;
+- supplier cost and GST basis when supplied;
+- confirmed arrival date when supplied;
+- authorised tank/location when supplied;
 - supplier availability/ETA evidence;
-- operator instruction: set/add/received/partial.
+- inventory job state and quantity basis;
+- correction authorisation when applicable;
+- dry-run/write mode;
+- label request.
 
-## Workflow
+Free-form supplier/operator text may require upstream extraction, but once structured, routing and deterministic child decisions must not use AI merely for arithmetic, formatting, mapping, or state comparison.
 
-1. Resolve exact Shopify identity and duplicate risk with `nta-product-resolver`.
-2. Classify product and replenishment/one-off state with `nta-product-classifier`.
-3. If cost is supplied, normalize GST and units with `nta-supplier-unit-cost-normalizer`.
-4. If price review is required, use `nta-retail-pricing-standard` with normalized cost and current live price.
-5. Resolve the stock write with `nta-inventory-state`.
-6. Resolve customer orderability/preorder separately with `nta-product-availability`.
-7. Map arrival date, tank/location and availability outputs with `nta-product-metafields`.
-8. Run `nta-product-exception-gate`.
-9. Apply and freshly verify approved changes only through `nta-shopify-write-verifier`.
-10. When a DYMO tank label is requested, call `nta-dymo-tank-label` using the
-    resolved name, approved retail and genuine bulk pricing (if any), received
-    sell-unit quantity, and `custom.arrival_date` from the fresh Shopify
-    read-back. In a dry run, use the proposed value for that same Shopify field.
+## Safety boundaries
 
-## Intake-specific rules
+- Never default a missing arrival date to today.
+- Never default a missing tank/location to `OFFLOCATION1` or another invented value.
+- Never repair negative/corrupted stock here; `nta-inventory-state` owns correction rules and authorisation.
+- Never infer SET versus ADD here; pass the structured job state/quantity basis to `nta-inventory-state`.
+- Never infer preorder eligibility from zero stock; `nta-product-availability` owns orderability.
+- Never invent metafield definitions; `nta-product-metafields` owns mapping and validation.
+- Never split pair/trio/group selling units silently; upstream unit resolution must be explicit.
+- One-off livestock behaviour comes from canonical classification and availability modules, not duplicated rules here.
 
-- A verified physical count defaults to SET unless the operator explicitly says add/plus/another/increase by.
-- Pair/trio/group quantities target their exact Shopify sell unit; do not split them silently.
-- Arrival date may use a supplied/confirmed date. Do not invent supplier ETA.
-- Shopify `custom.arrival_date` is the only arrival-date source for DYMO tank
-  labels. Do not introduce a physical arrival or availability date field.
-- Tank/location values must follow current NTA store rules; preserve an active assignment when required and report the reason.
-- Labels, when requested, are an intake output and must use already-resolved
-  product, retail, bulk-pricing, quantity, and Shopify arrival-date data. Label
-  generation must not change product decisions or write Shopify.
-- Individually identified Bettas and other one-off livestock remain non-replenishable and must not be made preorder eligible merely because inventory reaches zero.
+## Dry-run mode
+
+Run decision modules and exception gate only. Do not route to Shopify mutation. A requested DYMO label may use the proposed `custom.arrival_date` and resolved approved state.
+
+## Write mode
+
+All approved mutations must pass through `nta-shopify-write-verifier`. DYMO label generation, when requested, occurs only after fresh verified Shopify read-back so it consumes the verified `custom.arrival_date`.
 
 ## Completion
 
-Do not mark complete until `nta-shopify-write-verifier` returns verified expected-vs-live Shopify state for every changed field.
+Do not mark a write-mode item complete until:
 
-Report genuine exceptions rather than guessing.
+1. required child modules returned valid state;
+2. exception status permits the intended action;
+3. `nta-shopify-write-verifier` confirms expected-vs-live state for every changed field, or returns an explicitly acceptable verified warning state;
+4. unresolved review/block conditions are reported;
+5. requested label output is generated from approved/verified state.
+
+A successful API response alone is not proof of completion.
+
+See `references/workflow.md` for the lean orchestration reference. Run `python3 scripts/dry_run.py` for deterministic routing regression.
