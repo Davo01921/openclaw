@@ -1,4 +1,4 @@
-from route_plan import build_route
+from route_plan import build_route, child_result_gate
 
 
 def expect(condition, message):
@@ -39,9 +39,23 @@ expect(r["status"] == "REVIEW_REQUIRED", "invalid job state must review")
 r = build_route({**base, "label_requested": "yes"})
 expect(r["status"] == "REVIEW_REQUIRED", "non-boolean route flags must review")
 
-print("DRY_RUN_PASS: deterministic inventory-update routing; received/write/dry-run, optional cost/pricing, ORDERED redirect, invalid-state gate, label-after-verification ordering; no Shopify writes, network calls, or model calls")
+resolver_review = child_result_gate("nta-product-resolver", "REVIEW_REQUIRED")
+expect(resolver_review["action"] == "STOP", "resolver review must fail fast")
+expect(resolver_review["workflow_status"] == "REVIEW_REQUIRED", "resolver review status mismatch")
+expect(resolver_review["stop_after"] == "nta-product-resolver", "resolver review stop point mismatch")
+
+child_block = child_result_gate("nta-product-exception-gate", "BLOCK")
+expect(child_block["action"] == "STOP", "BLOCK must fail fast")
+expect(child_block["workflow_status"] == "BLOCK", "BLOCK workflow status mismatch")
+
+child_ready = child_result_gate("nta-product-resolver", "READY")
+expect(child_ready["action"] == "CONTINUE", "non-terminal child result should not trigger terminal gate")
+
+print("DRY_RUN_PASS: deterministic inventory-update routing and fail-fast gating; received/write/dry-run, optional cost/pricing, ORDERED redirect, invalid-state gate, label-after-verification ordering, REVIEW_REQUIRED/BLOCK short-circuit; no Shopify writes, network calls, or model calls")
 print("Received dry-run route:", " -> ".join(build_route(base)["route"]))
 print("Write+label final steps:", " -> ".join(build_route({**base, "mode": "write", "price_review_required": True, "label_requested": True})["route"][-3:]))
 print("ORDERED status:", build_route({**base, "job_state": "ORDERED"})["status"])
 print("ORDERED redirect:", build_route({**base, "job_state": "ORDERED"})["redirect"])
 print("Invalid state status:", build_route({**base, "job_state": "UNKNOWN"})["status"])
+print("Resolver REVIEW_REQUIRED action:", resolver_review["action"], "after", resolver_review["stop_after"])
+print("BLOCK action:", child_block["action"])
