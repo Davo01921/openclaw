@@ -24,6 +24,11 @@ base = {
         "note": "synthetic regression fixture",
         "discount": {"code": "Ntalosses"},
         "financial_target": "PAID_OR_ZERO_BALANCE_VERIFIED",
+        "create_options": {
+            "inventory_behaviour": "DECREMENT_OBEYING_POLICY",
+            "send_receipt": False,
+            "send_fulfillment_receipt": False,
+        },
     },
     "protected_fields": [],
     "retry_authorised": False,
@@ -35,6 +40,7 @@ base = {
 r = build_order_write_plan(base)
 expect(r["status"] == "READY" and r["write_ready"] is True, "valid create should be READY")
 expect(r["write_plan"]["order"]["line_items"][0]["quantity"] == 2, "quantity changed")
+expect(r["write_plan"]["order"]["create_options"]["inventory_behaviour"] == "DECREMENT_OBEYING_POLICY", "inventory behaviour changed")
 
 r = build_order_write_plan({**base, "duplicate_completed": True})
 expect(r["status"] == "DUPLICATE_NOOP", "duplicate should be no-op")
@@ -56,6 +62,14 @@ bad_order = {
 r = build_order_write_plan({**base, "order": bad_order})
 expect(r["status"] == "REVIEW_REQUIRED", "duplicate variant lines must review")
 
+missing_options = {k: v for k, v in base["order"].items() if k != "create_options"}
+r = build_order_write_plan({**base, "order": missing_options})
+expect(r["status"] == "REVIEW_REQUIRED", "missing create options must review")
+
+bad_options = {**base["order"], "create_options": {"inventory_behaviour": "UNKNOWN", "send_receipt": False, "send_fulfillment_receipt": False}}
+r = build_order_write_plan({**base, "order": bad_options})
+expect(r["status"] == "REVIEW_REQUIRED", "unknown inventory behaviour must review")
+
 r = build_order_write_plan({**base, "adapter_capability_verified": False})
 expect(r["status"] == "REVIEW_REQUIRED", "unverified live adapter must block")
 
@@ -74,8 +88,10 @@ expect(r["status"] == "REVIEW_REQUIRED", "missing expected readback must review"
 r = build_order_write_plan({**base, "intent": "UPDATE_ORDER_METADATA", "target_order_id": None})
 expect(r["status"] == "REVIEW_REQUIRED", "metadata update requires exact order id")
 
-print("DRY_RUN_PASS: deterministic Shopify order-writer preflight; authorisation, exact customer/variant and positive quantity gates, duplicate no-op, idempotent retry gate, adapter-capability gate, fulfilment rejection, expected-readback requirement, metadata target identity; no Shopify writes, network calls, or model calls")
+print("DRY_RUN_PASS: deterministic Shopify order-writer preflight; authorisation, exact customer/variant and positive quantity gates, explicit create-options and inventory-behaviour gate, duplicate no-op, idempotent retry gate, adapter-capability gate, fulfilment rejection, expected-readback requirement, metadata target identity; no Shopify writes, network calls, or model calls")
 print("Valid create status:", build_order_write_plan(base)["status"])
+print("Missing create-options status:", build_order_write_plan({**base, "order": missing_options})["status"])
+print("Unknown inventory behaviour status:", build_order_write_plan({**base, "order": bad_options})["status"])
 print("Duplicate status:", build_order_write_plan({**base, "duplicate_completed": True})["status"])
 print("Unverified adapter status:", build_order_write_plan({**base, "adapter_capability_verified": False})["status"])
 print("Indeterminate retry status:", build_order_write_plan({**base, "prior_result_indeterminate": True, "retry_authorised": False})["status"])
