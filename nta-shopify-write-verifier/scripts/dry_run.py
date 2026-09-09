@@ -8,6 +8,7 @@ def main():
     product = build_route({**base, "entity": "product"})
     order = build_route({**base, "entity": "order"})
     fulfilment = build_route({**base, "entity": "fulfilment"})
+    media = build_route({**base, "entity": "media"})
     unauthorised = build_route({**base, "entity": "order", "authorised": False})
 
     assert product["status"] == "READY"
@@ -18,7 +19,10 @@ def main():
     assert order["writer"] == "nta-shopify-order-writer"
     assert order["auditor"] == "nta-shopify-order-auditor"
 
-    assert fulfilment["status"] == "BLOCKED"
+    assert fulfilment["status"] == "READY"
+    assert fulfilment["writer"] == "nta-shopify-fulfilment-writer"
+    assert fulfilment["auditor"] == "nta-shopify-fulfilment-auditor"
+    assert media["status"] == "BLOCKED"
     assert unauthorised["status"] == "REVIEW_REQUIRED"
 
     assert writer_gate("SUCCESS")["continue"] is True
@@ -32,15 +36,12 @@ def main():
     assert auditor_gate("FAIL", retry_count=1, retry_safe=True, retry_authorised=True) == {"status": "FAILED", "retry": False}
     assert auditor_gate("FAIL", retry_count=0, retry_safe=False, retry_authorised=True) == {"status": "FAILED", "retry": False}
 
-    print("DRY_RUN_PASS: deterministic Shopify write-verifier routing; product/variant/inventory preserve existing writer+auditor path, order routes to canonical order writer+auditor, fulfilment/media remain blocked until implemented, writer fail-fast and fresh-read boundary enforced, audit pass mapping and one explicitly-safe retry maximum verified; no Shopify writes, network calls, or model calls")
+    print("DRY_RUN_PASS: deterministic Shopify write-verifier routing; product/variant/inventory preserve existing writer+auditor path, order routes to canonical order pair, fulfilment routes to canonical fulfilment pair, media remains blocked, writer fail-fast and fresh-read boundary enforced, audit pass mapping and one explicitly-safe retry maximum verified; no Shopify writes, network calls, or model calls")
     print("Product route status:", product["status"])
     print("Order route status:", order["status"])
     print("Fulfilment route status:", fulfilment["status"])
+    print("Media route status:", media["status"])
     print("Unauthorised route status:", unauthorised["status"])
-    print("Writer failure gate:", writer_gate("FAILED")["status"])
-    print("Order audit PASS maps to:", auditor_gate("PASS")["status"])
-    print("Safe first audit failure maps to:", auditor_gate("FAIL", retry_count=0, retry_safe=True, retry_authorised=True)["status"])
-    print("Second audit failure maps to:", auditor_gate("FAIL", retry_count=1, retry_safe=True, retry_authorised=True)["status"])
 
 
 if __name__ == "__main__":
