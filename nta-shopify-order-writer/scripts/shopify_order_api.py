@@ -23,6 +23,7 @@ VALID_FINANCIAL_STATUSES = {
     "REFUNDED",
     "VOIDED",
 }
+VALID_DISCOUNT_TYPES = {"ITEM_PERCENTAGE"}
 
 CAPABILITY_QUERY = """
 query NtaOrderAdapterCapability {
@@ -71,6 +72,20 @@ def _money_string(value: Any) -> str | None:
         return f"{Decimal(value):.2f}"
     except (InvalidOperation, ValueError):
         return None
+
+
+def _percentage_number(value: Any) -> float | int | None:
+    if isinstance(value, bool):
+        return None
+    try:
+        result = Decimal(str(value))
+    except (InvalidOperation, ValueError, TypeError):
+        return None
+    if result <= 0 or result > 100:
+        return None
+    if result == result.to_integral_value():
+        return int(result)
+    return float(result)
 
 
 def _env_first(*names: str) -> str | None:
@@ -161,8 +176,6 @@ def probe_capabilities(*, live: bool = False) -> dict:
     result["read_orders"] = "read_orders" in scopes or "write_orders" in scopes
     result["write_orders"] = "write_orders" in scopes
     result["order_read_adapter_verified"] = result["read_orders"]
-    # Shopify orderCreate requires write_orders and an offline token. A read-only
-    # capability probe cannot prove token mode, so require explicit offline config.
     result["order_create_adapter_verified"] = result["write_orders"] and config["token_mode"] == "offline"
     if result["write_orders"] and config["token_mode"] != "offline":
         result["errors"].append("offline_token_not_verified")
@@ -201,11 +214,26 @@ def build_create_payload(write_plan: dict) -> dict:
             gql_lines.append({"variantId": line["variant_id"].strip(), "quantity": qty})
 
     discount = order.get("discount") or {}
-    discount_code = discount.get("code") if isinstance(discount, dict) else None
-    if discount_code is not None:
-        # orderCreate needs an explicit discount definition/value, not merely a code
-        # string. Do not invent a percentage or amount from a code name.
-        errors.append("order.discount:definition_required")
+    gql_discount = None
+    if not isinstance(discount, dict):
+        errors.append("order.discount")
+    elif any(discount.get(key) is not None for key in ("code", "type", "percentage")):
+        discount_code = discount.get("code")
+        discount_type = discount.get("type")
+        percentage = _percentage_number(discount.get("percentage"))
+        if not _nonempty(discount_code):
+            errors.append("order.discount.code")
+        if discount_type not in VALID_DISCOUNT_TYPES:
+            errors.append("order.discount.type")
+        if percentage is None:
+            errors.append("order.discount.percentage")
+        if _nonempty(discount_code) and discount_type == "ITEM_PERCENTAGE" and percentage is not None:
+            gql_discount = {
+                "itemPercentageDiscountCode": {
+                    "percentage": percentage,
+                    "code": discount_code.strip(),
+                }
+            }
 
     financial_target = order.get("financial_target")
     financial_status = None
@@ -239,6 +267,8 @@ def build_create_payload(write_plan: dict) -> dict:
         "tags": order.get("tags", []),
         "note": order.get("note"),
     }
+    if gql_discount is not None:
+        gql_order["discountCode"] = gql_discount
     if financial_status:
         gql_order["financialStatus"] = financial_status
 
