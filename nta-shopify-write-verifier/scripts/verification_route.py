@@ -3,7 +3,8 @@
 
 SUPPORTED_PRODUCT_ENTITIES = {"product", "variant", "inventory"}
 SUPPORTED_ORDER_ENTITIES = {"order"}
-DECLARED_BUT_UNIMPLEMENTED = {"fulfilment", "media"}
+SUPPORTED_FULFILMENT_ENTITIES = {"fulfilment"}
+DECLARED_BUT_UNIMPLEMENTED = {"media"}
 VALID_WRITER_SUCCESS = {"SUCCESS", "DUPLICATE_NOOP"}
 VALID_AUDIT_PASS = {"PASS", "PASS_WITH_WARNING"}
 
@@ -50,6 +51,16 @@ def build_route(request):
             "fresh_read_required": True,
             "retry_policy": "ONE_EXPLICITLY_SAFE_RETRY_MAX",
             "notes": ["order audit must use fresh read-back, never writer response"],
+        }
+    if entity in SUPPORTED_FULFILMENT_ENTITIES:
+        return {
+            "status": "READY",
+            "entity": entity,
+            "writer": "nta-shopify-fulfilment-writer",
+            "auditor": "nta-shopify-fulfilment-auditor",
+            "fresh_read_required": True,
+            "retry_policy": "ONE_EXPLICITLY_SAFE_RETRY_MAX",
+            "notes": ["fulfilment audit must use fresh read-back; live adapter capability remains a child-skill gate"],
         }
     if entity in DECLARED_BUT_UNIMPLEMENTED:
         return {
