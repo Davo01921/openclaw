@@ -15,15 +15,18 @@ base = {
     "expected_result": {
         "customer_id": "gid://shopify/Customer/100",
         "line_items": [{"variant_id": "gid://shopify/ProductVariant/200", "quantity": 2}],
-        "total": "0.00",
+        "discount_code": "Ntalosses",
+        "total_aud": "0.00",
+        "zero_balance": True,
+        "financial_status": "PAID",
     },
     "order": {
         "customer_id": "gid://shopify/Customer/100",
         "line_items": [{"variant_id": "gid://shopify/ProductVariant/200", "quantity": 2}],
         "tags": ["NTA Loss", "Death", "Tank 13"],
         "note": "synthetic regression fixture",
-        "discount": {"code": "Ntalosses"},
-        "financial_target": "PAID_OR_ZERO_BALANCE_VERIFIED",
+        "discount": {"code": "Ntalosses", "type": "ITEM_PERCENTAGE", "percentage": "100"},
+        "financial_target": "PAID",
         "create_options": {
             "inventory_behaviour": "DECREMENT_OBEYING_POLICY",
             "send_receipt": False,
@@ -41,6 +44,9 @@ r = build_order_write_plan(base)
 expect(r["status"] == "READY" and r["write_ready"] is True, "valid create should be READY")
 expect(r["write_plan"]["order"]["line_items"][0]["quantity"] == 2, "quantity changed")
 expect(r["write_plan"]["order"]["create_options"]["inventory_behaviour"] == "DECREMENT_OBEYING_POLICY", "inventory behaviour changed")
+expect(r["write_plan"]["order"]["discount"]["code"] == "Ntalosses", "discount code changed")
+expect(r["write_plan"]["order"]["discount"]["type"] == "ITEM_PERCENTAGE", "discount type changed")
+expect(r["write_plan"]["order"]["discount"]["percentage"] == "100", "discount percentage changed")
 
 r = build_order_write_plan({**base, "duplicate_completed": True})
 expect(r["status"] == "DUPLICATE_NOOP", "duplicate should be no-op")
@@ -70,6 +76,14 @@ bad_options = {**base["order"], "create_options": {"inventory_behaviour": "UNKNO
 r = build_order_write_plan({**base, "order": bad_options})
 expect(r["status"] == "REVIEW_REQUIRED", "unknown inventory behaviour must review")
 
+code_only_discount = {**base["order"], "discount": {"code": "Ntalosses"}}
+r = build_order_write_plan({**base, "order": code_only_discount})
+expect(r["status"] == "REVIEW_REQUIRED", "code-only discount must review")
+
+bad_percentage_discount = {**base["order"], "discount": {"code": "Ntalosses", "type": "ITEM_PERCENTAGE", "percentage": 101}}
+r = build_order_write_plan({**base, "order": bad_percentage_discount})
+expect(r["status"] == "REVIEW_REQUIRED", "percentage over 100 must review")
+
 r = build_order_write_plan({**base, "adapter_capability_verified": False})
 expect(r["status"] == "REVIEW_REQUIRED", "unverified live adapter must block")
 
@@ -88,8 +102,10 @@ expect(r["status"] == "REVIEW_REQUIRED", "missing expected readback must review"
 r = build_order_write_plan({**base, "intent": "UPDATE_ORDER_METADATA", "target_order_id": None})
 expect(r["status"] == "REVIEW_REQUIRED", "metadata update requires exact order id")
 
-print("DRY_RUN_PASS: deterministic Shopify order-writer preflight; authorisation, exact customer/variant and positive quantity gates, explicit create-options and inventory-behaviour gate, duplicate no-op, idempotent retry gate, adapter-capability gate, fulfilment rejection, expected-readback requirement, metadata target identity; no Shopify writes, network calls, or model calls")
+print("DRY_RUN_PASS: deterministic Shopify order-writer preflight; authorisation, exact customer/variant and positive quantity gates, explicit percentage-discount contract, explicit create-options and inventory-behaviour gate, duplicate no-op, idempotent retry gate, adapter-capability gate, fulfilment rejection, expected-readback requirement, metadata target identity; no Shopify writes, network calls, or model calls")
 print("Valid create status:", build_order_write_plan(base)["status"])
+print("Code-only discount status:", build_order_write_plan({**base, "order": code_only_discount})["status"])
+print("Bad percentage status:", build_order_write_plan({**base, "order": bad_percentage_discount})["status"])
 print("Missing create-options status:", build_order_write_plan({**base, "order": missing_options})["status"])
 print("Unknown inventory behaviour status:", build_order_write_plan({**base, "order": bad_options})["status"])
 print("Duplicate status:", build_order_write_plan({**base, "duplicate_completed": True})["status"])
