@@ -3,6 +3,11 @@ from __future__ import annotations
 from typing import Any
 
 VALID_INTENTS = {"CREATE_ORDER", "UPDATE_ORDER_METADATA"}
+VALID_INVENTORY_BEHAVIOURS = {
+    "BYPASS",
+    "DECREMENT_IGNORING_POLICY",
+    "DECREMENT_OBEYING_POLICY",
+}
 FORBIDDEN_KEYS = {
     "fulfilment",
     "fulfillment",
@@ -31,8 +36,7 @@ def _collect_forbidden_keys(value: Any, path: str = "") -> list[str]:
             found.extend(_collect_forbidden_keys(child, child_path))
     elif isinstance(value, list):
         for index, child in enumerate(value):
-            child_path = f"{path}[{index}]"
-            found.extend(_collect_forbidden_keys(child, child_path))
+            found.extend(_collect_forbidden_keys(child, f"{path}[{index}]"))
     return found
 
 
@@ -74,8 +78,7 @@ def build_order_write_plan(data: dict) -> dict:
     if not isinstance(adapter_capability_verified, bool):
         errors.append("adapter_capability_verified")
 
-    forbidden = _collect_forbidden_keys(data)
-    errors.extend(f"forbidden:{path}" for path in forbidden)
+    errors.extend(f"forbidden:{path}" for path in _collect_forbidden_keys(data))
 
     order = data.get("order")
     canonical_order = None
@@ -135,6 +138,28 @@ def build_order_write_plan(data: dict) -> dict:
         if financial_target is not None and not isinstance(financial_target, (str, dict)):
             errors.append("order.financial_target")
 
+        create_options = order.get("create_options")
+        canonical_options = None
+        if intent == "CREATE_ORDER":
+            if not isinstance(create_options, dict):
+                errors.append("order.create_options")
+            else:
+                inventory_behaviour = create_options.get("inventory_behaviour")
+                send_receipt = create_options.get("send_receipt", False)
+                send_fulfillment_receipt = create_options.get("send_fulfillment_receipt", False)
+                if inventory_behaviour not in VALID_INVENTORY_BEHAVIOURS:
+                    errors.append("order.create_options.inventory_behaviour")
+                if not isinstance(send_receipt, bool):
+                    errors.append("order.create_options.send_receipt")
+                if not isinstance(send_fulfillment_receipt, bool):
+                    errors.append("order.create_options.send_fulfillment_receipt")
+                if inventory_behaviour in VALID_INVENTORY_BEHAVIOURS and isinstance(send_receipt, bool) and isinstance(send_fulfillment_receipt, bool):
+                    canonical_options = {
+                        "inventory_behaviour": inventory_behaviour,
+                        "send_receipt": send_receipt,
+                        "send_fulfillment_receipt": send_fulfillment_receipt,
+                    }
+
         canonical_order = {
             "customer_id": customer_id.strip() if isinstance(customer_id, str) else None,
             "line_items": canonical_lines,
@@ -142,6 +167,7 @@ def build_order_write_plan(data: dict) -> dict:
             "note": note,
             "discount": {"code": discount_code.strip() if isinstance(discount_code, str) else None},
             "financial_target": financial_target,
+            "create_options": canonical_options,
         }
 
     target_order_id = data.get("target_order_id")
@@ -186,9 +212,6 @@ def build_order_write_plan(data: dict) -> dict:
             "notes": ["No live write is allowed until the concrete Shopify order adapter capability is verified."],
         }
 
-    assert isinstance(job_id, str)
-    assert isinstance(idempotency_key, str)
-
     return {
         "status": "READY",
         "write_ready": True,
@@ -205,6 +228,7 @@ def build_order_write_plan(data: dict) -> dict:
         "missing_or_conflicting_fields": [],
         "notes": [
             "Deterministic preflight passed. Apply only the authorised Shopify order action.",
+            "CREATE_ORDER requires explicit Shopify inventory behaviour; never rely on Shopify's BYPASS default implicitly.",
             "Do not perform fulfilment or a separate inventory adjustment in this writer.",
             "A successful write still requires independent fresh order audit before completion.",
         ],
