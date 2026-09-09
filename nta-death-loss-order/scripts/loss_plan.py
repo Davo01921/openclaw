@@ -5,6 +5,8 @@ from typing import Any
 
 CUSTOMER_NAME = "NTA Losses"
 DISCOUNT_CODE = "Ntalosses"
+DISCOUNT_TYPE = "ITEM_PERCENTAGE"
+DISCOUNT_PERCENTAGE = "100"
 TARGET_TOTAL_AUD = "0.00"
 BASE_TAGS = ["NTA Loss", "Death"]
 VALID_MODES = {"dry_run", "write"}
@@ -157,6 +159,11 @@ def build_loss_plan(data: dict) -> dict:
     order_plan = {
         "customer": CUSTOMER_NAME,
         "discount_code": DISCOUNT_CODE,
+        "discount": {
+            "code": DISCOUNT_CODE,
+            "type": DISCOUNT_TYPE,
+            "percentage": DISCOUNT_PERCENTAGE,
+        },
         "target_total_aud": TARGET_TOTAL_AUD,
         "tags": tags,
         "line_items": [
@@ -178,11 +185,21 @@ def build_loss_plan(data: dict) -> dict:
             }
             for item in items
         ],
-        "financial_target": "PAID_OR_ZERO_BALANCE_VERIFIED",
+        "financial_target": "PAID",
+        "financial_verification": "ZERO_BALANCE_VERIFIED",
         "fulfilment_target": "FULFILLED",
         "inventory_effect": "ORDER_ONLY_NO_SEPARATE_DEDUCTION",
+        "inventory_behaviour": "DECREMENT_OBEYING_POLICY",
         "expected_net_loss_by_variant": expected_net_loss_by_variant,
         "idempotency_key": idempotency_key,
+        "expected_order_audit": {
+            "discount_code": DISCOUNT_CODE,
+            "total_aud": TARGET_TOTAL_AUD,
+            "zero_balance": True,
+            "financial_status": "PAID",
+            "tags": tags,
+            "tags_mode": "SUBSET",
+        },
         "preserve_unrelated_product_fields": True,
     }
 
@@ -195,6 +212,7 @@ def build_loss_plan(data: dict) -> dict:
             "notes": [
                 "Dry run only: no Shopify order, fulfilment, payment, or inventory mutation is authorised.",
                 "Photo/vision evidence may generate a candidate, but exact variant resolution must already be RESOLVED before this planner is READY.",
+                "The canonical order-writer contract uses Ntalosses as an explicit 100% item percentage discount and requires fresh audit proof of a $0.00 AUD zero-balance order.",
             ],
         }
 
@@ -236,6 +254,8 @@ def build_loss_plan(data: dict) -> dict:
         "missing_or_conflicting_fields": [],
         "notes": [
             "All deterministic preconditions are satisfied; mutation still must pass through the authorised Shopify write/verification boundary.",
+            "Use the explicit Ntalosses 100% item-discount contract; do not infer discount value from the code name.",
+            "Fresh order audit must prove discount code Ntalosses, total $0.00 AUD, zero outstanding balance, and expected financial state.",
             "Do not make a separate inventory deduction for the same loss order.",
         ],
     }
