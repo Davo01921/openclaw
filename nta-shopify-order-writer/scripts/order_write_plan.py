@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 VALID_INTENTS = {"CREATE_ORDER", "UPDATE_ORDER_METADATA"}
@@ -8,6 +9,7 @@ VALID_INVENTORY_BEHAVIOURS = {
     "DECREMENT_IGNORING_POLICY",
     "DECREMENT_OBEYING_POLICY",
 }
+VALID_DISCOUNT_TYPES = {"ITEM_PERCENTAGE"}
 FORBIDDEN_KEYS = {
     "fulfilment",
     "fulfillment",
@@ -24,6 +26,19 @@ def _nonempty_string(value: Any) -> bool:
 
 def _positive_int(value: Any) -> bool:
     return isinstance(value, int) and not isinstance(value, bool) and value > 0
+
+
+def _percentage(value: Any) -> str | None:
+    if isinstance(value, bool):
+        return None
+    try:
+        result = Decimal(str(value))
+    except (InvalidOperation, ValueError, TypeError):
+        return None
+    if result <= 0 or result > 100:
+        return None
+    normalized = format(result.normalize(), "f")
+    return normalized
 
 
 def _collect_forbidden_keys(value: Any, path: str = "") -> list[str]:
@@ -130,9 +145,26 @@ def build_order_write_plan(data: dict) -> dict:
         if not isinstance(discount, dict):
             errors.append("order.discount")
             discount = {}
+
         discount_code = discount.get("code")
-        if discount_code is not None and not _nonempty_string(discount_code):
-            errors.append("order.discount.code")
+        discount_type = discount.get("type")
+        discount_percentage = discount.get("percentage")
+        canonical_discount = {"code": None, "type": None, "percentage": None}
+
+        if discount_code is not None or discount_type is not None or discount_percentage is not None:
+            if not _nonempty_string(discount_code):
+                errors.append("order.discount.code")
+            if discount_type not in VALID_DISCOUNT_TYPES:
+                errors.append("order.discount.type")
+            percentage = _percentage(discount_percentage)
+            if percentage is None:
+                errors.append("order.discount.percentage")
+            if _nonempty_string(discount_code) and discount_type in VALID_DISCOUNT_TYPES and percentage is not None:
+                canonical_discount = {
+                    "code": discount_code.strip(),
+                    "type": discount_type,
+                    "percentage": percentage,
+                }
 
         financial_target = order.get("financial_target")
         if financial_target is not None and not isinstance(financial_target, (str, dict)):
@@ -165,7 +197,7 @@ def build_order_write_plan(data: dict) -> dict:
             "line_items": canonical_lines,
             "tags": [tag.strip() for tag in tags] if isinstance(tags, list) else [],
             "note": note,
-            "discount": {"code": discount_code.strip() if isinstance(discount_code, str) else None},
+            "discount": canonical_discount,
             "financial_target": financial_target,
             "create_options": canonical_options,
         }
@@ -229,6 +261,7 @@ def build_order_write_plan(data: dict) -> dict:
         "notes": [
             "Deterministic preflight passed. Apply only the authorised Shopify order action.",
             "CREATE_ORDER requires explicit Shopify inventory behaviour; never rely on Shopify's BYPASS default implicitly.",
+            "Percentage discounts require an explicit code, ITEM_PERCENTAGE type, and percentage; the writer never invents discount value from a code name.",
             "Do not perform fulfilment or a separate inventory adjustment in this writer.",
             "A successful write still requires independent fresh order audit before completion.",
         ],
