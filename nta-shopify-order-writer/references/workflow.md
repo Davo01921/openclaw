@@ -1,6 +1,6 @@
 # NTA Shopify Order Writer — Lean Workflow Reference
 
-This module is a deterministic write-phase adapter for authorised Shopify order actions.
+This module is a deterministic write-phase implementation for authorised Shopify order actions.
 
 ## Boundary
 
@@ -10,13 +10,13 @@ Upstream decides:
 - exact variant IDs and quantities;
 - tags;
 - note;
-- discount;
-- intended financial outcome;
+- discount definition/value;
+- exact supported financial status if one is to be sent to Shopify;
+- explicit Shopify order-create inventory behaviour;
+- whether receipts are allowed;
 - whether the write is authorised.
 
-This writer only applies the exact supported order action.
-
-Downstream independently verifies the fresh order state.
+This writer applies only the exact supported order action. Downstream independently verifies fresh order state.
 
 ## Route
 
@@ -30,24 +30,46 @@ READY?
         ↓ yes
 idempotency / duplicate check
         ↓
-concrete Shopify order adapter capability verified?
+shopify_order_api.py capability probe
+  no read/write scope or offline token proof → STOP
+        ↓
+build exact GraphQL payload
+  unsupported discount/financial semantics → STOP
+        ↓
+explicit write-enable present?
   no → STOP
         ↓ yes
-apply exact authorised order action
+orderCreate
         ↓
-return write result
+return API write result only
         ↓
-canonical order auditor
+fresh independent read_order(order_id)
+        ↓
+nta-shopify-order-auditor
 ```
+
+## Inventory behaviour
+
+Shopify `orderCreate` defaults to `BYPASS`, so inventory is not claimed unless an option is supplied. The writer therefore requires one explicit value:
+
+- `BYPASS`
+- `DECREMENT_IGNORING_POLICY`
+- `DECREMENT_OBEYING_POLICY`
+
+The workflow calling the writer owns the choice. The writer must never infer it.
+
+## Discount boundary
+
+A discount code name alone is insufficient for the direct `orderCreate` adapter because Shopify requires an explicit discount definition/value in the create input. The adapter blocks code-only discount requests rather than inventing a percentage or amount.
 
 ## No fulfilment
 
 Fulfilment is deliberately outside this module. A separate canonical fulfilment writer must own exact-line fulfilment actions.
 
-## No direct inventory adjustment
+## No separate inventory adjustment
 
-Do not make a separate inventory adjustment when creating an order. Any inventory effect must come from the authorised Shopify order semantics and later be verified by the relevant workflow/auditor.
+Do not make a second inventory adjustment when creating an order. If the authorised order must claim stock, use the explicit Shopify `inventoryBehaviour` option and verify the resulting stock effect separately in the calling workflow.
 
 ## Completion
 
-A successful order API response is not completion. Completion requires a fresh independent order read-back against `expected_result`.
+A successful order API response is not completion. Completion requires a new live `read_order` result passed to `nta-shopify-order-auditor` against the caller's expected state.
