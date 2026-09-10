@@ -1,6 +1,5 @@
 ---
 name: "nta-dymo-tank-label"
-version: "2.0"
 description: "Deterministically format, preview, check, and explicitly print NTA livestock tank labels to a local DYMO LetraTag 200B over Bluetooth LE."
 ---
 
@@ -153,3 +152,12 @@ labels:
     source: shopify_readback | dry_run_proposed_shopify_state
     warnings: []
 ```
+
+## Documents
+
+- Read [SOP.md](SOP.md) for staff operation through Discord, Telegram,
+  WhatsApp, or the local command line.
+- Read [TECHDOC.md](TECHDOC.md) when installing, maintaining, diagnosing, or
+  testing the Python/BLE implementation.
+- Read [SPECDOC.md](SPECDOC.md) when changing or auditing the normative label,
+  authorization, safety, or result contracts.
