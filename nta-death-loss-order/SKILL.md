@@ -1,10 +1,16 @@
 ---
 name: "nta-death-loss-order"
-version: "1.2"
-description: "Coordinate NTA livestock death/loss recording through exact variant resolution, deterministic zero-dollar loss-order planning, duplicate prevention, canonical Shopify order writing, and verified downstream fulfilment/inventory gates."
+version: "1.3"
+description: "Queue verified NTA livestock deaths and close them at 6 pm Sydney as one idempotent, paid, fulfilled, zero-dollar Shopify order with fresh inventory verification."
 ---
 
-# NTA Death Loss Order — v1.2
+# NTA Death Loss Order — v1.3
+
+## Documents
+
+- [SOP.md](SOP.md) — operator procedure and exception handling.
+- [TECHDOC.md](TECHDOC.md) — deployed architecture, authentication, scheduling, and verification.
+- [SPECDOC.md](SPECDOC.md) — normative business and software contract.
 
 ## Purpose
 
@@ -206,13 +212,13 @@ Order creation must use explicit `DECREMENT_OBEYING_POLICY`. If multiple lines r
 
 After order/fulfilment processing, reread exact affected inventory records and confirm the final net effect represents the loss once. Record available/on-hand/committed values where the Shopify workflow exposes them; do not invent intermediate inventory semantics.
 
-## Remaining downstream capability gap
+## Deployed downstream capability
 
-The canonical order writer now supports the explicit death-loss discount and financial contract required for order creation. The previous order-writer discount-definition gap is closed.
+The production Fred installation closes one Sydney-date queue at 18:00 through a fixed OpenClaw command. Its deterministic helper uses the allowlisted persisted-session bridge for Shopify reads, `orderCreate`, `fulfillmentCreate`, and fresh verification reads.
 
-However, `nta-shopify-order-writer` intentionally does **not** implement fulfilment, and the current canonical order auditor does **not** prove fulfilment state or inventory movement. Therefore the overall death-loss workflow must still return `REVIEW_REQUIRED` before claiming full production completion unless separate verified fulfilment and inventory-audit paths are available in the running environment.
+The production mutation remains fail-closed unless the fixed scheduled process receives `NTA_SHOPIFY_DEATH_BATCH_WRITE_ENABLED=true`. The helper scopes the generic order and fulfilment gates to its own bridge child process. It does not expose or persist Shopify access-token values.
 
-This is a capability gate, not a reason to use a language model as a substitute writer or auditor.
+Full completion is reported only after a fresh order read proves `PAID`, `FULFILLED`, `$0.00 AUD`, the expected customer/tags/source references, and exact inventory deltas. An existing unfulfilled batch order or an indeterminate mutation stops for manual reconciliation rather than blind retry.
 
 ## Protected state
 

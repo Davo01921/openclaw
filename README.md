@@ -59,7 +59,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for routing, ownership and model-cost rul
 
 - `adaptive-model-router`
 - `nta-customer-service` — evidence-first customer-service decision engine with responsibility classification, ACL-aware review, proportionate remedies, and anonymised precedent patterns.
-- `nta-death-loss-order`
+- [`nta-death-loss-order`](nta-death-loss-order/) — production death/loss batching; includes [SOP](nta-death-loss-order/SOP.md), [TECHDOC](nta-death-loss-order/TECHDOC.md), and [SPECDOC](nta-death-loss-order/SPECDOC.md).
 - `nta-gumtree-listing`
 
 ## Safety

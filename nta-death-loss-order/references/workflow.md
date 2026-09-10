@@ -1,7 +1,7 @@
 # NTA death-loss order workflow reference
 
 Owner: Nano Tanks Australia (NTA)
-Version: 1.1
+Version: 1.3
 
 This reference describes orchestration only. Exact identity belongs to `nta-product-resolver`; Shopify mutation and fresh read-back belong to the verified Shopify write boundary.
 
@@ -70,6 +70,6 @@ For every completed write, verify fresh live state for:
 
 Do not hardcode assumptions about intermediate `available`, `on_hand`, or `committed` transitions; record and compare the actual lifecycle state exposed by Shopify.
 
-## Current capability caution
+## Deployed capability
 
-The repository-level `nta-shopify-write-verifier` contract names `order` and `fulfilment` entity types, but its documented child writer/auditor are product-oriented. Treat order/fulfilment support as unverified until demonstrated in the running OpenClaw installation. Write mode must fail safe rather than improvise an order writer.
+Fred's production installation uses a fixed 18:00 Australia/Sydney OpenClaw command and a dedicated death-batch write gate. Shopify authentication is supplied by the persisted offline-session bridge. Order creation, the separate `fulfillmentCreate` mutation, and fresh order/inventory verification are implemented in deterministic helpers. No model chooses mutation inputs or retry behavior.
