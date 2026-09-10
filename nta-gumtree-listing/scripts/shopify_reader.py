@@ -23,6 +23,7 @@ GUMTREE_KEYS = (
     "gumtree_desired_listing_count",
     "gumtree_campaign_start",
     "gumtree_campaign_end",
+    "gumtree_availability_override",
 )
 
 SHOPIFY_PRODUCTS_QUERY = r"""
@@ -54,7 +55,8 @@ query GumtreeProducts($first: Int!, $after: String) {
         "nta.gumtree_description_override",
         "nta.gumtree_desired_listing_count",
         "nta.gumtree_campaign_start",
-        "nta.gumtree_campaign_end"
+        "nta.gumtree_campaign_end",
+        "nta.gumtree_availability_override"
       ], first: 20) {
         nodes { namespace key value type }
       }
@@ -90,7 +92,7 @@ def _parse_metafield(key: str, value: Any) -> Any:
 
 
 def normalize_product(node: Mapping[str, Any]) -> dict[str, Any]:
-    """Convert a Shopify Product node into the Phase 1A normalized contract."""
+    """Convert a Shopify Product node into the Phase 1 normalized contract."""
     raw_metafields = (node.get("metafields") or {}).get("nodes") or []
     gumtree = {key: None for key in GUMTREE_KEYS}
     for metafield in raw_metafields:
