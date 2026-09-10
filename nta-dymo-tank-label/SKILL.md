@@ -1,17 +1,17 @@
 ---
 name: "nta-dymo-tank-label"
-version: "1.1"
-description: "Render deterministic two-line DYMO livestock tank-label text from approved NTA intake state without mutating Shopify or making product decisions."
+version: "2.0"
+description: "Deterministically format, preview, check, and explicitly print NTA livestock tank labels to a local DYMO LetraTag 200B over Bluetooth LE."
 ---
 
 # NTA DYMO Tank Label
 
 ## Purpose
 
-Render the compact two-line DYMO text for a received livestock item. This is a
-read-only presentation module: it does not resolve identity, decide price or
-bulk pricing, interpret stock, set arrival dates, print labels, or write to
-Shopify.
+Render the compact two-line DYMO text for a received livestock item, preview it,
+check the local printer, and print only when physical printing is explicitly
+authorized. This presentation module does not resolve identity, decide price or
+bulk pricing, interpret stock, set arrival dates, or write to Shopify.
 
 It is called by `nta-inventory-update` through `nta-product-orchestrator` only
 after the intake state has been resolved. In write mode, use the fresh Shopify
@@ -21,15 +21,51 @@ availability date for labels.
 
 ## Execution rule
 
-Use `scripts/label_formatter.py` as the canonical runtime formatter. Label
-rendering is deterministic and must not consume a model call. If identity,
+Use `scripts/label_formatter.py` as the canonical runtime formatter and
+`scripts/nta_label_print.py` through the `nta-label-print` launcher for preview,
+status, and print operations. Formatting, validation, raster rendering, BLE
+communication, and result handling are deterministic and consume zero model
+calls. Do not delegate these operations to another model. Do not perform a
+redundant `printer-status` operation immediately before every print. If identity,
 price, quantity, selling-unit conversion, arrival date, or another upstream
 field is ambiguous, stop at the upstream review boundary rather than asking a
 model to guess inside this skill.
 
 If an upstream workflow genuinely requires model reasoning before this skill is
 called, use the narrowest configured general model that can safely resolve that
-upstream ambiguity. The formatter itself never selects or calls a model.
+upstream ambiguity. The formatter and printer client never select or call a
+model.
+
+## Local installation
+
+From this skill directory, create its isolated Python environment once:
+
+```sh
+python3 -m venv .venv
+.venv/bin/python -m pip install -r requirements.lock
+```
+
+The maintained macOS-compatible BLE dependency is pinned in
+`requirements.lock`. The printer connects directly over BLE and is not added as
+a normal macOS printer. If macOS prompts for Bluetooth access, allow it for the
+OpenClaw host process.
+
+## Operations
+
+```sh
+./nta-label-print printer-status
+./nta-label-print preview --label-json '{...}' --output /tmp/label.png
+./nta-label-print print --label-json '{...}' --dry-run
+./nta-label-print print --label-json '{...}' --confirm
+```
+
+- `printer-status` scans and connects without printing.
+- `preview` validates and creates a PNG without using Bluetooth.
+- `print --dry-run` validates and creates a preview without scanning,
+  connecting, or printing.
+- A physical print requires `print --confirm`; never infer authorization.
+- Do not automatically retry a failed physical print because that can create a
+  duplicate label.
 
 ## Required input
 
@@ -73,6 +109,11 @@ Cardinal Tetra | $7ea | $6ea/10+
 Format valid money without unnecessary trailing zeroes (`8`, `8.5`, `8.25`).
 Do not round a supplied approved price to create a label value.
 
+The standard two-line raster uses **Arial Bold 15 px** and an ordinary ASCII
+`$` symbol. A single `|` is a field separator. A triple `|||` is only a printed
+manual physical-cut marker. The LetraTag cutter is manual: never attempt to
+actuate, simulate, or control it.
+
 ## Bulk-pricing rule
 
 Append the optional bulk segment only when all of the following are true:
@@ -95,7 +136,10 @@ do not invent a threshold or discount.
 - Reject quantity or price unit ambiguity rather than formatting a misleading
   label.
 - Return `READY` with `text` and `warnings`, or `REVIEW_REQUIRED` with the
-  missing/invalid fields. Never send a print command or mutate Shopify.
+  missing/invalid fields. Never mutate Shopify.
+- For BLE failures, return a concise code and message covering printer not
+  found, Bluetooth permission, Bluetooth unavailable, or print failure.
+- Treat a print as successful only when the printer driver returns success.
 
 ## Output state
 
