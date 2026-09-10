@@ -1,0 +1,30 @@
+[
+  {
+    "shopify_product_id": "1001",
+    "title": "Unconfigured High Stock Fish",
+    "inventory": 100,
+    "price": 12.95,
+    "gumtree": {}
+  },
+  {
+    "shopify_product_id": "1002",
+    "title": "Red Cherry Shrimp",
+    "inventory": 84,
+    "price": 5.95,
+    "gumtree": {"gumtree_policy": "WHEN_IN_STOCK", "gumtree_min_stock": 10}
+  },
+  {
+    "shopify_product_id": "1003",
+    "title": "Explicitly Excluded Product",
+    "inventory": 50,
+    "price": 8.95,
+    "gumtree": {"gumtree_policy": "DO_NOT_LIST"}
+  },
+  {
+    "shopify_product_id": "1004",
+    "title": "Broken Campaign",
+    "inventory": 20,
+    "price": 19.95,
+    "gumtree": {"gumtree_policy": "CAMPAIGN"}
+  }
+]

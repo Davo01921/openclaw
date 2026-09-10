@@ -1,0 +1,30 @@
+name: Gumtree CI
+
+on:
+  push:
+    paths:
+      - 'nta-gumtree-listing/**'
+      - '.github/workflows/gumtree-ci.yml'
+  pull_request:
+    paths:
+      - 'nta-gumtree-listing/**'
+      - '.github/workflows/gumtree-ci.yml'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install test dependency
+        run: python -m pip install --upgrade pytest
+
+      - name: Run Gumtree tests
+        run: python -m pytest nta-gumtree-listing/tests -q
