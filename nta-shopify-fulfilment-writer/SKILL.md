@@ -1,10 +1,10 @@
 ---
 name: "nta-shopify-fulfilment-writer"
-version: "1.1"
+version: "1.2"
 description: "Canonical deterministic and guarded live write-phase contract for authorised Shopify fulfilment actions."
 ---
 
-# NTA Shopify Fulfilment Writer — v1.1
+# NTA Shopify Fulfilment Writer — v1.2
 
 ## Purpose
 
@@ -37,7 +37,7 @@ For NTA death-loss orders, tracking is omitted and customer notification is fals
 
 ## Guarded live adapter
 
-`scripts/shopify_fulfilment_api.py` implements the concrete Admin GraphQL transport for Shopify API `2026-07`.
+`scripts/shopify_fulfilment_api.py` implements the concrete Admin GraphQL transport for Shopify API `2026-07`. It prefers the local allowlisted persisted-session bridge at the standard NTA auth-project path (override with `NTA_SHOPIFY_SESSION_BRIDGE_PATH`) and keeps the explicit Admin-token configuration only as a legacy fallback.
 
 It provides:
 
@@ -51,9 +51,11 @@ The live mutation remains blocked unless all of these are true:
 
 1. `execute=True` is supplied by the authorised caller;
 2. environment variable `NTA_SHOPIFY_FULFILMENT_WRITE_ENABLED=true` is set;
-3. Shopify configuration is present;
+3. the persisted offline-session bridge (preferred) or legacy Shopify configuration is present;
 4. a qualifying fulfilment write scope is positively observed;
-5. the token is verified as `SHOPIFY_TOKEN_MODE=offline`.
+5. offline authentication is positively attested by the bridge, or the legacy token is explicitly marked `SHOPIFY_TOKEN_MODE=offline`.
+
+The bridge accepts the auth app's native `SHOPIFY_API_KEY`, `SHOPIFY_API_SECRET`, and `SHOPIFY_STORE_DOMAIN` names, plus the existing NTA aliases `SHOPIFY_CLIENT_ID`, `SHOPIFY_CLIENT_SECRET`, and `SHOPIFY_STORE`. Credentials are needed only when Shopify requires offline-session rotation; they are never returned by the bridge or printed by the probe.
 
 The adapter does not infer tracking information and does not perform any separate inventory mutation.
 

@@ -2,11 +2,18 @@ from __future__ import annotations
 
 import json
 import os
+from pathlib import Path
+import shutil
+import subprocess
 import urllib.error
 import urllib.request
 from typing import Any
 
 DEFAULT_API_VERSION = "2026-07"
+DEFAULT_SESSION_BRIDGE_PATH = (
+    Path.home()
+    / ".openclaw/workspace/nta-fred-shopify-auth/nta-betta-picture-processor/scripts/shopify-session-bridge.mjs"
+)
 FULFILMENT_READ_SCOPES = {
     "read_assigned_fulfillment_orders",
     "read_merchant_managed_fulfillment_orders",
@@ -82,6 +89,31 @@ def _env_first(*names: str) -> str | None:
 
 
 def load_config() -> dict:
+    configured_bridge = _env_first("NTA_SHOPIFY_SESSION_BRIDGE_PATH")
+    bridge_path = Path(configured_bridge).expanduser() if configured_bridge else DEFAULT_SESSION_BRIDGE_PATH
+    if bridge_path.is_file():
+        return {
+            "configured": True,
+            "errors": [],
+            "transport": "persisted_session_bridge",
+            "bridge_path": str(bridge_path.resolve()),
+            "domain": None,
+            "token": None,
+            "api_version": _env_first("SHOPIFY_API_VERSION") or DEFAULT_API_VERSION,
+            "token_mode": "unknown",
+        }
+    if configured_bridge:
+        return {
+            "configured": False,
+            "errors": ["NTA_SHOPIFY_SESSION_BRIDGE_PATH:invalid"],
+            "transport": "persisted_session_bridge",
+            "bridge_path": None,
+            "domain": None,
+            "token": None,
+            "api_version": _env_first("SHOPIFY_API_VERSION") or DEFAULT_API_VERSION,
+            "token_mode": "unknown",
+        }
+
     domain = _env_first("SHOPIFY_STORE_DOMAIN", "SHOPIFY_SHOP_DOMAIN")
     token = _env_first("SHOPIFY_ADMIN_ACCESS_TOKEN", "SHOPIFY_ACCESS_TOKEN")
     api_version = _env_first("SHOPIFY_API_VERSION") or DEFAULT_API_VERSION
@@ -98,6 +130,8 @@ def load_config() -> dict:
     return {
         "configured": not errors,
         "errors": errors,
+        "transport": "legacy_admin_token",
+        "bridge_path": None,
         "domain": domain,
         "token": token,
         "api_version": api_version,
@@ -105,10 +139,95 @@ def load_config() -> dict:
     }
 
 
+def _bridge_operation(query: str) -> str | None:
+    operations = {
+        CAPABILITY_QUERY.strip(): "capability",
+        FULFILMENT_CREATE_MUTATION.strip(): "create_fulfillment",
+        FULFILMENT_ORDER_READ_QUERY.strip(): "fulfillment_order",
+        INVENTORY_LEVEL_READ_QUERY.strip(): "inventory_level",
+    }
+    return operations.get(query.strip())
+
+
+def _supported_node_executable() -> str | None:
+    configured = _env_first("NTA_SHOPIFY_SESSION_BRIDGE_NODE")
+    candidates = [configured] if configured else [shutil.which("node"), "/opt/homebrew/bin/node", "/usr/local/bin/node"]
+    seen: set[str] = set()
+    for candidate in candidates:
+        if not candidate or candidate in seen:
+            continue
+        seen.add(candidate)
+        try:
+            version = subprocess.run(
+                [candidate, "--version"],
+                text=True,
+                capture_output=True,
+                timeout=3,
+                check=False,
+            )
+            major = int(version.stdout.strip().removeprefix("v").split(".", 1)[0])
+        except (OSError, subprocess.TimeoutExpired, ValueError):
+            continue
+        if version.returncode == 0 and major >= 20:
+            return candidate
+    return None
+
+
+def _bridge_request(config: dict, query: str, variables: dict | None, timeout: int) -> dict:
+    operation = _bridge_operation(query)
+    if not operation:
+        return {"ok": False, "errors": ["bridge_operation_not_allowlisted"], "data": None, "auth": None}
+
+    child_env = os.environ.copy()
+    aliases = {
+        "SHOPIFY_STORE_DOMAIN": "SHOPIFY_STORE",
+        "SHOPIFY_API_KEY": "SHOPIFY_CLIENT_ID",
+        "SHOPIFY_API_SECRET": "SHOPIFY_CLIENT_SECRET",
+    }
+    for target, source in aliases.items():
+        if not _nonempty(child_env.get(target)) and _nonempty(child_env.get(source)):
+            child_env[target] = child_env[source].strip()
+
+    node = _supported_node_executable()
+    if not node:
+        return {"ok": False, "errors": ["bridge_node_20_required"], "data": None, "auth": None}
+    payload = json.dumps({"operation": operation, "variables": variables or {}})
+    try:
+        completed = subprocess.run(
+            [node, config["bridge_path"]],
+            input=payload,
+            text=True,
+            capture_output=True,
+            cwd=str(Path(config["bridge_path"]).parent.parent),
+            env=child_env,
+            timeout=timeout + 5,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        return {"ok": False, "errors": ["bridge_timeout"], "data": None, "auth": None}
+    except OSError:
+        return {"ok": False, "errors": ["bridge_unavailable"], "data": None, "auth": None}
+
+    try:
+        response = json.loads(completed.stdout.strip())
+    except (json.JSONDecodeError, AttributeError):
+        return {"ok": False, "errors": ["bridge_response_invalid"], "data": None, "auth": None}
+    if not isinstance(response, dict):
+        return {"ok": False, "errors": ["bridge_response_invalid"], "data": None, "auth": None}
+    return {
+        "ok": response.get("ok") is True and completed.returncode == 0,
+        "errors": response.get("errors") if isinstance(response.get("errors"), list) else ["bridge_response_invalid"],
+        "data": response.get("data"),
+        "auth": response.get("auth") if isinstance(response.get("auth"), dict) else None,
+    }
+
+
 def graphql_request(query: str, variables: dict | None = None, *, timeout: int = 20) -> dict:
     config = load_config()
     if not config["configured"]:
         return {"ok": False, "errors": config["errors"], "data": None}
+    if config["transport"] == "persisted_session_bridge":
+        return _bridge_request(config, query, variables, timeout)
     url = f"https://{config['domain']}/admin/api/{config['api_version']}/graphql.json"
     body = json.dumps({"query": query, "variables": variables or {}}).encode("utf-8")
     req = urllib.request.Request(
@@ -135,6 +254,12 @@ def probe_capabilities(*, live: bool = False) -> dict:
         "configured": config["configured"],
         "api_version": config["api_version"],
         "token_mode": config["token_mode"],
+        "transport": config["transport"],
+        "auth_source": None,
+        "persisted_offline_session_verified": False,
+        "access_token_unexpired": False,
+        "refresh_token_present": False,
+        "refreshed": False,
         "fulfilment_read_adapter_verified": False,
         "fulfilment_create_adapter_verified": False,
         "inventory_read_adapter_verified": False,
@@ -147,14 +272,29 @@ def probe_capabilities(*, live: bool = False) -> dict:
     if not response["ok"]:
         result["errors"].append("capability_query_failed")
         return result
+    auth = response.get("auth") or {}
+    if config["transport"] == "persisted_session_bridge":
+        result["auth_source"] = auth.get("source")
+        result["token_mode"] = auth.get("token_mode") or "unknown"
+        result["persisted_offline_session_verified"] = auth.get("persisted_offline_session_verified") is True
+        result["access_token_unexpired"] = auth.get("access_token_unexpired") is True
+        result["refresh_token_present"] = auth.get("refresh_token_present") is True
+        result["refreshed"] = auth.get("refreshed") is True
     installation = (response.get("data") or {}).get("currentAppInstallation") or {}
     scopes = {x.get("handle") for x in installation.get("accessScopes", []) if isinstance(x, dict)}
     result["scopes"] = sorted(x for x in scopes if isinstance(x, str))
     result["fulfilment_read_adapter_verified"] = bool(scopes & FULFILMENT_READ_SCOPES)
     result["inventory_read_adapter_verified"] = "read_inventory" in scopes or "write_inventory" in scopes
     can_write = bool(scopes & FULFILMENT_WRITE_SCOPES)
-    result["fulfilment_create_adapter_verified"] = can_write and config["token_mode"] == "offline"
-    if can_write and config["token_mode"] != "offline":
+    offline_verified = (
+        result["persisted_offline_session_verified"]
+        and result["access_token_unexpired"]
+        and result["token_mode"] == "offline"
+        if config["transport"] == "persisted_session_bridge"
+        else config["token_mode"] == "offline"
+    )
+    result["fulfilment_create_adapter_verified"] = can_write and offline_verified
+    if can_write and not offline_verified:
         result["errors"].append("offline_token_not_verified")
     return result
 
