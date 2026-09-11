@@ -11,7 +11,6 @@ import re
 from dataclasses import asdict, dataclass
 from typing import Any, Mapping
 
-
 AVAILABLE = "AVAILABLE"
 UNAVAILABLE = "UNAVAILABLE"
 UNKNOWN = "UNKNOWN"
@@ -46,12 +45,14 @@ def _normalized_text(value: Any) -> str:
 
 
 def _is_betta(product: Mapping[str, Any]) -> bool:
+    """Require Shopify product_type to positively classify the product as Betta.
+
+    Title text alone is not authoritative enough to activate the UNIQUE Betta
+    exception. This intentionally fails closed when product type is absent or
+    generic, even when the title contains the word Betta.
+    """
     product_type = _normalized_text(product.get("product_type")).casefold()
-    title = _normalized_text(product.get("title")).casefold()
-    # Product type is the primary classifier. Title is accepted only when it clearly
-    # names a Betta, preventing unrelated products containing a BT-like token from
-    # qualifying.
-    return "betta" in product_type or "betta" in title
+    return "betta" in product_type
 
 
 def _bt_code(product: Mapping[str, Any]) -> str | None:
@@ -97,8 +98,6 @@ def resolve_availability(
     gumtree = product.get("gumtree") or {}
     override = _normalized_text(gumtree.get("gumtree_availability_override")).upper()
 
-    # An availability override cannot resurrect a product that Shopify itself says
-    # is not active.
     if status != "ACTIVE":
         return AvailabilityDecision(
             status=UNAVAILABLE,
@@ -179,8 +178,6 @@ def resolve_availability(
             min_stock=min_stock,
         )
 
-    # ALWAYS_ON + KEEP_ACTIVE is a Gumtree presence rule, not a claim that physical
-    # stock is available. Stock availability is therefore not applicable here.
     if policy == "ALWAYS_ON" and stockout_policy == "KEEP_ACTIVE":
         return AvailabilityDecision(
             status=NOT_APPLICABLE,

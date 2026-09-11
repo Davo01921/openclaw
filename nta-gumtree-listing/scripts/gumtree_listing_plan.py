@@ -74,10 +74,25 @@ def _normalize_images(value: Any) -> tuple[str, ...]:
         return ()
     out: list[str] = []
     for item in value:
+        if isinstance(item, Mapping):
+            item = item.get("url") or item.get("src")
         url = _text(item)
         if url and url.startswith(("https://", "http://")) and url not in out:
             out.append(url)
     return tuple(out)
+
+
+def _resolve_images(listing: Mapping[str, Any], product: Mapping[str, Any]) -> tuple[str, ...]:
+    """Resolve images deterministically, using Shopify featured image as fallback."""
+    images = _normalize_images(listing.get("image_urls"))
+    if images:
+        return images
+    featured = (
+        listing.get("featured_image_url")
+        or product.get("featured_image_url")
+        or product.get("featuredImageUrl")
+    )
+    return _normalize_images([featured] if featured else [])
 
 
 def _normalize_attributes(value: Any) -> tuple[tuple[str, str], ...]:
@@ -123,7 +138,7 @@ def build_listing_plan(snapshot: Mapping[str, Any], decision: Mapping[str, Any])
     price = _valid_price(listing.get("price"))
     category = _text(listing.get("category"))
     location = _text(listing.get("location"))
-    images = _normalize_images(listing.get("image_urls"))
+    images = _resolve_images(listing, product)
     attributes = _normalize_attributes(listing.get("attributes"))
     fingerprint = _text(listing.get("source_fingerprint"))
 
