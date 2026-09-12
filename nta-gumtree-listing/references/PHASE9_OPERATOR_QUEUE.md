@@ -18,6 +18,14 @@ New operator queues are generated only on:
 
 Sunday through Wednesday return an empty queue.
 
+### Live date safety
+
+Live OpenClaw jobs must call `build_live_operator_queue(...)`.
+
+That live entry point has no `run_date` parameter and always derives the current calendar date in the `Australia/Sydney` timezone. This prevents stale or manually hard-coded dates from making a Sunday-Wednesday live run appear to be an allowed Thursday-Saturday posting day.
+
+`build_operator_queue(..., run_date=...)` remains available only as the lower-level deterministic API for tests and historical analysis.
+
 ## Daily limit
 
 A queue contains at most 3 ads per day.
@@ -77,6 +85,6 @@ The existing browser-writer code remains dormant for possible future approved in
 
 ## Intended OpenClaw behavior
 
-On Thursday, Friday, and Saturday, OpenClaw may run the queue generator and present up to three complete ad packages for manual posting.
+On Thursday, Friday, and Saturday, OpenClaw may run `build_live_operator_queue(...)` and present up to three complete ad packages for manual posting.
 
 After David posts an ad, David supplies the Gumtree URL or listing ID. OpenClaw records the handoff and moves the queue item to `POSTED`, then to `VERIFIED` only after verification succeeds.
