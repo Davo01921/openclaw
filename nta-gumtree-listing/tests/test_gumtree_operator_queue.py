@@ -1,4 +1,5 @@
 import sys
+from datetime import date
 from pathlib import Path
 
 import pytest
@@ -6,7 +7,13 @@ import pytest
 SCRIPT_DIR = Path(__file__).resolve().parents[1] / "scripts"
 sys.path.insert(0, str(SCRIPT_DIR))
 
-from gumtree_operator_queue import build_operator_queue, mark_posted, mark_verified  # noqa: E402
+import gumtree_operator_queue as operator_queue  # noqa: E402
+from gumtree_operator_queue import (  # noqa: E402
+    build_live_operator_queue,
+    build_operator_queue,
+    mark_posted,
+    mark_verified,
+)
 
 
 def snap(
@@ -82,6 +89,22 @@ def test_sunday_to_wednesday_generate_no_queue(run_date):
 @pytest.mark.parametrize("run_date", ["2026-09-10", "2026-09-11", "2026-09-12"])
 def test_thursday_friday_saturday_are_allowed(run_date):
     assert build_operator_queue([], run_date=run_date)["allowed_day"] is True
+
+
+def test_live_queue_uses_sydney_date_and_blocks_sunday(monkeypatch):
+    monkeypatch.setattr(operator_queue, "_current_sydney_date", lambda: date(2026, 9, 13))
+    result = build_live_operator_queue([snap()])
+    assert result["run_date"] == "2026-09-13"
+    assert result["allowed_day"] is False
+    assert result["items"] == []
+
+
+def test_live_queue_uses_sydney_date_and_allows_thursday(monkeypatch):
+    monkeypatch.setattr(operator_queue, "_current_sydney_date", lambda: date(2026, 9, 17))
+    result = build_live_operator_queue([snap()])
+    assert result["run_date"] == "2026-09-17"
+    assert result["allowed_day"] is True
+    assert len(result["items"]) == 1
 
 
 def test_hard_cap_is_three_even_if_caller_requests_more():
