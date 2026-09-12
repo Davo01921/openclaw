@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Any, Iterable, Mapping
+from zoneinfo import ZoneInfo
 
 from gumtree_listing_plan import build_listing_plan
 from gumtree_reconcile import reconcile
@@ -20,6 +21,7 @@ MAX_DAILY_ITEMS = 3
 ALLOWED_MANAGEMENT_STATES = {"MAPPED", "MANAGED"}
 PRIORITY_RANK = {"CORE_TRAFFIC": 0, "HIGH": 1, "NORMAL": 2, "LOW": 3}
 QUEUE_STATUSES = {"READY_TO_POST", "POSTED", "VERIFIED"}
+LIVE_TIMEZONE = ZoneInfo("Australia/Sydney")
 
 
 def _text(value: Any) -> str | None:
@@ -35,6 +37,11 @@ def _day(value: date | datetime | str) -> date:
     if isinstance(value, date):
         return value
     return date.fromisoformat(str(value))
+
+
+def _current_sydney_date() -> date:
+    """Return the operational calendar date for Nano Tanks Australia."""
+    return datetime.now(LIVE_TIMEZONE).date()
 
 
 def _management_state(snapshot: Mapping[str, Any]) -> str | None:
@@ -142,6 +149,10 @@ def build_operator_queue(
 ) -> dict[str, Any]:
     """Build a deterministic manual-posting queue for one calendar day.
 
+    This lower-level function accepts an explicit date so tests and historical
+    analysis remain deterministic. Live OpenClaw jobs must call
+    :func:`build_live_operator_queue` instead.
+
     Sunday-Wednesday return an empty queue. The hard cap is three even if a caller
     passes a larger max_items value. Invalid snapshots fail closed and are counted
     as skipped rather than interrupting the whole queue.
@@ -198,6 +209,24 @@ def build_operator_queue(
         "publish_authority": False,
         "browser_automation": False,
     }
+
+
+def build_live_operator_queue(
+    snapshots: Iterable[Mapping[str, Any]],
+    *,
+    max_items: int = MAX_DAILY_ITEMS,
+) -> dict[str, Any]:
+    """Build the live OpenClaw queue using the current Australia/Sydney date.
+
+    There is intentionally no ``run_date`` parameter. This prevents stale or
+    manually hard-coded dates from making a Sunday-Wednesday live run appear to
+    be an allowed Thursday-Saturday posting day.
+    """
+    return build_operator_queue(
+        snapshots,
+        run_date=_current_sydney_date(),
+        max_items=max_items,
+    )
 
 
 def mark_posted(item: Mapping[str, Any], *, gumtree_listing_id: str | None = None, gumtree_url: str | None = None) -> dict[str, Any]:
