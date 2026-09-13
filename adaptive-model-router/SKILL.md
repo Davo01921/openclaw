@@ -1,16 +1,16 @@
 ---
 name: "adaptive-model-router"
-version: "2.0"
+version: "2.1"
 description: "Canonical model-selection authority for NTA skills: prefer deterministic execution, classify model-required work by capability/risk, and preserve the configured OpenAI→Qwen failover policy."
 ---
 
-# Adaptive Model Router — v2.0
+# Adaptive Model Router — v2.1
 
 ## Authority
 
-This skill is the single canonical authority for model selection across the NTA skills repository.
+This skill is the single canonical authority for selection of interchangeable reasoning, extraction, review and vision-inference models across the NTA skills repository.
 
-Whenever any NTA skill or workflow needs an AI model — including when a specialist skill is invoked directly instead of through `nta-automation-orchestrator` — model selection must resolve through this router first.
+Whenever any NTA skill or workflow needs such an AI model — including when a specialist skill is invoked directly instead of through `nta-automation-orchestrator` — model selection must resolve through this router first.
 
 Specialist skills may declare what a phase needs, for example:
 
@@ -22,13 +22,26 @@ Specialist skills may declare what a phase needs, for example:
 - tool access;
 - latency or cost sensitivity.
 
-Specialist skills must not independently choose a provider, hard-code a model slug, invent a fallback chain, or silently escalate to a more expensive route.
+Specialist skills must not independently choose a general-purpose provider, hard-code a reasoning/inference model slug, invent a fallback chain, or silently escalate to a more expensive route.
 
 This router selects execution capacity only. It never grants product, Shopify, supplier, shipping, customer-notification, refund, publishing, or other mutation authority.
 
+## Specialised service boundary
+
+A fixed, non-substitutable domain service is not automatically a general model-routing decision.
+
+For example, a workflow may explicitly require Grok/xAI for a specific image-generation stage such as `grok_hero`. That provider is part of the specialist operation contract, not an interchangeable reasoning route, unless the workflow is redesigned to make multiple generation providers eligible.
+
+The distinction is:
+
+- **General inference/reasoning/vision review** → always resolve through `adaptive-model-router`.
+- **Fixed specialist generation/service dependency** → may remain owned by the specialist workflow, but only for that bounded operation and never as a back door for general reasoning.
+
+If a fixed specialist service becomes interchangeable with other providers later, its provider selection should move under this router or a dedicated service router.
+
 ## Current provider policy
 
-The intended provider/failover order is:
+For general model-bearing work, the intended provider/failover order is:
 
 1. **OpenAI / ChatGPT configured route — primary**
 2. **Qwen Token Plan — first fallback**
@@ -36,7 +49,7 @@ The intended provider/failover order is:
 
 Exact provider and model identifiers must come from live OpenClaw configuration and execution metadata. Do not guess or duplicate secret/runtime configuration in this repository.
 
-The previous Gemini-primary `deep` route and proposed Llama route are retired policy. Do not route to Gemini or Llama unless David explicitly changes the policy and the live OpenClaw configuration confirms the new route.
+The previous Gemini-primary `deep` route and proposed Llama route are retired policy. Do not route general reasoning/inference work to Gemini or Llama unless David explicitly changes the policy and the live OpenClaw configuration confirms the new route.
 
 If the configured runtime does not match the intended provider order above, report the discrepancy rather than pretending the requested policy is active.
 
@@ -70,19 +83,19 @@ Classify each model-bearing phase independently. Do not label an entire multi-st
 
 A route is not eligible merely because it is cheap.
 
-- Vision phases require a route that actually supports the required image input/review surface.
+- Vision-inference/review phases require a route that actually supports the required image input/review surface.
 - Tool-enabled or consequential phases require a route permitted to use the necessary tools safely.
 - If a fallback provider lacks a required capability, skip that route for the affected phase rather than degrading silently.
 - Deterministic code remains authoritative for exact title assembly, arithmetic, state transitions, payloads, validation and read-back checks even when a model produced upstream evidence.
 
 ## Direct-invocation rule
 
-A specialist skill invoked directly must behave as though it were under `nta-automation-orchestrator` for model routing:
+A specialist skill invoked directly must behave as though it were under `nta-automation-orchestrator` for general model routing:
 
 1. identify deterministic phases;
-2. send only genuinely model-required phases to `adaptive-model-router`;
+2. send only genuinely model-required inference/reasoning/review phases to `adaptive-model-router`;
 3. consume the resolved route/class;
-4. retain its own domain rules and mutation authority boundaries.
+4. retain its own domain rules, fixed specialist services and mutation authority boundaries.
 
 Phrases in specialist skills such as `cheap model`, `reasoning reviewer`, `stronger model`, `vision model`, or similar are capability hints only. They do not override this router.
 
@@ -104,9 +117,11 @@ routing:
 
 Requested route and actual execution are different facts. Provider/model fields must remain unknown when runtime metadata does not prove them.
 
+Fixed specialist services should log their own provider/service metadata separately from this general routing record.
+
 ## Constraints
 
 - `skill_workshop` manages reusable procedures; it does not itself choose a provider/model for task execution.
-- Automatic provider failover is controlled by live OpenClaw agent/model configuration.
-- Repository skills may define model eligibility and required capabilities, but this router owns the selection decision.
+- Automatic general-provider failover is controlled by live OpenClaw agent/model configuration.
+- Repository skills may define model eligibility and required capabilities, but this router owns general inference/reasoning model selection.
 - Runtime configuration is the execution truth; this file is the routing-policy truth. If they diverge, surface the mismatch.
