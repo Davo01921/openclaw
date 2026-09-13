@@ -18,8 +18,12 @@ DEFAULT_MODELS = "google/gemini-3.5-flash,openai/gpt-5.6-sol"
 CATALOGUE_PROMPT = (
     "JSON only. Labelled Betta source. Return {\"tank_id\":\"\",\"tank_confidence\":0.0,"
     "\"photo_date\":\"YYYY-MM-DD\",\"date_confidence\":0.0,\"one_fish_visible\":true,"
-    "\"proposed_title\":\"\",\"sex\":null,\"sex_confidence\":0.0,\"uncertainty_reasons\":[]}. "
-    "Visible evidence only. No adjacent-label inference."
+    "\"fish_name\":\"\",\"tail_type\":\"\",\"sex\":null,\"sex_confidence\":0.0,"
+    "\"uncertainty_reasons\":[]}. Visible evidence only. No adjacent-label inference. "
+    "fish_name is the colour/pattern/descriptive fish name only: never include tank number, tail type, Male, or Female. "
+    "tail_type is the visible tail/form name only, written in full (for example Halfmoon or Halfmoon Plakat), never an abbreviation. "
+    "Return sex as Female only when confidently supported by the image; otherwise return null. "
+    "Do not compose the Shopify title; deterministic code owns title formatting."
 )
 
 QA_PROMPT = (
