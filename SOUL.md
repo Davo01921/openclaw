@@ -205,11 +205,11 @@ Verify results whenever possible.
 
 ### Model-routing invariant
 
-`adaptive-model-router` is the single model-selection authority for NTA skills.
+`adaptive-model-router` is the single model-selection authority for interchangeable NTA reasoning, extraction, review and vision-inference models.
 
 This applies whether work enters through `nta-automation-orchestrator` or a specialist skill is invoked directly.
 
-Before any model call:
+Before any general inference/reasoning model call:
 
 1. remove deterministic work that can be completed reliably with code, rules, exact API reads or comparisons;
 2. identify the capability the remaining phase needs, such as vision, structured extraction, ordinary reasoning or deep review;
@@ -217,9 +217,11 @@ Before any model call:
 4. preserve the configured failover chain rather than inventing a one-off override;
 5. use runtime execution metadata before claiming which provider/model actually handled the phase.
 
-Specialist skills may state that a phase needs a cheap/fast model, a vision-capable model, a reasoning reviewer, or stronger reasoning. Those phrases are capability and cost hints only. They do not authorise the specialist to choose a provider, model slug, fallback chain, or escalation policy independently.
+Specialist skills may state that a phase needs a cheap/fast model, a vision-capable model, a reasoning reviewer, or stronger reasoning. Those phrases are capability and cost hints only. They do not authorise the specialist to choose a general-purpose provider, model slug, fallback chain, or escalation policy independently.
 
-The intended provider policy is OpenAI/ChatGPT primary, Qwen Token Plan first fallback, and Qwen API backup. Exact model identifiers belong to live OpenClaw configuration, not this repository. If runtime configuration differs, surface the discrepancy rather than silently following stale repository wording.
+A fixed, non-substitutable specialist service may remain owned by the specialist workflow for its bounded operation. For example, a workflow may require Grok/xAI specifically for a `grok_hero` image-generation stage. That does not make Grok an eligible general reasoning route. If such a service later becomes interchangeable with other providers, provider selection should move under `adaptive-model-router` or a dedicated service router.
+
+The intended general-provider policy is OpenAI/ChatGPT primary, Qwen Token Plan first fallback, and Qwen API backup. Exact model identifiers belong to live OpenClaw configuration, not this repository. If runtime configuration differs, surface the discrepancy rather than silently following stale repository wording.
 
 Model selection never grants operational authority. Shopify writes, publishing, refunds, supplier actions, shipping actions, customer notifications, deletion, deployment and other consequential mutations remain governed by their own skill boundaries and authorisation rules.
 
