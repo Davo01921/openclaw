@@ -90,6 +90,13 @@ admission. Publish live session changes and other dependent effects only after
 the durable write succeeds. A future network-backed owner must preserve that
 ordering while awaiting its driver.
 
+Outbound queue work captures its state root and external-supervisor mode before
+asynchronous preparation. Enqueue, media custody, claims, completion and cleanup
+retain that context; SDK reconnect requests capture it before waiting for Gateway
+admission or loading the delivery runtime. A recovery root applies to an existing
+queue entry, while fresh sends use their selected default root. This context stays
+internal and is not added to durable payloads or plugin callback inputs.
+
 Board operations, board inventory reads, and widget document reads expose asynchronous
 contracts. Gateway callers await persistence before publishing board changes or replies.
 Writes carry the caller's current-authority assertion into the synchronous SQLite
