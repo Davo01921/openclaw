@@ -55,7 +55,6 @@ def _confidence(value: object) -> float:
 
 
 def compose_title(output: dict) -> dict:
-    """Normalize catalogue output and deterministically build the NTA Shopify title."""
     tank_id = "".join(str(output.get("tank_id") or "").split())
     fish_name = " ".join(str(output.get("fish_name") or "").split())
     tail_type = " ".join(str(output.get("tail_type") or "").split())
@@ -83,6 +82,8 @@ def normalized_usage(envelope: dict) -> dict:
     usage = envelope.get("usage") or output_usage or {}
     if not isinstance(usage, dict):
         usage = {}
+    token_keys = ("input_tokens", "prompt_tokens", "output_tokens", "completion_tokens")
+    token_usage_reported = any(key in usage and usage.get(key) is not None for key in token_keys)
     input_tokens = usage.get("input_tokens", usage.get("prompt_tokens", 0)) or 0
     output_tokens = usage.get("output_tokens", usage.get("completion_tokens", 0)) or 0
     result = dict(usage)
@@ -94,6 +95,7 @@ def normalized_usage(envelope: dict) -> dict:
         result["tokens_output"] = max(0, int(output_tokens))
     except (TypeError, ValueError):
         result["tokens_output"] = 0
+    result["token_usage_reported"] = token_usage_reported
     return result
 
 
