@@ -46,6 +46,26 @@ def digest(path: Path) -> str:
     return h.hexdigest()
 
 
+def compose_title(output: dict) -> dict:
+    """Normalize the catalogue output and deterministically build the NTA Shopify title."""
+    tank_id = "".join(str(output.get("tank_id") or "").split())
+    fish_name = " ".join(str(output.get("fish_name") or "").split())
+    tail_type = " ".join(str(output.get("tail_type") or "").split())
+    if not tank_id or not fish_name or not tail_type:
+        raise ValueError("tank_id, fish_name and tail_type are required to compose Betta title")
+    sex = "Female" if str(output.get("sex") or "").strip().casefold() == "female" else "Male"
+    title = f"{tank_id} - {fish_name} {tail_type} {sex}"
+    output = dict(output)
+    output["tank_id"] = tank_id
+    output["fish_name"] = fish_name
+    output["tail_type"] = tail_type
+    output["sex"] = sex
+    # Keep proposed_title for existing runtime compatibility, but it is code-generated.
+    output["proposed_title"] = title
+    output["title"] = title
+    return output
+
+
 def run_review(files: list[Path], mode: str, agent: str, models: list[str]) -> dict:
     prompt = CATALOGUE_PROMPT if mode == "catalogue" else QA_PROMPT
     errors = []
@@ -66,7 +86,9 @@ def run_review(files: list[Path], mode: str, agent: str, models: list[str]) -> d
         if completed.returncode == 0 and envelope.get("ok") and envelope.get("outputs"):
             try:
                 output = json.loads(envelope["outputs"][0]["text"])
-            except (KeyError, json.JSONDecodeError, TypeError) as exc:
+                if mode == "catalogue":
+                    output = compose_title(output)
+            except (KeyError, json.JSONDecodeError, TypeError, ValueError) as exc:
                 errors.append({"model": model, "error": f"invalid structured output: {exc}"})
                 continue
             provider, resolved_model = model.split("/", 1)
