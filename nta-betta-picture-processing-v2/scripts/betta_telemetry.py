@@ -11,20 +11,24 @@ import argparse
 import csv
 import json
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 DEFAULT_DB = Path.home() / "Documents" / "Betta Processing" / "betta-telemetry.sqlite3"
+SYDNEY = ZoneInfo("Australia/Sydney")
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS betta_processing_telemetry (
     batch_id TEXT NOT NULL,
     tank_number TEXT NOT NULL,
     date_entered TEXT NOT NULL,
+    arrival_date TEXT,
     tokens_input INTEGER NOT NULL DEFAULT 0,
     tokens_output INTEGER NOT NULL DEFAULT 0,
-    grokai_cost REAL NOT NULL DEFAULT 0,
+    grokai_cost REAL,
     grokai_cost_currency TEXT NOT NULL DEFAULT 'USD',
+    grokai_cost_source TEXT,
     provider TEXT,
     model TEXT,
     product_id TEXT,
@@ -38,10 +42,12 @@ FIELDS = [
     "batch_id",
     "tank_number",
     "date_entered",
+    "arrival_date",
     "tokens_input",
     "tokens_output",
     "grokai_cost",
     "grokai_cost_currency",
+    "grokai_cost_source",
     "provider",
     "model",
     "product_id",
@@ -50,14 +56,24 @@ FIELDS = [
 ]
 
 
-def utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+def sydney_now() -> str:
+    return datetime.now(SYDNEY).isoformat()
 
 
 def connect(path: Path) -> sqlite3.Connection:
     path.parent.mkdir(parents=True, exist_ok=True)
     con = sqlite3.connect(path)
     con.execute(SCHEMA)
+    # Safe migration for an earlier local ledger created before these fields existed.
+    existing = {row[1] for row in con.execute("PRAGMA table_info(betta_processing_telemetry)")}
+    migrations = {
+        "arrival_date": "ALTER TABLE betta_processing_telemetry ADD COLUMN arrival_date TEXT",
+        "grokai_cost_source": "ALTER TABLE betta_processing_telemetry ADD COLUMN grokai_cost_source TEXT",
+    }
+    for column, statement in migrations.items():
+        if column not in existing:
+            con.execute(statement)
+    con.commit()
     return con
 
 
@@ -71,11 +87,13 @@ def as_nonnegative_int(value: object, name: str) -> int:
     return parsed
 
 
-def as_nonnegative_float(value: object, name: str) -> float:
+def as_optional_nonnegative_float(value: object, name: str) -> float | None:
+    if value in (None, ""):
+        return None
     try:
-        parsed = float(value or 0)
+        parsed = float(value)
     except (TypeError, ValueError) as exc:
-        raise ValueError(f"{name} must be numeric") from exc
+        raise ValueError(f"{name} must be numeric or null") from exc
     if parsed < 0:
         raise ValueError(f"{name} must be >= 0")
     return parsed
@@ -87,25 +105,30 @@ def upsert(con: sqlite3.Connection, record: dict) -> None:
     if not batch_id or not tank_number:
         raise ValueError("batch_id and tank_number are required")
 
-    date_entered = str(record.get("date_entered") or utc_now()).strip()
+    date_entered = str(record.get("date_entered") or sydney_now()).strip()
+    arrival_date = str(record.get("arrival_date") or "").strip() or None
     tokens_input = as_nonnegative_int(record.get("tokens_input"), "tokens_input")
     tokens_output = as_nonnegative_int(record.get("tokens_output"), "tokens_output")
-    grokai_cost = as_nonnegative_float(record.get("grokai_cost"), "grokai_cost")
+    grokai_cost = as_optional_nonnegative_float(record.get("grokai_cost"), "grokai_cost")
     currency = str(record.get("grokai_cost_currency") or "USD").strip().upper()
-    updated_at = utc_now()
+    cost_source = str(record.get("grokai_cost_source") or "").strip() or None
+    updated_at = sydney_now()
 
     con.execute(
         """
         INSERT INTO betta_processing_telemetry (
-            batch_id, tank_number, date_entered, tokens_input, tokens_output,
-            grokai_cost, grokai_cost_currency, provider, model, product_id, title, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            batch_id, tank_number, date_entered, arrival_date, tokens_input, tokens_output,
+            grokai_cost, grokai_cost_currency, grokai_cost_source, provider, model,
+            product_id, title, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(batch_id, tank_number) DO UPDATE SET
             date_entered=excluded.date_entered,
+            arrival_date=excluded.arrival_date,
             tokens_input=excluded.tokens_input,
             tokens_output=excluded.tokens_output,
             grokai_cost=excluded.grokai_cost,
             grokai_cost_currency=excluded.grokai_cost_currency,
+            grokai_cost_source=excluded.grokai_cost_source,
             provider=excluded.provider,
             model=excluded.model,
             product_id=excluded.product_id,
@@ -116,10 +139,12 @@ def upsert(con: sqlite3.Connection, record: dict) -> None:
             batch_id,
             tank_number,
             date_entered,
+            arrival_date,
             tokens_input,
             tokens_output,
             grokai_cost,
             currency,
+            cost_source,
             record.get("provider"),
             record.get("model"),
             record.get("product_id"),
