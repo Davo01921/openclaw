@@ -1,10 +1,10 @@
 ---
 name: "nta-product-orchestrator"
-version: "1.1"
-description: "Coordinate NTA product decisions through canonical modules and the shared Shopify write-verification boundary."
+version: "1.2"
+description: "Coordinate NTA product decisions through canonical modules, canonical model routing, and the shared Shopify write-verification boundary."
 ---
 
-# NTA Product Orchestrator — v1.0
+# NTA Product Orchestrator — v1.2
 
 ## Purpose
 
@@ -34,8 +34,8 @@ Use these modules where applicable:
 10. `nta-product-metafields` — map approved product state to Shopify metafields.
 11. `nta-shopify-write-verifier` — the only canonical Shopify mutation boundary: authorised write then fresh live-state assertion.
 12. `nta-product-exception-gate` — AUTO_APPROVE / WARNING / REVIEW_REQUIRED / BLOCK.
-13. `nta-dymo-tank-label` — deterministic read-only two-line DYMO tank-label
-    output from approved livestock intake state and Shopify arrival-date state.
+13. `nta-dymo-tank-label` — deterministic read-only two-line DYMO tank-label output from approved livestock intake state and Shopify arrival-date state.
+14. `adaptive-model-router` — the sole authority for provider/model selection whenever any product phase genuinely needs a model.
 
 Existing specialist workflows remain valid entry points but must call these modules instead of maintaining conflicting copies of the same rules:
 
@@ -44,7 +44,7 @@ Existing specialist workflows remain valid entry points but must call these modu
 - `nta-betta-picture-processing-v2`
 - `nta-individual-betta-shopify-update`
 
-Use `adaptive-model-router` for model delegation where a task genuinely needs an AI model. `nta-automation-orchestrator` is the parent router when the request is not already known to be product work.
+`nta-automation-orchestrator` is the parent router when the request is not already known to be product work. Direct product-skill invocation still inherits the `adaptive-model-router` rule from `SOUL.md`.
 
 ## Shared Product State
 
@@ -199,10 +199,7 @@ Betta image processing remains specialised and is not replaced by this orchestra
 - Description generation must consume verified facts rather than invent missing specifications.
 - Shopify Writer must receive an explicit authorised field list.
 - QA Auditor must independently re-read changed fields after writing.
-- DYMO tank-label generation is read-only and occurs after QA in write mode so
-  it consumes the verified `custom.arrival_date`. In dry-run mode it consumes
-  the proposed value for that same field; it must not invent a second arrival
-  or availability date.
+- DYMO tank-label generation is read-only and occurs after QA in write mode so it consumes the verified `custom.arrival_date`. In dry-run mode it consumes the proposed value for that same field; it must not invent a second arrival or availability date.
 
 ## Write safety
 
@@ -234,34 +231,38 @@ Possible outcomes:
 
 Never turn missing evidence into invented certainty just to complete a workflow.
 
-## Cost-efficient model routing
+## Model eligibility and cost discipline
+
+This orchestrator may decide whether a phase appears deterministic or model-eligible, but it must not choose the provider/model itself.
 
 Prefer deterministic code/rules for:
 
-- GST arithmetic
-- pack conversion once units are known
-- inventory arithmetic
-- state comparisons
-- tag/metafield application
-- Shopify write verification
+- GST arithmetic;
+- pack conversion once units are known;
+- inventory arithmetic;
+- state comparisons;
+- tag/metafield application;
+- Shopify write verification.
 
-Use cheaper model routes for:
+Typical `LIGHT` or `STANDARD` capability hints include:
 
-- straightforward classification
-- extraction from clean supplier text
-- obvious supplier/product mapping
-- simple product-fact extraction
+- straightforward extraction from clean supplier text;
+- routine content drafting from verified facts;
+- simple product-fact synthesis;
+- low-ambiguity interpretation where deterministic evidence alone is insufficient.
 
-Escalate to stronger reasoning only for:
+Typical `DEEP` capability hints include:
 
-- ambiguous identity
-- contradictory product evidence
-- non-obvious pack/variant mapping
-- pricing exceptions
-- uncertain biological/product facts
-- cross-module contradictions
+- ambiguous identity;
+- contradictory product evidence;
+- non-obvious pack/variant mapping;
+- pricing exceptions requiring judgment;
+- uncertain biological/product facts;
+- cross-module contradictions.
 
-Do not invoke a high-cost model merely to perform arithmetic, formatting, or deterministic API work.
+These are hints passed to `adaptive-model-router`, not local model-selection rules. The router may return `NONE`, `LIGHT`, `STANDARD`, `DEEP`, or `CRITICAL_REVIEW` under its canonical policy.
+
+Do not invoke a model merely to perform arithmetic, formatting, exact comparison, deterministic API work, or read-back verification.
 
 ## Final completion rule
 
@@ -271,6 +272,7 @@ A job is complete only when:
 2. exception status allows the intended action;
 3. `nta-shopify-write-verifier` returned `VERIFIED` or an explicitly acceptable `VERIFIED_WITH_WARNING`;
 4. expected and live values match for every changed field;
+5. model-bearing phases, if any, followed the `adaptive-model-router` contract;
 6. unresolved warnings/review items are reported explicitly.
 
 A successful API response alone is not proof of completion.
