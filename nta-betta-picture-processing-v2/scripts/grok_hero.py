@@ -7,6 +7,10 @@ label rendering remains deterministic and outside the generative model.
 Required environment:
     XAI_API_KEY
 
+Optional environment:
+    BETTA_GROK_COST_USD_PER_IMAGE
+        Fallback billed cost per generated image when xAI does not return a cost field.
+
 Example:
     python scripts/grok_hero.py --source 2BT31.jpg --output 2BT31-grok.png
 """
@@ -53,7 +57,7 @@ def digest(path: Path) -> str:
 def data_uri(path: Path) -> str:
     mime = mimetypes.guess_type(path.name)[0] or "image/jpeg"
     encoded = base64.b64encode(path.read_bytes()).decode("ascii")
-    return f"data:{mime};base64,{encoded}"
+    return f"data:{mime};base64,{encoded)}"
 
 
 def request_candidate(source: Path, model: str, quality: str, timeout: int) -> tuple[bytes, dict]:
@@ -110,6 +114,41 @@ def normalize_png(image_bytes: bytes, output: Path) -> None:
         image.save(output, format="PNG", optimize=True)
 
 
+def _number(mapping: dict, keys: tuple[str, ...], default: float = 0.0) -> float:
+    for key in keys:
+        value = mapping.get(key)
+        if value is not None:
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                continue
+    return default
+
+
+def normalized_usage(envelope: dict) -> dict:
+    usage = envelope.get("usage") or {}
+    if not isinstance(usage, dict):
+        usage = {}
+    input_tokens = int(_number(usage, ("input_tokens", "prompt_tokens"), 0))
+    output_tokens = int(_number(usage, ("output_tokens", "completion_tokens"), 0))
+    cost = _number(usage, ("cost_usd", "total_cost_usd", "cost", "total_cost"), -1)
+    if cost < 0:
+        configured = os.getenv("BETTA_GROK_COST_USD_PER_IMAGE")
+        try:
+            cost = float(configured) if configured not in (None, "") else 0.0
+        except ValueError:
+            cost = 0.0
+    result = dict(usage)
+    result.update({
+        "tokens_input": input_tokens,
+        "tokens_output": output_tokens,
+        "grokai_cost": max(0.0, cost),
+        "grokai_cost_currency": "USD",
+        "cost_source": "provider" if any(k in usage for k in ("cost_usd", "total_cost_usd", "cost", "total_cost")) else "configured_or_zero",
+    })
+    return result
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--source", type=Path, required=True)
@@ -126,6 +165,7 @@ def main() -> int:
     try:
         raw, envelope = request_candidate(args.source, args.model, args.quality, args.timeout)
         normalize_png(raw, args.output)
+        usage = normalized_usage(envelope)
         record = {
             "provider": "xai",
             "model": args.model,
@@ -138,7 +178,11 @@ def main() -> int:
             "output_dimensions": [2048, 2048],
             "purpose": "experimental_betta_hero_candidate",
             "qa_required": True,
-            "usage": envelope.get("usage", {}),
+            "tokens_input": usage["tokens_input"],
+            "tokens_output": usage["tokens_output"],
+            "grokai_cost": usage["grokai_cost"],
+            "grokai_cost_currency": usage["grokai_cost_currency"],
+            "usage": usage,
         }
         print(json.dumps(record, sort_keys=True))
         return 0
