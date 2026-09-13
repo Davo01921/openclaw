@@ -1,14 +1,14 @@
 ---
 name: "nta-automation-orchestrator"
-version: "1.2"
-description: "Route non-financial NTA automation jobs through specialist workflows and shared product, Shopify, customer-service, and model-delegation modules."
+version: "1.3"
+description: "Route non-financial NTA automation jobs through specialist workflows and shared product, Shopify, customer-service, and canonical model-routing modules."
 ---
 
 # NTA Automation Orchestrator
 
 ## Purpose
 
-This is the sole top-level NTA automation entry point. It routes a job; it does not repeat supplier, pricing, content, inventory, image, Shopify, shipping, customer-service, or model rules.
+This is the sole top-level NTA automation entry point. It routes a job; it does not repeat supplier, pricing, content, inventory, image, Shopify, shipping, customer-service, or model-selection rules.
 
 Financial, debt, repayment, banking, accounting, and reconciliation jobs are out of scope. Return `OUT_OF_SCOPE_FINANCIAL` without invoking any NTA workflow.
 
@@ -55,14 +55,27 @@ A webhook payload is a wake-up signal, not authoritative product state. Before a
 
 When the request concerns a complaint, refund, replacement, livestock health/DOA issue, fulfilment dispute, product representation, pickup/shipping misunderstanding, or goodwill request, route to `nta-customer-service` before drafting the customer response or making a remedy decision. The customer-service skill must gather the relevant live evidence, classify responsibility, run the ACL/policy and devil's-advocate checks, and determine the recommended remedy before any consequential Shopify write is authorised.
 
+## Canonical model-routing rule
+
+`adaptive-model-router` is the sole model-selection authority for this orchestration layer and all child workflows.
+
+- First remove deterministic work. Parsing after extraction, arithmetic, exact comparisons, payload construction, API calls, idempotency, state transitions and read-back verification should not consume a model when deterministic execution is sufficient.
+- For every genuinely model-required phase, resolve the phase through `adaptive-model-router` before dispatch.
+- Child skills may declare capability needs such as vision, structured extraction, ordinary reasoning or deep review, but may not independently choose providers, hard-code model slugs, define competing fallback chains or silently escalate model cost.
+- A directly invoked specialist skill inherits the same rule even when this top-level orchestrator was bypassed.
+- Model choice never expands operational authority. Existing writer, verifier, exception-gate and explicit-authorisation requirements still apply.
+- Requested route and actual execution are separate facts; use runtime metadata before claiming which provider/model handled the work.
+
 ## Dispatch rules
 
 1. Select the narrowest specialist workflow.
-2. Use `adaptive-model-router` only for tasks that need a model. Deterministic parsing, arithmetic, API calls, change-set comparison, and verification must not consume model capacity.
-3. Require an explicit authorised change set before a Shopify mutation.
-4. Require fresh read-back through `nta-shopify-write-verifier` after every Shopify mutation.
-5. Aggregate warnings and unresolved items. `COMPLETE` requires verification of every intended write; otherwise return `PARTIAL`, `REVIEW_REQUIRED`, or `BLOCKED`.
+2. Classify deterministic phases as `NONE` through the `adaptive-model-router` contract; route only genuinely model-required phases through the router.
+3. Preserve the router's configured provider/fallback policy. Do not create one-off model overrides that silently bypass it.
+4. Require an explicit authorised change set before a Shopify mutation.
+5. Require fresh read-back through `nta-shopify-write-verifier` after every Shopify mutation.
+6. After an ambiguous provider failure, verify external state before retrying any consequential action.
+7. Aggregate warnings and unresolved items. `COMPLETE` requires verification of every intended write; otherwise return `PARTIAL`, `REVIEW_REQUIRED`, or `BLOCKED`.
 
 ## Boundary rule
 
-Specialist workflows own their source-specific intake, idempotency and external partner actions. Shared modules own reusable product decisions and Shopify mutation assurance. No workflow may silently widen its authority.
+Specialist workflows own their source-specific intake, idempotency and external partner actions. Shared modules own reusable product decisions and Shopify mutation assurance. `adaptive-model-router` owns model selection. No workflow may silently widen its authority or create a competing model-routing policy.
