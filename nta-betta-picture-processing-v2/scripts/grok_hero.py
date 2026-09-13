@@ -57,7 +57,7 @@ def digest(path: Path) -> str:
 def data_uri(path: Path) -> str:
     mime = mimetypes.guess_type(path.name)[0] or "image/jpeg"
     encoded = base64.b64encode(path.read_bytes()).decode("ascii")
-    return f"data:{mime};base64,{encoded)}"
+    return f"data:{mime};base64,{encoded}"
 
 
 def request_candidate(source: Path, model: str, quality: str, timeout: int) -> tuple[bytes, dict]:
