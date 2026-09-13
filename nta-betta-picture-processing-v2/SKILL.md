@@ -1,5 +1,6 @@
 ---
 name: "betta-picture-processing"
+version: "2.1"
 description: "Process labelled Betta photos into studio heroes, update matched Shopify products, verify, record per-tank timing/usage/cost telemetry, and archive the batch."
 user-invocable: true
 ---
@@ -33,6 +34,14 @@ Read [references/state-machine.md](references/state-machine.md) before processin
 
 Use `scripts/vision_review.py` for catalogue/QA inference, `scripts/vision_batch.py` for bounded parallel review, `scripts/betta_batch.py` as the authoritative state/title/fork-join/evidence validator, and `scripts/betta_telemetry.py` for persistent per-tank timing/usage/cost records.
 
+## Model-routing contract
+
+All interchangeable vision-inference, extraction and reasoning/review calls in this workflow must resolve through `adaptive-model-router` before dispatch, even when this skill is invoked directly.
+
+This workflow may declare the required capability and confidence/escalation condition; it does not independently choose OpenAI, Qwen, another general provider, or a model slug.
+
+`grok_hero` is different: it is a fixed specialist image-generation operation owned by this workflow. Grok/xAI may remain bound to that generation step under the specialised-service boundary in `adaptive-model-router`; it must not be reused as an unapproved general reasoning or review route.
+
 ## 1. Intake and traceability
 
 Accept source photographs only from the designated private Discord processing thread or `/Users/davidlo/Documents/Betta Processing`. Treat one thread as one batch; never mix messages, threads, prior batches, or filesystem ordering.
@@ -45,7 +54,7 @@ Reject non-images from fish identification while retaining their ledger entries.
 
 ## 2. Visual catalogue and deterministic title
 
-Use the cheapest configured image-capable model for the first pass. Return structured:
+Request a first-pass route from `adaptive-model-router` with image/vision-inference capability and use the lowest sufficient routing class it returns. Do not choose a provider/model locally. Return structured:
 
 - `tank_id` and confidence;
 - physical `photo_date` and confidence;
@@ -65,7 +74,7 @@ The code assembles:
 
 The compatibility field `proposed_title` may remain only if it is populated from this deterministic title.
 
-Accept tank/date at confidence `>= 0.90`. At `0.70–0.89`, run one focused cheap retry. Below `0.70`, retry once and then escalate only minimal evidence to the configured reasoning reviewer. If unresolved, mark `BLOCKED_VISUAL`.
+Accept tank/date at confidence `>= 0.90`. At `0.70–0.89`, run one focused retry through the router-resolved vision route. Below `0.70`, retry once and then request the smallest justified stronger vision-review class from `adaptive-model-router`, passing only the minimal unresolved evidence. If unresolved, mark `BLOCKED_VISUAL`.
 
 Send David the mapping preview:
 
@@ -123,11 +132,13 @@ Write `/Users/davidlo/Documents/Betta Processing/betta-inventory.csv` with exact
 
 ## 5. Mandatory image QA
 
-Run deterministic checks and one recorded full-resolution visual comparison per source/hero/original triple. Validate hero dimensions, filenames, label content, framing, source-specific processing, clean composition, and exact original-reference hash equality.
+Run deterministic checks and one recorded full-resolution visual comparison per source/hero/original triple. The visual comparison is a general vision-review phase and must use an `adaptive-model-router`-resolved route; the fixed Grok hero generator does not automatically become the QA reviewer.
+
+Validate hero dimensions, filenames, label content, framing, source-specific processing, clean composition, and exact original-reference hash equality.
 
 Evaluate stable identity characteristics: body proportions, head/body relationship, scale layout, unique markings, colour distribution, tail type, and visible anatomy. A plausible changed pose/fin spread is allowed; changed identity, invented markings, implausible anatomy, wrong tail form, material recolouring, plastic texture, severe halos, or unsupported detail is not.
 
-Persist provider/model/call ID, timestamp, hashes, usage data, per-assertion results, overall outcome, and retry/escalation evidence. Missing evidence or zero comparison calls is `FIX_REQUIRED`.
+Persist routing class, requested route, actual provider/model/call ID when attested, timestamp, hashes, usage data, per-assertion results, overall outcome, fallback/retry/escalation evidence, and whether execution metadata proved the provider/model. Missing evidence or zero comparison calls is `FIX_REQUIRED`.
 
 **Complete when:** every mandatory assertion is PASS.
 
@@ -181,12 +192,15 @@ Record at least:
 - archive completion separately;
 - model-call count and retry count;
 - input/output tokens from all attributable calls including retries when reported;
-- Grok call count and total Grok/xAI cost;
+- router class/requested route for general model calls;
+- actual provider/model for general model calls only when execution metadata attests them;
+- fallback/escalation reason and execution-attestation state;
+- Grok call count and total Grok/xAI cost as a separate fixed specialist-service record;
 - cost currency/source;
 - state durations and slowest state;
 - batch ID, provider/model summary, Shopify Product ID, and final title.
 
-Do not silently drop failed/retried calls that consumed usage. Do not invent token counts when a provider did not report them.
+Do not silently drop failed/retried calls that consumed usage. Do not invent token counts or actual provider/model identities when the runtime did not report them.
 
 At the end of each batch export the DB to CSV. A GitHub CSV snapshot may be retained for audit/history; the live SQLite database is the operational source of truth.
 
@@ -206,7 +220,7 @@ Reply in the originating Discord thread with counts, tanks/photo dates/final tit
 
 ## Runtime readiness and throughput
 
-Before a live batch, verify the vision reviewer, Shopify resolve/write/read-back operations, `scripts/betta_batch.py`, `scripts/betta_telemetry.py`, writable telemetry DB, Grok cost fallback, and dry-run mode.
+Before a live batch, verify `adaptive-model-router` availability for general vision/review calls, the fixed Grok hero service, Shopify resolve/write/read-back operations, `scripts/betta_batch.py`, `scripts/betta_telemetry.py`, writable telemetry DB, Grok cost fallback, and dry-run mode.
 
 Use a global maximum of four simultaneous external operations initially. Run independent work as a queue, persist each result immediately, and refill available slots. Re-run `execution-plan` after branch completion/failure so only missing work is scheduled.
 
