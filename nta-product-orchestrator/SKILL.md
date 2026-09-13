@@ -1,10 +1,10 @@
 ---
 name: "nta-product-orchestrator"
-version: "1.2"
-description: "Coordinate NTA product decisions through canonical modules, canonical model routing, and the shared Shopify write-verification boundary."
+version: "1.3"
+description: "Coordinate NTA product decisions through canonical modules, canonical general-model routing, and the shared Shopify write-verification boundary."
 ---
 
-# NTA Product Orchestrator — v1.2
+# NTA Product Orchestrator — v1.3
 
 ## Purpose
 
@@ -35,7 +35,7 @@ Use these modules where applicable:
 11. `nta-shopify-write-verifier` — the only canonical Shopify mutation boundary: authorised write then fresh live-state assertion.
 12. `nta-product-exception-gate` — AUTO_APPROVE / WARNING / REVIEW_REQUIRED / BLOCK.
 13. `nta-dymo-tank-label` — deterministic read-only two-line DYMO tank-label output from approved livestock intake state and Shopify arrival-date state.
-14. `adaptive-model-router` — the sole authority for provider/model selection whenever any product phase genuinely needs a model.
+14. `adaptive-model-router` — the sole authority for interchangeable reasoning, extraction, review and vision-inference model selection whenever a product phase genuinely needs a general model.
 
 Existing specialist workflows remain valid entry points but must call these modules instead of maintaining conflicting copies of the same rules:
 
@@ -45,6 +45,8 @@ Existing specialist workflows remain valid entry points but must call these modu
 - `nta-individual-betta-shopify-update`
 
 `nta-automation-orchestrator` is the parent router when the request is not already known to be product work. Direct product-skill invocation still inherits the `adaptive-model-router` rule from `SOUL.md`.
+
+A fixed, non-substitutable specialist service may remain owned by its specialist workflow for its bounded operation under the router's specialised-service boundary. For example, Betta `grok_hero` may remain a fixed Grok/xAI generation stage; that does not make Grok an eligible general reasoning/review route.
 
 ## Shared Product State
 
@@ -233,7 +235,7 @@ Never turn missing evidence into invented certainty just to complete a workflow.
 
 ## Model eligibility and cost discipline
 
-This orchestrator may decide whether a phase appears deterministic or model-eligible, but it must not choose the provider/model itself.
+This orchestrator may decide whether a phase appears deterministic or model-eligible, but it must not choose the general provider/model itself.
 
 Prefer deterministic code/rules for:
 
@@ -260,9 +262,9 @@ Typical `DEEP` capability hints include:
 - uncertain biological/product facts;
 - cross-module contradictions.
 
-These are hints passed to `adaptive-model-router`, not local model-selection rules. The router may return `NONE`, `LIGHT`, `STANDARD`, `DEEP`, or `CRITICAL_REVIEW` under its canonical policy.
+These are hints passed to `adaptive-model-router`, not local general model-selection rules. The router may return `NONE`, `LIGHT`, `STANDARD`, `DEEP`, or `CRITICAL_REVIEW` under its canonical policy.
 
-Do not invoke a model merely to perform arithmetic, formatting, exact comparison, deterministic API work, or read-back verification.
+Do not invoke a general model merely to perform arithmetic, formatting, exact comparison, deterministic API work, or read-back verification.
 
 ## Final completion rule
 
@@ -272,7 +274,7 @@ A job is complete only when:
 2. exception status allows the intended action;
 3. `nta-shopify-write-verifier` returned `VERIFIED` or an explicitly acceptable `VERIFIED_WITH_WARNING`;
 4. expected and live values match for every changed field;
-5. model-bearing phases, if any, followed the `adaptive-model-router` contract;
+5. general model-bearing phases, if any, followed the `adaptive-model-router` contract;
 6. unresolved warnings/review items are reported explicitly.
 
 A successful API response alone is not proof of completion.
