@@ -4,9 +4,7 @@
 
 Do **not** implement the skill as a single giant prompt that lets the active model execute every operation.
 
-Use a deterministic orchestrator script/plugin/tool for the batch state machine, and invoke model workers only for the stages that genuinely require visual judgement.
-
-Recommended components:
+Use a deterministic orchestrator for state, validation, timing, retries, and mutation authority. Use model workers only where visual judgement or image generation is required.
 
 ```text
 Discord batch collector
@@ -14,34 +12,63 @@ Discord batch collector
         v
 deterministic orchestrator
         |
-        +--> cheap vision batch classifier
+        +--> cheap vision catalogue
         |        |
-        |        +--> focused cheap retry
-        |                 |
-        |                 +--> Sol exception review
+        |        +--> focused retry / Sol exception review
         |
-        +--> CSV builder
-        +--> image pipeline
-        +--> nta-product-resolver
-        +--> Shopify adapter / nta-shopify-write-verifier
-        +--> assertion/read-back layer
-        +--> archive manager
-        +--> Discord reporter
+        v
+   VISUAL_ACCEPTED
+        |
+        +--------------------+
+        |                    |
+        v                    v
+Shopify exact resolve     Grok hero generation
+        |                    |
+        +---------+----------+
+                  |
+                  v
+          preparation join
+          PRODUCT_RESOLVED
+                  |
+                  v
+          CSV + image QA
+                  |
+                  v
+       authorised Shopify write
+                  |
+                  v
+          fresh read-back
+                  |
+                  v
+        telemetry + archive
 ```
 
-## Why
+## Why the fork matters
 
-OpenClaw skills are instructions, while tools/plugins perform actions. OpenClaw also supports per-agent model configuration. Keep stateful/deterministic work in code and use agents only where interpretation is required.
+Shopify product resolution and Grok hero generation depend on the accepted tank identity, but they do not depend on each other. Running them serially wastes wall-clock time.
+
+After `VISUAL_ACCEPTED`, call:
+
+```text
+python scripts/betta_batch.py execution-plan <ledger> --workers 4
+```
+
+The returned `parallel_preparation.tasks` are independently runnable. Dispatch at most `max_concurrency` total tasks across both branches. Persist every successful result immediately, then re-run the planner.
+
+A valid branch is never repeated merely because the other branch failed. This is the main checkpoint-resume rule:
+
+- Shopify already resolved → do not resolve it again;
+- hash-valid Grok hero already exists → do not regenerate it;
+- both exist → advance the item to `PRODUCT_RESOLVED`;
+- one is missing/invalid → schedule only that branch.
+
+This makes retry cost proportional to the failed work instead of the entire fish workflow.
 
 ## Suggested implementation boundary
 
-Build or adapt these typed operations. `scripts/betta_batch.py` provides the
-authoritative local validation, transition gate, and mutation-envelope check;
-runtime adapters remain responsible for Discord, image editing, and Shopify API calls:
+`scripts/betta_batch.py` is the authoritative local validation, title, transition, fork/join, and mutation-envelope gate. Runtime adapters remain responsible for Discord, image generation/editing, and Shopify API calls.
 
-`scripts/vision_review.py` is the supported provider route. It attaches the actual
-image files to a stateless OpenClaw model invocation, records hashes and invocation
-evidence, and falls back to the next configured reviewer on provider failure.
+Typed operations should include:
 
 - `collect_discord_batch(thread_id)`
 - `save_source_attachment(...)`
@@ -52,9 +79,9 @@ evidence, and falls back to the next configured reviewer on provider failure.
 - `sol_review(exception_packet)`
 - `resolve_nta_product(identity_evidence)`
 - `shopify_find_exact_tank(tank_id)`
-- `build_inventory_csv(items)`
-- `bind_original_reference(item)` (records the source path/hash unchanged)
 - `prepare_hero(item)`
+- `build_inventory_csv(items)`
+- `bind_original_reference(item)`
 - `shopify_find_ready_file(asset)`
 - `shopify_upload_missing_file(asset)`
 - `shopify_apply_betta_media(product_id, ...)`
@@ -62,65 +89,90 @@ evidence, and falls back to the next configured reviewer on provider failure.
 - `shopify_set_inventory(product_id, 1)`
 - `shopify_readback(product_id)`
 - `assert_product_state(expected, actual)`
+- `record_betta_telemetry(item)`
 - `archive_passed_batch(batch_id)`
 - `render_discord_report(batch_id)`
 
 ## Important authority split
 
-The cheap vision worker may return observations and title suggestions only.
+The vision worker returns observations only: tank/date, `fish_name`, `tail_type`, and sex evidence. It must never authorise a free-form Shopify title.
 
-It must not:
+The deterministic title builder owns:
+
+```text
+<Tank Number> - <Fish Name> <Tail Type> <Male/Female>
+```
+
+Sex defaults to `Male`; only a confident Female result at or above the configured threshold changes it to `Female`.
+
+The model workers must not:
+
 - issue Shopify mutations;
 - create products;
-- decide to ignore API errors;
-- change price/cost or directly mutate a title;
+- ignore API errors;
+- alter price/cost/description or other protected fields;
+- bypass title validation;
 - archive;
 - invent missing mappings.
 
-The Sol reviewer may diagnose exceptions but should not receive unrestricted mutation authority merely because it is the stronger model.
+For every Shopify mutation, create the shared verifier operation record with the batch ID as job ID and a stable per-fish idempotency key. Betta-specific checks supplement, but never bypass, `nta-shopify-write-verifier` fresh read-back.
 
-The orchestrator is responsible for enforcing invariants.
+## Timing and efficiency telemetry
 
-For every mutation, create the shared verifier operation record with the batch ID as job ID and a stable per-fish idempotency key. The Shopify adapter is an implementation detail of `nta-shopify-write-verifier`; the Betta-specific assertions supplement, but must not bypass, the verifier's fresh read-back.
-
-## Cost telemetry
-
-Wrap every model invocation with a usage recorder. Prefer provider-reported usage/cost. Otherwise calculate from a configuration price table.
-
-Suggested environment/config values:
+The per-tank telemetry database is the operational source of truth:
 
 ```text
-BETTA_VISION_MODEL=google/gemini-3.5-flash
-BETTA_SOL_MODEL=<gpt-5.6-sol model id>
-BETTA_UTILITY_MODEL=<cheap text model id>
-
-BETTA_TANK_ACCEPT=0.90
-BETTA_TANK_RETRY=0.70
-BETTA_DATE_ACCEPT=0.90
-BETTA_DATE_RETRY=0.70
-BETTA_SEX_ACCEPT=0.85
-BETTA_SEX_RETRY=0.60
-BETTA_SOL_MAX_RATIO=0.15
-BETTA_SOL_MIN_CAP=2
+~/Documents/Betta Processing/betta-telemetry.sqlite3
 ```
 
-## Rollout
+For each fish record at least:
 
-1. Install the v2 skill directory in the workspace skills path.
-2. Confirm `openclaw skills list` sees `betta-picture-processing`.
-3. Configure the dedicated `betta-vision-worker` and recorded Sol fallback.
-4. Run a dry-run batch with Shopify mutations disabled.
-5. Compare interpreted tank/date/title/sex against the source photos.
-6. Enable Shopify writes for one small batch.
-7. Confirm media order, inventory, physical-photo arrival date, accepted title replacement, protected description/price/cost, and archive set equality.
-8. Review cost telemetry after 20-30 Bettas and adjust thresholds based on real false-positive/false-negative behaviour.
+- tank number;
+- `date_entered` / onboarding start;
+- Shopify verified timestamp;
+- onboarding seconds (`date_entered` → successful fresh read-back);
+- archive completion time separately;
+- model calls and retries;
+- input/output tokens;
+- Grok call count and Grok cost;
+- state durations and slowest state;
+- final title and Shopify Product ID.
+
+Current NTA fallback Grok cost is **USD 0.07 per image call** when xAI does not report an actual billed cost. Provider-reported billed cost always wins. Never convert unknown provider usage into a fake zero.
+
+Use `scripts/betta_metrics.py` for rolling summaries such as median onboarding time, p90 time, retry rate, average tokens, total Grok spend, and slowest states. Review the last 20-30 fish before changing concurrency.
 
 ## Throughput model
 
-Use bounded stage-level concurrency (`4` workers by default), not 24 end-to-end serial pipelines. Group items by current ledger state, run independent work for one state as a wave, persist each result immediately, then ask `execution-plan` for the next wave. Batch catalogue calls only when every image remains individually addressable in the response; otherwise use four parallel single-image calls. Never combine different fish into one fidelity-QA evidence record.
+Keep the global external-operation ceiling at `4` initially. That ceiling includes Shopify resolution and Grok generation together.
 
-Do deterministic work once per batch: attachment collection, CSV emission, archive verification, and final Discord reporting. Cache source hashes and Shopify READY-file lookups so retries do not regenerate, re-review, or re-upload passed assets.
+Use a work-queue model rather than fixed serial waves:
+
+1. ask `execution-plan` for runnable work;
+2. fill up to four external-operation slots;
+3. persist each result as soon as it completes;
+4. refill free slots from remaining work;
+5. re-run the planner after failures or branch completions;
+6. advance `ready_to_join` items to `PRODUCT_RESOLVED`;
+7. continue later states stage-wise.
+
+Batch catalogue and QA calls only when each fish remains individually addressable in the output. Never combine different fish into one fidelity-QA evidence record.
+
+Do deterministic work once per batch. Cache source hashes and Shopify READY-file lookups. Reuse passed images, snapshots, classification evidence, and QA records when their exact input hashes remain unchanged.
+
+## Rollout/test sequence
+
+1. Confirm `openclaw skills list` sees `betta-picture-processing`.
+2. Run repository CI and require all Betta tests to pass.
+3. Dry-run one fish with Shopify mutation disabled.
+4. Confirm title components and final deterministic title.
+5. Confirm `execution-plan` exposes both `shopify_resolve` and `grok_hero` after visual acceptance.
+6. Simulate one branch failure and verify the next plan schedules only the failed/missing branch.
+7. Confirm Grok fallback cost records USD 0.07 when provider cost is absent.
+8. Enable live Shopify write for one fish.
+9. Confirm fresh read-back, telemetry row, onboarding duration, media order, inventory, arrival date, protected fields, and archive evidence.
+10. After 20-30 fish, inspect median/p90 onboarding time and slowest states before increasing concurrency.
 
 ## Do not over-optimise too early
 
-The biggest savings come from eliminating model use for deterministic work and keeping Sol out of the normal path. Shaving tiny token counts from an already cheap call is secondary to avoiding a wrong fish/product mapping.
+The largest wins are eliminating repeated successful work, overlapping independent I/O, and keeping expensive reasoning out of the normal path. Do not raise concurrency until the telemetry shows where the bottleneck actually is.
