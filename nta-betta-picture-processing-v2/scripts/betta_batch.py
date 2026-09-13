@@ -34,6 +34,7 @@ QA_VISUAL = {
 PROTECTED = {"description", "price", "cost", "vendor", "product_type", "handle", "status"}
 AUTHORISED = {"title", "arrival_date", "inventory", "media"}
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+SEX_RE = re.compile(r"\b(?:male|female)\b", re.IGNORECASE)
 
 
 class LedgerError(ValueError):
@@ -75,6 +76,28 @@ def require(condition: bool, message: str) -> None:
         raise LedgerError(message)
 
 
+def canonical_sex(value: object) -> str:
+    """NTA rule: only a confident Female classification changes the default; otherwise Male."""
+    if isinstance(value, str) and value.strip().casefold() == "female":
+        return "Female"
+    return "Male"
+
+
+def expected_catalogue_title(cat: dict) -> str:
+    """Build the only Shopify title shape allowed for an individual Betta."""
+    tank_id = str(cat.get("tank_id") or "").strip()
+    fish_name = " ".join(str(cat.get("fish_name") or "").split())
+    tail_type = " ".join(str(cat.get("tail_type") or "").split())
+    require(tank_id, "catalogue tank_id required for title")
+    require(fish_name, "catalogue fish_name required for title")
+    require(tail_type, "catalogue tail_type required for title")
+    require(" - " not in fish_name and " - " not in tail_type, "title components must not contain title separator")
+    require(SEX_RE.search(fish_name) is None, "fish_name must not contain Male/Female")
+    require(SEX_RE.search(tail_type) is None, "tail_type must not contain Male/Female")
+    require(not fish_name.casefold().endswith(tail_type.casefold()), "fish_name must not duplicate tail_type")
+    return f"{tank_id} - {fish_name} {tail_type} {canonical_sex(cat.get('sex'))}"
+
+
 def validate_file(asset: dict, role: str) -> None:
     require(isinstance(asset, dict), f"{role}: missing asset record")
     path = asset.get("path")
@@ -104,7 +127,10 @@ def validate_item(item: dict) -> None:
     if item["state"] in ITEM_STATES[ITEM_STATES.index("VISUAL_ACCEPTED"):]:
         cat = item.get("catalogue", {})
         require(cat.get("tank_id") and cat.get("title"), "accepted catalogue tank/title required")
+        require(cat.get("tank_id") == item.get("id"), "catalogue tank_id must equal item id")
         require(DATE_RE.match(cat.get("photo_date", "")) is not None, "accepted physical photo date required")
+        require(cat.get("title") == expected_catalogue_title(cat),
+                "catalogue title must exactly match '<Tank Number> - <Fish Name> <Tail Type> <Male/Female>'")
         validate_vision_call(cat.get("evidence", {}))
     if item["state"] in ITEM_STATES[ITEM_STATES.index("PRODUCT_RESOLVED"):]:
         product = item.get("product", {})
@@ -130,7 +156,9 @@ def validate_mutation(item: dict) -> None:
     mutation = item.get("mutation", {})
     require(set(mutation) == AUTHORISED, "mutation contains missing or unauthorised keys")
     cat = item["catalogue"]
-    require(mutation["title"] == cat["title"], "mutation title differs from accepted title")
+    required_title = expected_catalogue_title(cat)
+    require(cat["title"] == required_title, "catalogue title violates deterministic title contract")
+    require(mutation["title"] == required_title, "mutation title violates deterministic title contract")
     require(mutation["arrival_date"] == cat["photo_date"], "arrival date must equal physical photo date")
     require(mutation["inventory"] == 1, "inventory must equal 1")
     approved = [item["images"]["hero"]["sha256"], item["source"]["sha256"]]
@@ -143,7 +171,8 @@ def verify_readback(item: dict) -> None:
     require(after.get("product_id") == item["product"]["id"], "read-back product id mismatch")
     for key in PROTECTED:
         require(after.get(key) == before.get(key), f"protected field changed: {key}")
-    require(after.get("title") == item["mutation"]["title"], "read-back title mismatch")
+    require(after.get("title") == expected_catalogue_title(item["catalogue"]), "read-back title mismatch")
+    require(after.get("title") == item["mutation"]["title"], "read-back mutation title mismatch")
     require(after.get("arrival_date") == item["mutation"]["arrival_date"], "read-back arrival date mismatch")
     require(after.get("inventory") == 1, "read-back inventory mismatch")
     require(
