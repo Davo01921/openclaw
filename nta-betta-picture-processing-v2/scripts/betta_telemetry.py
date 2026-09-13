@@ -24,6 +24,18 @@ CREATE TABLE IF NOT EXISTS betta_processing_telemetry (
     tank_number TEXT NOT NULL,
     date_entered TEXT NOT NULL,
     arrival_date TEXT,
+    onboarding_started_at TEXT,
+    shopify_verified_at TEXT,
+    onboarding_seconds REAL,
+    archive_completed_at TEXT,
+    end_to_archive_seconds REAL,
+    model_calls INTEGER NOT NULL DEFAULT 0,
+    retry_count INTEGER NOT NULL DEFAULT 0,
+    grok_calls INTEGER NOT NULL DEFAULT 0,
+    grok_cost_unknown_calls INTEGER NOT NULL DEFAULT 0,
+    slowest_state TEXT,
+    slowest_state_seconds REAL,
+    state_durations_json TEXT,
     tokens_input INTEGER NOT NULL DEFAULT 0,
     tokens_output INTEGER NOT NULL DEFAULT 0,
     grokai_cost REAL,
@@ -43,6 +55,18 @@ FIELDS = [
     "tank_number",
     "date_entered",
     "arrival_date",
+    "onboarding_started_at",
+    "shopify_verified_at",
+    "onboarding_seconds",
+    "archive_completed_at",
+    "end_to_archive_seconds",
+    "model_calls",
+    "retry_count",
+    "grok_calls",
+    "grok_cost_unknown_calls",
+    "slowest_state",
+    "slowest_state_seconds",
+    "state_durations_json",
     "tokens_input",
     "tokens_output",
     "grokai_cost",
@@ -55,22 +79,53 @@ FIELDS = [
     "updated_at",
 ]
 
+MIGRATIONS = {
+    "arrival_date": "ALTER TABLE betta_processing_telemetry ADD COLUMN arrival_date TEXT",
+    "grokai_cost_source": "ALTER TABLE betta_processing_telemetry ADD COLUMN grokai_cost_source TEXT",
+    "onboarding_started_at": "ALTER TABLE betta_processing_telemetry ADD COLUMN onboarding_started_at TEXT",
+    "shopify_verified_at": "ALTER TABLE betta_processing_telemetry ADD COLUMN shopify_verified_at TEXT",
+    "onboarding_seconds": "ALTER TABLE betta_processing_telemetry ADD COLUMN onboarding_seconds REAL",
+    "archive_completed_at": "ALTER TABLE betta_processing_telemetry ADD COLUMN archive_completed_at TEXT",
+    "end_to_archive_seconds": "ALTER TABLE betta_processing_telemetry ADD COLUMN end_to_archive_seconds REAL",
+    "model_calls": "ALTER TABLE betta_processing_telemetry ADD COLUMN model_calls INTEGER NOT NULL DEFAULT 0",
+    "retry_count": "ALTER TABLE betta_processing_telemetry ADD COLUMN retry_count INTEGER NOT NULL DEFAULT 0",
+    "grok_calls": "ALTER TABLE betta_processing_telemetry ADD COLUMN grok_calls INTEGER NOT NULL DEFAULT 0",
+    "grok_cost_unknown_calls": "ALTER TABLE betta_processing_telemetry ADD COLUMN grok_cost_unknown_calls INTEGER NOT NULL DEFAULT 0",
+    "slowest_state": "ALTER TABLE betta_processing_telemetry ADD COLUMN slowest_state TEXT",
+    "slowest_state_seconds": "ALTER TABLE betta_processing_telemetry ADD COLUMN slowest_state_seconds REAL",
+    "state_durations_json": "ALTER TABLE betta_processing_telemetry ADD COLUMN state_durations_json TEXT",
+}
+
 
 def sydney_now() -> str:
     return datetime.now(SYDNEY).isoformat()
 
 
-def normalize_to_sydney(value: object) -> str:
+def parse_datetime(value: object) -> datetime | None:
     text = str(value or "").strip()
     if not text:
-        return sydney_now()
+        return None
     try:
         parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
-        if parsed.tzinfo is None:
-            parsed = parsed.replace(tzinfo=SYDNEY)
-        return parsed.astimezone(SYDNEY).isoformat()
     except ValueError:
-        return text
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=SYDNEY)
+    return parsed.astimezone(SYDNEY)
+
+
+def normalize_to_sydney(value: object) -> str:
+    parsed = parse_datetime(value)
+    return parsed.isoformat() if parsed else (str(value or "").strip() or sydney_now())
+
+
+def seconds_between(start: object, end: object) -> float | None:
+    start_dt = parse_datetime(start)
+    end_dt = parse_datetime(end)
+    if start_dt is None or end_dt is None:
+        return None
+    seconds = (end_dt - start_dt).total_seconds()
+    return max(0.0, seconds)
 
 
 def connect(path: Path) -> sqlite3.Connection:
@@ -78,11 +133,7 @@ def connect(path: Path) -> sqlite3.Connection:
     con = sqlite3.connect(path)
     con.execute(SCHEMA)
     existing = {row[1] for row in con.execute("PRAGMA table_info(betta_processing_telemetry)")}
-    migrations = {
-        "arrival_date": "ALTER TABLE betta_processing_telemetry ADD COLUMN arrival_date TEXT",
-        "grokai_cost_source": "ALTER TABLE betta_processing_telemetry ADD COLUMN grokai_cost_source TEXT",
-    }
-    for column, statement in migrations.items():
+    for column, statement in MIGRATIONS.items():
         if column not in existing:
             con.execute(statement)
     con.commit()
@@ -117,52 +168,42 @@ def upsert(con: sqlite3.Connection, record: dict) -> None:
     if not batch_id or not tank_number:
         raise ValueError("batch_id and tank_number are required")
 
-    date_entered = normalize_to_sydney(record.get("date_entered"))
-    arrival_date = str(record.get("arrival_date") or "").strip() or None
-    tokens_input = as_nonnegative_int(record.get("tokens_input"), "tokens_input")
-    tokens_output = as_nonnegative_int(record.get("tokens_output"), "tokens_output")
-    grokai_cost = as_optional_nonnegative_float(record.get("grokai_cost"), "grokai_cost")
-    currency = str(record.get("grokai_cost_currency") or "USD").strip().upper()
-    cost_source = str(record.get("grokai_cost_source") or "").strip() or None
-    updated_at = sydney_now()
+    values = {
+        "batch_id": batch_id,
+        "tank_number": tank_number,
+        "date_entered": normalize_to_sydney(record.get("date_entered")),
+        "arrival_date": str(record.get("arrival_date") or "").strip() or None,
+        "onboarding_started_at": normalize_to_sydney(record.get("onboarding_started_at")) if record.get("onboarding_started_at") else None,
+        "shopify_verified_at": normalize_to_sydney(record.get("shopify_verified_at")) if record.get("shopify_verified_at") else None,
+        "onboarding_seconds": as_optional_nonnegative_float(record.get("onboarding_seconds"), "onboarding_seconds"),
+        "archive_completed_at": normalize_to_sydney(record.get("archive_completed_at")) if record.get("archive_completed_at") else None,
+        "end_to_archive_seconds": as_optional_nonnegative_float(record.get("end_to_archive_seconds"), "end_to_archive_seconds"),
+        "model_calls": as_nonnegative_int(record.get("model_calls"), "model_calls"),
+        "retry_count": as_nonnegative_int(record.get("retry_count"), "retry_count"),
+        "grok_calls": as_nonnegative_int(record.get("grok_calls"), "grok_calls"),
+        "grok_cost_unknown_calls": as_nonnegative_int(record.get("grok_cost_unknown_calls"), "grok_cost_unknown_calls"),
+        "slowest_state": str(record.get("slowest_state") or "").strip() or None,
+        "slowest_state_seconds": as_optional_nonnegative_float(record.get("slowest_state_seconds"), "slowest_state_seconds"),
+        "state_durations_json": record.get("state_durations_json"),
+        "tokens_input": as_nonnegative_int(record.get("tokens_input"), "tokens_input"),
+        "tokens_output": as_nonnegative_int(record.get("tokens_output"), "tokens_output"),
+        "grokai_cost": as_optional_nonnegative_float(record.get("grokai_cost"), "grokai_cost"),
+        "grokai_cost_currency": str(record.get("grokai_cost_currency") or "USD").strip().upper(),
+        "grokai_cost_source": str(record.get("grokai_cost_source") or "").strip() or None,
+        "provider": record.get("provider"),
+        "model": record.get("model"),
+        "product_id": record.get("product_id"),
+        "title": record.get("title"),
+        "updated_at": sydney_now(),
+    }
 
+    columns = FIELDS
+    placeholders = ",".join("?" for _ in columns)
+    updates = ",".join(f"{column}=excluded.{column}" for column in columns if column not in ("batch_id", "tank_number"))
     con.execute(
-        """
-        INSERT INTO betta_processing_telemetry (
-            batch_id, tank_number, date_entered, arrival_date, tokens_input, tokens_output,
-            grokai_cost, grokai_cost_currency, grokai_cost_source, provider, model,
-            product_id, title, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(batch_id, tank_number) DO UPDATE SET
-            date_entered=excluded.date_entered,
-            arrival_date=excluded.arrival_date,
-            tokens_input=excluded.tokens_input,
-            tokens_output=excluded.tokens_output,
-            grokai_cost=excluded.grokai_cost,
-            grokai_cost_currency=excluded.grokai_cost_currency,
-            grokai_cost_source=excluded.grokai_cost_source,
-            provider=excluded.provider,
-            model=excluded.model,
-            product_id=excluded.product_id,
-            title=excluded.title,
-            updated_at=excluded.updated_at
-        """,
-        (
-            batch_id,
-            tank_number,
-            date_entered,
-            arrival_date,
-            tokens_input,
-            tokens_output,
-            grokai_cost,
-            currency,
-            cost_source,
-            record.get("provider"),
-            record.get("model"),
-            record.get("product_id"),
-            record.get("title"),
-            updated_at,
-        ),
+        f"INSERT INTO betta_processing_telemetry ({','.join(columns)}) VALUES ({placeholders}) "
+        f"ON CONFLICT(batch_id, tank_number) DO UPDATE SET {updates}",
+        tuple(values[column] for column in columns),
     )
     con.commit()
 
@@ -175,18 +216,20 @@ def load_json(path: Path) -> dict:
     return data
 
 
-def usage_from_call(call: dict) -> tuple[int, int]:
+def usage_from_call(call: dict) -> tuple[int, int, int, int]:
+    """Return input tokens, output tokens, call count, retry count."""
     total_in = total_out = 0
+    attempts = call.get("attempts", []) or []
     usage_records = []
     if isinstance(call.get("usage"), dict):
         usage_records.append(call["usage"])
-    for attempt in call.get("attempts", []) or []:
+    for attempt in attempts:
         if isinstance(attempt, dict) and isinstance(attempt.get("usage"), dict):
             usage_records.append(attempt["usage"])
     for usage in usage_records:
         total_in += as_nonnegative_int(usage.get("tokens_input", usage.get("input_tokens", usage.get("prompt_tokens", 0))), "tokens_input")
         total_out += as_nonnegative_int(usage.get("tokens_output", usage.get("output_tokens", usage.get("completion_tokens", 0))), "tokens_output")
-    return total_in, total_out
+    return total_in, total_out, 1 + len(attempts), len(attempts)
 
 
 def earliest_entry_timestamp(item: dict) -> str:
@@ -204,6 +247,31 @@ def earliest_entry_timestamp(item: dict) -> str:
     return sydney_now()
 
 
+def transition_time(item: dict, target: str) -> str | None:
+    for entry in item.get("history", []) or []:
+        if isinstance(entry, dict) and entry.get("to") == target and entry.get("at"):
+            return normalize_to_sydney(entry["at"])
+    return None
+
+
+def state_durations(item: dict) -> dict[str, float]:
+    """Approximate wall-clock time spent in each ledger state from transition history."""
+    events = []
+    for entry in item.get("history", []) or []:
+        if not isinstance(entry, dict) or not entry.get("to") or not entry.get("at"):
+            continue
+        parsed = parse_datetime(entry["at"])
+        if parsed:
+            events.append((parsed, str(entry["to"])))
+    events.sort(key=lambda pair: pair[0])
+    durations: dict[str, float] = {}
+    for index in range(len(events) - 1):
+        started, state = events[index]
+        ended = events[index + 1][0]
+        durations[state] = durations.get(state, 0.0) + max(0.0, (ended - started).total_seconds())
+    return durations
+
+
 def build_from_ledger(ledger: dict, item_id: str, grok_records: list[dict]) -> dict:
     item = next((entry for entry in ledger.get("items", []) if entry.get("id") == item_id), None)
     if item is None:
@@ -211,16 +279,18 @@ def build_from_ledger(ledger: dict, item_id: str, grok_records: list[dict]) -> d
 
     catalogue = item.get("catalogue", {})
     calls = [catalogue.get("evidence"), item.get("image_qa", {}).get("visual")]
-    tokens_input = tokens_output = 0
+    tokens_input = tokens_output = model_calls = retry_count = 0
     providers: set[str] = set()
     models: set[str] = set()
 
     for call in calls:
         if not isinstance(call, dict):
             continue
-        incoming, outgoing = usage_from_call(call)
+        incoming, outgoing, calls_used, retries = usage_from_call(call)
         tokens_input += incoming
         tokens_output += outgoing
+        model_calls += calls_used
+        retry_count += retries
         if call.get("provider"):
             providers.add(str(call["provider"]))
         if call.get("model"):
@@ -233,9 +303,11 @@ def build_from_ledger(ledger: dict, item_id: str, grok_records: list[dict]) -> d
     known_grok_costs: list[float] = []
     grok_sources: set[str] = set()
     grok_currency = "USD"
+    unknown_grok_cost_calls = 0
     for record in grok_records:
         tokens_input += as_nonnegative_int(record.get("tokens_input"), "tokens_input")
         tokens_output += as_nonnegative_int(record.get("tokens_output"), "tokens_output")
+        model_calls += 1
         if record.get("provider"):
             providers.add(str(record["provider"]))
         if record.get("model"):
@@ -245,27 +317,45 @@ def build_from_ledger(ledger: dict, item_id: str, grok_records: list[dict]) -> d
         grok_sources.add(source)
         if record.get("grokai_cost_currency"):
             grok_currency = str(record["grokai_cost_currency"]).upper()
-        if cost is not None:
+        if cost is None:
+            unknown_grok_cost_calls += 1
+        else:
             known_grok_costs.append(cost)
 
-    if known_grok_costs:
-        grok_cost: float | None = sum(known_grok_costs)
+    if grok_records and unknown_grok_cost_calls:
+        grok_cost: float | None = None
+        grok_cost_source = "incomplete"
+    elif grok_records:
+        grok_cost = sum(known_grok_costs)
         known_sources = {source for source in grok_sources if source != "unavailable"}
-        if len(known_sources) > 1:
-            grok_cost_source = "mixed"
-        elif known_sources:
-            grok_cost_source = next(iter(known_sources))
-        else:
-            grok_cost_source = "unavailable"
+        grok_cost_source = "mixed" if len(known_sources) > 1 else (next(iter(known_sources)) if known_sources else "unavailable")
     else:
-        grok_cost = None
-        grok_cost_source = "unavailable"
+        grok_cost = 0.0
+        grok_cost_source = "not_used"
+
+    onboarding_started_at = earliest_entry_timestamp(item)
+    verified_at = transition_time(item, "VERIFIED")
+    archived_at = transition_time(item, "ARCHIVED")
+    durations = state_durations(item)
+    slowest_state = max(durations, key=durations.get) if durations else None
 
     return {
         "batch_id": str(ledger.get("batch_id") or ""),
         "tank_number": item_id,
-        "date_entered": earliest_entry_timestamp(item),
+        "date_entered": onboarding_started_at,
         "arrival_date": catalogue.get("photo_date"),
+        "onboarding_started_at": onboarding_started_at,
+        "shopify_verified_at": verified_at,
+        "onboarding_seconds": seconds_between(onboarding_started_at, verified_at),
+        "archive_completed_at": archived_at,
+        "end_to_archive_seconds": seconds_between(onboarding_started_at, archived_at),
+        "model_calls": model_calls,
+        "retry_count": retry_count,
+        "grok_calls": len(grok_records),
+        "grok_cost_unknown_calls": unknown_grok_cost_calls,
+        "slowest_state": slowest_state,
+        "slowest_state_seconds": durations.get(slowest_state) if slowest_state else None,
+        "state_durations_json": json.dumps(durations, sort_keys=True),
         "tokens_input": tokens_input,
         "tokens_output": tokens_output,
         "grokai_cost": grok_cost,
