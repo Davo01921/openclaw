@@ -35,6 +35,7 @@ PROTECTED = {"description", "price", "cost", "vendor", "product_type", "handle",
 AUTHORISED = {"title", "arrival_date", "inventory", "media"}
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 SEX_RE = re.compile(r"\b(?:male|female)\b", re.IGNORECASE)
+FEMALE_ACCEPT = 0.85
 
 
 class LedgerError(ValueError):
@@ -76,9 +77,21 @@ def require(condition: bool, message: str) -> None:
         raise LedgerError(message)
 
 
-def canonical_sex(value: object) -> str:
+def confidence(value: object) -> float:
+    try:
+        return float(value or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def canonical_sex(cat: dict) -> str:
     """NTA rule: only a confident Female classification changes the default; otherwise Male."""
-    if isinstance(value, str) and value.strip().casefold() == "female":
+    value = cat.get("sex")
+    if (
+        isinstance(value, str)
+        and value.strip().casefold() == "female"
+        and confidence(cat.get("sex_confidence")) >= FEMALE_ACCEPT
+    ):
         return "Female"
     return "Male"
 
@@ -95,7 +108,7 @@ def expected_catalogue_title(cat: dict) -> str:
     require(SEX_RE.search(fish_name) is None, "fish_name must not contain Male/Female")
     require(SEX_RE.search(tail_type) is None, "tail_type must not contain Male/Female")
     require(not fish_name.casefold().endswith(tail_type.casefold()), "fish_name must not duplicate tail_type")
-    return f"{tank_id} - {fish_name} {tail_type} {canonical_sex(cat.get('sex'))}"
+    return f"{tank_id} - {fish_name} {tail_type} {canonical_sex(cat)}"
 
 
 def validate_file(asset: dict, role: str) -> None:
