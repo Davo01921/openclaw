@@ -15,10 +15,12 @@ Financial, debt, repayment, banking, and accounting workflows are deliberately o
 ### Control plane
 
 - `nta-automation-orchestrator` — selects the workflow, establishes the job envelope and completion contract.
-- `adaptive-model-router` — sole authority for model/provider selection and escalation. It removes deterministic work first, then resolves model-required phases against live OpenClaw configuration. The intended provider policy is OpenAI/ChatGPT primary → Qwen Token Plan fallback → Qwen API backup.
+- `adaptive-model-router` — sole authority for interchangeable reasoning, extraction, review and vision-inference model/provider selection and escalation. It removes deterministic work first, then resolves model-required phases against live OpenClaw configuration. The intended general-provider policy is OpenAI/ChatGPT primary → Qwen Token Plan fallback → Qwen API backup.
 - `nta-product-orchestrator` — coordinates product-domain modules.
 
-The model-routing rule is global. A specialist skill invoked directly still inherits `adaptive-model-router` through `SOUL.md`; specialist wording such as `cheap model`, `vision model`, `reasoning reviewer`, or `stronger model` is capability guidance only and must not create an independent provider/model policy.
+The general model-routing rule is global. A specialist skill invoked directly still inherits `adaptive-model-router` through `SOUL.md`; specialist wording such as `cheap model`, `vision model`, `reasoning reviewer`, or `stronger model` is capability guidance only and must not create an independent general provider/model policy.
+
+A fixed, non-substitutable specialist service may remain owned by the specialist workflow for its bounded operation. For example, Betta `grok_hero` may remain a fixed Grok/xAI image-generation stage; this does not make Grok an eligible general reasoning/review route.
 
 ### Canonical shared modules
 
@@ -51,7 +53,7 @@ Specialist product workflows that sit on top of the modular system:
 
 Core architecture rule:
 
-**Skills decide. Writers write. Auditors verify. The adaptive router chooses model capacity.**
+**Skills decide. Writers write. Auditors verify. The adaptive router chooses general model capacity.**
 
 Physical inventory and customer availability/preorder state are separate concerns. Product-domain rules should have one canonical source of truth and should be referenced by specialist workflows rather than copied into them.
 
