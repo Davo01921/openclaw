@@ -9,7 +9,8 @@ Required environment:
 
 Optional environment:
     BETTA_GROK_COST_USD_PER_IMAGE
-        Fallback billed cost per generated image when xAI does not return a cost field.
+        Override the current fallback billed cost per generated image when xAI does
+        not return a cost field. Current NTA fallback: USD 0.07 per Grok image call.
 
 Example:
     python scripts/grok_hero.py --source 2BT31.jpg --output 2BT31-grok.png
@@ -30,6 +31,7 @@ from pathlib import Path
 
 API_URL = "https://api.x.ai/v1/images/edits"
 DEFAULT_MODEL = "grok-imagine-image-2.0"
+DEFAULT_GROK_COST_USD_PER_IMAGE = 0.07
 DEFAULT_PROMPT = """Create a premium square catalogue hero from this exact Betta photograph.
 Preserve this individual fish's identity: head/body proportions, scale layout, unique
 markings, regional colour distribution, apparent tail type, fin attachment points,
@@ -147,6 +149,9 @@ def normalized_usage(envelope: dict) -> dict:
             except ValueError:
                 cost = None
                 cost_source = "invalid_configuration"
+        else:
+            cost = DEFAULT_GROK_COST_USD_PER_IMAGE
+            cost_source = "nta_default_0.07"
 
     result = dict(usage)
     result.update({
