@@ -57,6 +57,11 @@ class LedgerTests(unittest.TestCase):
         item["catalogue"]["title"] = bb.expected_catalogue_title(item["catalogue"])
         item["mutation"]["title"] = item["catalogue"]["title"]
 
+    def visual_item(self):
+        item = copy.deepcopy(self.item)
+        item["state"] = "VISUAL_ACCEPTED"
+        return item
+
     def test_valid_mutation_pending(self): bb.validate_ledger(self.ledger)
 
     def test_title_contract_exact(self):
@@ -119,6 +124,64 @@ class LedgerTests(unittest.TestCase):
         self.ledger["items"].append(duplicate)
         with self.assertRaises(bb.LedgerError): bb.validate_ledger(self.ledger)
 
+    def test_parallel_preparation_schedules_both_missing_branches(self):
+        item = self.visual_item()
+        item.pop("product")
+        item.pop("images")
+        self.ledger["items"] = [item]
+        plan = bb.parallel_preparation_plan(self.ledger, 4)
+        self.assertEqual(
+            {task["operation"] for task in plan["tasks"]},
+            {"shopify_resolve", "grok_hero"},
+        )
+        self.assertEqual(plan["ready_to_join"], [])
+
+    def test_parallel_preparation_resumes_only_missing_grok_branch(self):
+        item = self.visual_item()
+        item.pop("images")
+        self.ledger["items"] = [item]
+        plan = bb.parallel_preparation_plan(self.ledger, 4)
+        self.assertEqual([task["operation"] for task in plan["tasks"]], ["grok_hero"])
+
+    def test_parallel_preparation_resumes_only_missing_shopify_branch(self):
+        item = self.visual_item()
+        item.pop("product")
+        self.ledger["items"] = [item]
+        plan = bb.parallel_preparation_plan(self.ledger, 4)
+        self.assertEqual([task["operation"] for task in plan["tasks"]], ["shopify_resolve"])
+
+    def test_parallel_preparation_joins_only_when_both_outputs_valid(self):
+        item = self.visual_item()
+        self.ledger["items"] = [item]
+        plan = bb.parallel_preparation_plan(self.ledger, 4)
+        self.assertEqual(plan["tasks"], [])
+        self.assertEqual(plan["ready_to_join"], ["4BT41"])
+
+    def test_product_resolved_join_requires_hero_and_product(self):
+        item = self.visual_item()
+        item.pop("images")
+        self.ledger["items"] = [item]
+        with self.assertRaises(bb.LedgerError):
+            bb.advance(self.ledger, "4BT41", "PRODUCT_RESOLVED")
+        self.assertEqual(item["state"], "VISUAL_ACCEPTED")
+
+        item["images"] = copy.deepcopy(self.item["images"])
+        item.pop("product")
+        with self.assertRaises(bb.LedgerError):
+            bb.advance(self.ledger, "4BT41", "PRODUCT_RESOLVED")
+        self.assertEqual(item["state"], "VISUAL_ACCEPTED")
+
+    def test_execution_plan_exposes_parallel_prep_and_skips_serial_visual_wave(self):
+        item = self.visual_item()
+        item.pop("product")
+        item.pop("images")
+        self.ledger["items"] = [item]
+        plan = bb.execution_plan(self.ledger, 9)
+        self.assertEqual(plan["workers"], 4)
+        self.assertEqual(plan["parallel_preparation"]["max_concurrency"], 4)
+        self.assertEqual(len(plan["parallel_preparation"]["tasks"]), 2)
+        self.assertFalse(any(wave["state"] == "VISUAL_ACCEPTED" for wave in plan["waves"]))
+
     def test_execution_plan_caps_workers(self):
         items = []
         for n in range(9):
@@ -130,8 +193,10 @@ class LedgerTests(unittest.TestCase):
             items.append(item)
         self.ledger["items"] = items
         bb.validate_ledger(self.ledger)
-        groups = [items[n:n + 4] for n in range(0, len(items), 4)]
-        self.assertEqual([len(group) for group in groups], [4, 4, 1])
+        plan = bb.execution_plan(self.ledger, 20)
+        self.assertEqual(plan["workers"], 4)
+        mutation_waves = [wave for wave in plan["waves"] if wave["state"] == "MUTATION_PENDING"]
+        self.assertEqual([len(wave["items"]) for wave in mutation_waves], [4, 4, 1])
 
     def test_verified_requires_preserved_fields(self):
         item = copy.deepcopy(self.item); item["state"] = "VERIFIED"
