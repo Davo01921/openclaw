@@ -120,6 +120,59 @@ def validate_file(asset: dict, role: str) -> None:
     require(sha256(path) == digest, f"{role}: hash mismatch")
 
 
+def product_snapshot_ready(item: dict) -> bool:
+    product = item.get("product", {})
+    before = product.get("before")
+    return bool(product.get("id") and isinstance(before, dict) and PROTECTED <= set(before))
+
+
+def hero_asset_ready(item: dict) -> bool:
+    try:
+        validate_file(item.get("images", {}).get("hero", {}), "hero")
+        return True
+    except (LedgerError, OSError):
+        return False
+
+
+def parallel_preparation_plan(data: dict, workers: int = 4) -> dict:
+    """Plan independent Shopify-resolution and Grok-hero work after visual acceptance.
+
+    Existing valid outputs are never scheduled again. This makes a rerun resume from
+    the missing/failed branch instead of repeating already successful work.
+    """
+    workers = max(1, min(int(workers), 4))
+    tasks: list[dict] = []
+    ready_to_join: list[str] = []
+
+    for item in data.get("items", []):
+        if item.get("state") != "VISUAL_ACCEPTED":
+            continue
+        product_ready = product_snapshot_ready(item)
+        hero_ready = hero_asset_ready(item)
+        if product_ready and hero_ready:
+            ready_to_join.append(item["id"])
+            continue
+        if not product_ready:
+            tasks.append({
+                "item_id": item["id"],
+                "operation": "shopify_resolve",
+                "checkpoint": "VISUAL_ACCEPTED",
+            })
+        if not hero_ready:
+            tasks.append({
+                "item_id": item["id"],
+                "operation": "grok_hero",
+                "checkpoint": "VISUAL_ACCEPTED",
+            })
+
+    return {
+        "max_concurrency": workers,
+        "tasks": tasks,
+        "ready_to_join": ready_to_join,
+        "join_target": "PRODUCT_RESOLVED",
+    }
+
+
 def validate_vision_call(call: dict, required_assertions: set[str] | None = None) -> None:
     for key in ("provider", "model", "call_id", "timestamp", "input_hashes", "output"):
         require(call.get(key), f"vision: {key} required")
@@ -146,9 +199,11 @@ def validate_item(item: dict) -> None:
                 "catalogue title must exactly match '<Tank Number> - <Fish Name> <Tail Type> <Male/Female>'")
         validate_vision_call(cat.get("evidence", {}))
     if item["state"] in ITEM_STATES[ITEM_STATES.index("PRODUCT_RESOLVED"):]:
-        product = item.get("product", {})
-        require(product.get("id") and isinstance(product.get("before"), dict), "product id/snapshot required")
-        require(PROTECTED <= set(product["before"]), "pre-write protected snapshot incomplete")
+        require(product_snapshot_ready(item), "product id/snapshot required")
+        # PRODUCT_RESOLVED is also the join point for parallel preparation. A valid
+        # hero must already exist so Shopify resolution and Grok generation can run
+        # independently while the item remains VISUAL_ACCEPTED.
+        validate_file(item.get("images", {}).get("hero", {}), "hero")
     if item["state"] in ITEM_STATES[ITEM_STATES.index("IMAGE_CANDIDATE_READY"):]:
         validate_file(item["images"]["hero"], "hero")
     if item["state"] in ITEM_STATES[ITEM_STATES.index("IMAGES_READY"):]:
@@ -230,12 +285,35 @@ def advance(data: dict, item_id: str, target: str) -> None:
         raise
 
 
+def execution_plan(data: dict, workers: int) -> dict:
+    validate_ledger(data)
+    workers = max(1, min(workers, 4))
+    prep = parallel_preparation_plan(data, workers)
+    runnable = [
+        i for i in data["items"]
+        if i["state"] not in TERMINAL
+        and i["state"] not in {"ARCHIVED", "VISUAL_ACCEPTED"}
+    ]
+    waves = []
+    for state in ITEM_STATES:
+        group = [i["id"] for i in runnable if i["state"] == state]
+        for start in range(0, len(group), workers):
+            waves.append({"state": state, "items": group[start:start + workers]})
+    return {
+        "batch_id": data["batch_id"],
+        "workers": workers,
+        "parallel_preparation": prep,
+        "waves": waves,
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     sub = parser.add_subparsers(dest="cmd", required=True)
     p = sub.add_parser("validate"); p.add_argument("ledger", type=Path)
     p = sub.add_parser("advance"); p.add_argument("ledger", type=Path); p.add_argument("item"); p.add_argument("target")
     p = sub.add_parser("mutation-envelope"); p.add_argument("ledger", type=Path); p.add_argument("item")
+    p = sub.add_parser("parallel-plan"); p.add_argument("ledger", type=Path); p.add_argument("--workers", type=int, default=4)
     p = sub.add_parser("execution-plan"); p.add_argument("ledger", type=Path); p.add_argument("--workers", type=int, default=4)
     args = parser.parse_args()
     try:
@@ -247,16 +325,11 @@ def main() -> int:
             item = next(i for i in data["items"] if i["id"] == args.item)
             require(item["state"] == "MUTATION_PENDING", "item is not mutation-ready")
             print(json.dumps({"batch_id": data["batch_id"], "item_id": item["id"], "product_id": item["product"]["id"], "changes": item["mutation"]}, sort_keys=True))
-        elif args.cmd == "execution-plan":
+        elif args.cmd == "parallel-plan":
             validate_ledger(data)
-            workers = max(1, min(args.workers, 4))
-            runnable = [i for i in data["items"] if i["state"] not in TERMINAL and i["state"] != "ARCHIVED"]
-            waves = []
-            for state in ITEM_STATES:
-                group = [i["id"] for i in runnable if i["state"] == state]
-                for start in range(0, len(group), workers):
-                    waves.append({"state": state, "items": group[start:start + workers]})
-            print(json.dumps({"batch_id": data["batch_id"], "workers": workers, "waves": waves}, sort_keys=True))
+            print(json.dumps(parallel_preparation_plan(data, args.workers), sort_keys=True))
+        elif args.cmd == "execution-plan":
+            print(json.dumps(execution_plan(data, args.workers), sort_keys=True))
         else:
             validate_ledger(data)
         return 0
