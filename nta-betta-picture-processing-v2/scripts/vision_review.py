@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 DEFAULT_MODELS = "google/gemini-3.5-flash,openai/gpt-5.6-sol"
+FEMALE_ACCEPT = 0.85
 
 CATALOGUE_PROMPT = (
     "JSON only. Labelled Betta source. Return {\"tank_id\":\"\",\"tank_confidence\":0.0,"
@@ -32,7 +33,7 @@ QA_PROMPT = (
     "\"scale_markings\":\"PASS|FAIL\",\"regional_colour\":\"PASS|FAIL\","
     "\"tail_fins_pose\":\"PASS|FAIL\",\"complete_framing\":\"PASS|FAIL\","
     "\"realistic_texture\":\"PASS|FAIL\",\"hero_composition\":\"PASS|FAIL\","
-    "\"label\":\"PASS|FAIL\",\"original_integrity\":\"PASS|FAIL\"},"
+    "\"label\":\"PASS|FAIL\",\"reference_integrity\":\"PASS|FAIL\"},"
     "\"overall\":\"PASS|FAIL\",\"reasons\":[]}. Third image must be full original source. "
     "Fail uncertain identity. Apply NTA Betta image standard. No invented evidence."
 )
@@ -46,6 +47,13 @@ def digest(path: Path) -> str:
     return h.hexdigest()
 
 
+def _confidence(value: object) -> float:
+    try:
+        return float(value or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
 def compose_title(output: dict) -> dict:
     """Normalize catalogue output and deterministically build the NTA Shopify title."""
     tank_id = "".join(str(output.get("tank_id") or "").split())
@@ -53,14 +61,17 @@ def compose_title(output: dict) -> dict:
     tail_type = " ".join(str(output.get("tail_type") or "").split())
     if not tank_id or not fish_name or not tail_type:
         raise ValueError("tank_id, fish_name and tail_type are required to compose Betta title")
-    sex = "Female" if str(output.get("sex") or "").strip().casefold() == "female" else "Male"
+    female_supported = (
+        str(output.get("sex") or "").strip().casefold() == "female"
+        and _confidence(output.get("sex_confidence")) >= FEMALE_ACCEPT
+    )
+    sex = "Female" if female_supported else "Male"
     title = f"{tank_id} - {fish_name} {tail_type} {sex}"
     output = dict(output)
     output["tank_id"] = tank_id
     output["fish_name"] = fish_name
     output["tail_type"] = tail_type
     output["sex"] = sex
-    # Keep proposed_title for existing runtime compatibility, but it is code-generated.
     output["proposed_title"] = title
     output["title"] = title
     return output
@@ -76,11 +87,11 @@ def normalized_usage(envelope: dict) -> dict:
     output_tokens = usage.get("output_tokens", usage.get("completion_tokens", 0)) or 0
     result = dict(usage)
     try:
-        result["tokens_input"] = int(input_tokens)
+        result["tokens_input"] = max(0, int(input_tokens))
     except (TypeError, ValueError):
         result["tokens_input"] = 0
     try:
-        result["tokens_output"] = int(output_tokens)
+        result["tokens_output"] = max(0, int(output_tokens))
     except (TypeError, ValueError):
         result["tokens_output"] = 0
     return result
@@ -102,13 +113,14 @@ def run_review(files: list[Path], mode: str, agent: str, models: list[str]) -> d
             envelope = json.loads(completed.stdout)
         except json.JSONDecodeError:
             envelope = {}
+        usage = normalized_usage(envelope)
         if completed.returncode == 0 and envelope.get("ok") and envelope.get("outputs"):
             try:
                 output = json.loads(envelope["outputs"][0]["text"])
                 if mode == "catalogue":
                     output = compose_title(output)
             except (KeyError, json.JSONDecodeError, TypeError, ValueError) as exc:
-                errors.append({"model": model, "error": f"invalid structured output: {exc}"})
+                errors.append({"model": model, "error": f"invalid structured output: {exc}", "usage": usage})
                 continue
             provider, resolved_model = model.split("/", 1)
             return {
@@ -117,12 +129,12 @@ def run_review(files: list[Path], mode: str, agent: str, models: list[str]) -> d
                 "call_id": str(uuid.uuid4()),
                 "timestamp": datetime.now(timezone.utc).isoformat(),
                 "input_hashes": [digest(path) for path in files],
-                "usage": normalized_usage(envelope),
+                "usage": usage,
                 "output": output,
                 "attempts": errors,
             }
         message = envelope.get("error", {}).get("message") or completed.stderr[-1000:] or "unknown provider failure"
-        errors.append({"model": model, "error": message})
+        errors.append({"model": model, "error": message, "usage": usage})
     raise RuntimeError(json.dumps({"error": "no vision reviewer succeeded", "attempts": errors}))
 
 
