@@ -131,20 +131,28 @@ def normalized_usage(envelope: dict) -> dict:
         usage = {}
     input_tokens = int(_number(usage, ("input_tokens", "prompt_tokens"), 0))
     output_tokens = int(_number(usage, ("output_tokens", "completion_tokens"), 0))
-    cost = _number(usage, ("cost_usd", "total_cost_usd", "cost", "total_cost"), -1)
-    if cost < 0:
+
+    provider_cost_keys = ("cost_usd", "total_cost_usd", "cost", "total_cost")
+    provider_has_cost = any(usage.get(key) is not None for key in provider_cost_keys)
+    cost = _number(usage, provider_cost_keys, 0) if provider_has_cost else None
+    cost_source = "provider" if provider_has_cost else "unavailable"
+    if cost is None:
         configured = os.getenv("BETTA_GROK_COST_USD_PER_IMAGE")
-        try:
-            cost = float(configured) if configured not in (None, "") else 0.0
-        except ValueError:
-            cost = 0.0
+        if configured not in (None, ""):
+            try:
+                cost = max(0.0, float(configured))
+                cost_source = "configured"
+            except ValueError:
+                cost = None
+                cost_source = "invalid_configuration"
+
     result = dict(usage)
     result.update({
         "tokens_input": input_tokens,
         "tokens_output": output_tokens,
-        "grokai_cost": max(0.0, cost),
+        "grokai_cost": cost,
         "grokai_cost_currency": "USD",
-        "cost_source": "provider" if any(k in usage for k in ("cost_usd", "total_cost_usd", "cost", "total_cost")) else "configured_or_zero",
+        "cost_source": cost_source,
     })
     return result
 
@@ -182,6 +190,7 @@ def main() -> int:
             "tokens_output": usage["tokens_output"],
             "grokai_cost": usage["grokai_cost"],
             "grokai_cost_currency": usage["grokai_cost_currency"],
+            "grokai_cost_source": usage["cost_source"],
             "usage": usage,
         }
         print(json.dumps(record, sort_keys=True))
