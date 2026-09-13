@@ -129,6 +129,8 @@ def normalized_usage(envelope: dict) -> dict:
     usage = envelope.get("usage") or {}
     if not isinstance(usage, dict):
         usage = {}
+    token_keys = ("input_tokens", "prompt_tokens", "output_tokens", "completion_tokens")
+    token_usage_reported = any(key in usage and usage.get(key) is not None for key in token_keys)
     input_tokens = int(_number(usage, ("input_tokens", "prompt_tokens"), 0))
     output_tokens = int(_number(usage, ("output_tokens", "completion_tokens"), 0))
 
@@ -150,6 +152,7 @@ def normalized_usage(envelope: dict) -> dict:
     result.update({
         "tokens_input": input_tokens,
         "tokens_output": output_tokens,
+        "token_usage_reported": token_usage_reported,
         "grokai_cost": cost,
         "grokai_cost_currency": "USD",
         "cost_source": cost_source,
@@ -188,6 +191,7 @@ def main() -> int:
             "qa_required": True,
             "tokens_input": usage["tokens_input"],
             "tokens_output": usage["tokens_output"],
+            "token_usage_reported": usage["token_usage_reported"],
             "grokai_cost": usage["grokai_cost"],
             "grokai_cost_currency": usage["grokai_cost_currency"],
             "grokai_cost_source": usage["cost_source"],
