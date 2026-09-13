@@ -35,6 +35,7 @@ import {
   createOpenAIProviderAcceptanceHook,
   createOpenAIResponseHook,
 } from "../transports/openai-transport-shared.js";
+import { createProviderRequestReadyObserver } from "../transports/provider-request-ready-observer.js";
 import {
   assignTransportErrorDetails,
   notifyProviderStreamOpened,
@@ -311,6 +312,18 @@ export const streamOpenAICodexResponses: StreamFunction<
         options,
         context.systemPrompt,
       );
+      const observeCodexSseRequest = createProviderRequestReadyObserver({
+        options,
+        provider: model.provider,
+        model: model.id,
+        egress: "native-codex-sse",
+      });
+      const observeCodexWebSocketRequest = createProviderRequestReadyObserver({
+        options,
+        provider: model.provider,
+        model: model.id,
+        egress: "native-codex-websocket",
+      });
       // NOTE: when options.sessionId is absent, this falls back to a fresh random id
       // per request, which forfeits session-affinity routing on the WS transport (the
       // backend routes by session_id/x-client-request-id). Left as-is for this fix;
@@ -358,6 +371,7 @@ export const streamOpenAICodexResponses: StreamFunction<
               requestOptions,
               firstEventAbort.abort,
               observePromptEgress,
+              observeCodexWebSocketRequest,
               activeAttempt.kind,
               () => {
                 websocketRequestSent = true;
@@ -457,6 +471,7 @@ export const streamOpenAICodexResponses: StreamFunction<
           egress: "native-codex-sse",
           payloadVariant: activeAttempt.kind,
         });
+        observeCodexSseRequest?.(activeAttempt.request, { payloadVariant: activeAttempt.kind });
 
         let attemptResponse: Response;
         try {
@@ -1457,6 +1472,7 @@ async function processWebSocketStream(
   options?: OpenAICodexResponsesOptions,
   abortFirstEventStream?: (reason: Error) => void,
   observePromptEgress?: ObserveResponsesPromptEgress,
+  observeRequestReady?: (request: object, metadata?: { payloadVariant?: string }) => void,
   payloadVariant: ResponsesEncryptedContentAttempt<RequestBody>["kind"] = "initial",
   onRequestSent?: () => void,
   // Stream progress must be reported on the caller's signal: the runner idle
@@ -1486,6 +1502,7 @@ async function processWebSocketStream(
       egress: "native-codex-websocket",
       payloadVariant,
     });
+    observeRequestReady?.(requestBody, { payloadVariant });
     socket.send(JSON.stringify({ type: "response.create", ...requestBody }));
     onRequestSent?.();
     await processResponsesStream(

@@ -81,6 +81,7 @@ import {
   log,
   resolveOpenAIClientBaseUrl,
 } from "./openai-transport-shared.js";
+import { createProviderRequestReadyObserver } from "./provider-request-ready-observer.js";
 import {
   filterProviderTurnHeadersForExplicitOpencodeSession,
   resolveProviderTransportTurnState,
@@ -345,6 +346,12 @@ function createResponsesTransportExecutor(config: ResponsesTransportExecutorOpti
           responsesOptions,
           context.systemPrompt,
         );
+        const observeProviderRequest = createProviderRequestReadyObserver({
+          options: responsesOptions,
+          provider: model.provider,
+          model: model.id,
+          egress: "openai-responses-sdk",
+        });
         const requestStartedAt = Date.now();
         let started = false;
         const startStream = () => {
@@ -383,6 +390,7 @@ function createResponsesTransportExecutor(config: ResponsesTransportExecutorOpti
             requestOptions,
             model,
             observePrompt,
+            observeProviderRequest,
             initialAttemptKind,
             initialRejectedCompaction,
             buildFullHistoryRequest: () => buildRequest("full-history"),
@@ -460,6 +468,7 @@ function createResponsesTransportExecutor(config: ResponsesTransportExecutorOpti
               egress: "responses-websocket",
               payloadVariant: "initial",
             });
+            observeProviderRequest?.(websocket.request, { payloadVariant: "initial" });
             transport = "websocket";
             emitModelTransportDebug(
               log,

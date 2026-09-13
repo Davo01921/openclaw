@@ -4,6 +4,7 @@ import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { getModelProviderRuntimePluginHandle } from "../../plugins/provider-hook-runtime.js";
 import type { ProviderRuntimeModel } from "../../plugins/provider-runtime-model.types.js";
 import { resolveProviderTextTransforms } from "../../plugins/provider-runtime.js";
+import { wrapStreamFnWithFredAttributionCanary } from "../fred-attribution-canary.js";
 import { wrapStreamFnTextTransforms } from "../plugin-text-transforms.js";
 import type { AgentRuntimePlan } from "../runtime-plan/types.js";
 import { applyExtraParamsToAgent } from "./extra-params.js";
@@ -72,6 +73,12 @@ export async function prepareCompactionSessionAgent(params: {
     authProfileId: params.runtimePlan?.auth.forwardedAuthProfileId,
     authStorage: params.authStorage as never,
   }).streamFn;
+  params.session.agent.streamFn = wrapStreamFnWithFredAttributionCanary({
+    streamFn: params.session.agent.streamFn as never,
+    agentId: params.sessionAgentId,
+    sessionId: params.sessionId,
+    runId: params.sessionId,
+  }) as never;
   const providerTextTransforms = resolveProviderTextTransforms({
     provider: params.provider,
     config: params.config,

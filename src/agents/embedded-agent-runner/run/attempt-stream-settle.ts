@@ -15,6 +15,7 @@ import { resolveProviderTextTransforms } from "../../../plugins/provider-runtime
 import type { NestedToolActivity } from "../../../sessions/nested-tool-activity.js";
 import type { AgentRunAttemptFailureSource } from "../../agent-run-terminal-outcome.js";
 import type { subscribeEmbeddedAgentSession } from "../../embedded-agent-subscribe.js";
+import { wrapStreamFnWithFredAttributionCanary } from "../../fred-attribution-canary.js";
 import { wrapStreamFnTextTransforms } from "../../plugin-text-transforms.js";
 import { registerProviderStreamForModel } from "../../provider-stream.js";
 import type { AgentMessage } from "../../runtime/index.js";
@@ -571,6 +572,12 @@ export async function prepareEmbeddedAttemptTransport(input: {
       nativeWebSearchPolicyContext,
     },
   );
+  session.agent.streamFn = wrapStreamFnWithFredAttributionCanary({
+    streamFn: session.agent.streamFn,
+    agentId: input.sessionAgentId,
+    sessionId: attempt.sessionId,
+    runId: attempt.runId,
+  });
   if (input.codeModeControlsEnabled) {
     session.agent.streamFn = createCodexNativeWebSearchWrapper(session.agent.streamFn, {
       config: attempt.config,

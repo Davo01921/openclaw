@@ -23,6 +23,7 @@ const config = {
     "event-stream": "packages/ai/src/utils/event-stream.ts",
     types: "packages/ai/src/types.ts",
     "provider-types": "packages/ai/src/provider-types.ts",
+    "provider-attribution-worker": "packages/ai/src/transports/provider-attribution-worker.mjs",
     validation: "packages/ai/src/validation.ts",
     "internal/anthropic": "packages/ai/src/internal/anthropic.ts",
     "internal/google-model-family": "packages/ai/src/internal/google-model-family.ts",

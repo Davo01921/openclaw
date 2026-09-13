@@ -18,6 +18,7 @@ import { resolveModelAsync } from "../../agents/embedded-agent-runner/model.js";
 import { wrapStreamFnWithDiagnosticModelCallEvents } from "../../agents/embedded-agent-runner/run/attempt.model-diagnostic-events.js";
 import { resolveEmbeddedAgentStream } from "../../agents/embedded-agent-runner/stream-resolution.js";
 import { mapThinkingLevel } from "../../agents/embedded-agent-runner/utils.js";
+import { registerFredAttributionOnInferenceOptions } from "../../agents/fred-attribution-canary.js";
 import { resolveAgentHarnessPolicy } from "../../agents/harness/policy.js";
 import type { ModelCatalogEntry } from "../../agents/model-catalog.types.js";
 import { splitTrailingAuthProfile } from "../../agents/model-ref-profile.js";
@@ -667,15 +668,18 @@ export function createWorkerInferenceExecutor(
         const providerAbort = new AbortController();
         const providerSignal = AbortSignal.any([signal, providerAbort.signal]);
         try {
-          const events = await stream(
-            model,
-            context,
-            buildStreamOptions({
-              request,
-              signal: providerSignal,
-              apiKey: authValue,
-            }),
-          );
+          const streamOptions = buildStreamOptions({
+            request,
+            signal: providerSignal,
+            apiKey: authValue,
+          });
+          registerFredAttributionOnInferenceOptions(streamOptions as object, {
+            agentId: target.agentId,
+            sessionId: request.sessionId,
+            runId: request.runId,
+            modelCallId: `${request.runId}:${request.turnId}`,
+          });
+          const events = await stream(model, context, streamOptions);
           for await (const event of events) {
             if (event.type === "done") {
               recordUsage(event.message.usage);

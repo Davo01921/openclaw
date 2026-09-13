@@ -19,6 +19,7 @@ import {
 } from "../transports/openai-responses-replay-internal.js";
 import { processResponsesStream } from "../transports/openai-responses-stream-internal.js";
 import { createOpenAIProviderAcceptanceHook } from "../transports/openai-transport-shared.js";
+import { createProviderRequestReadyObserver } from "../transports/provider-request-ready-observer.js";
 import {
   failTransportStream,
   finalizeTransportStream,
@@ -277,6 +278,12 @@ export async function runResponsesStreamLifecycle<TApi extends Api>(params: {
       return request;
     };
     const requestParams = await buildRequest("checkpoint");
+    const observeProviderRequest = createProviderRequestReadyObserver({
+      options,
+      provider: model.provider,
+      model: model.id,
+      egress: "responses-sdk",
+    });
 
     const firstEvent = createFirstStreamEventAbortController(options?.signal);
     firstEventAbort = firstEvent;
@@ -289,6 +296,7 @@ export async function runResponsesStreamLifecycle<TApi extends Api>(params: {
         signal: firstEvent.signal,
       },
       model,
+      observeProviderRequest,
       buildFullHistoryRequest: () => buildRequest("full-history"),
       onCompactionRejected: (checkpoint) =>
         suppressOpenAIResponsesCompaction(output, model, options, checkpoint),
