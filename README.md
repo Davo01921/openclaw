@@ -4,7 +4,7 @@ This private repository is the source of truth for David's custom OpenClaw skill
 
 ## Operating principles
 
-Before reasoning about or executing work from this repository, consult [`SOUL.md`](SOUL.md). It defines the default decision style, challenge standard, evidence discipline, communication approach, and operating philosophy for David's OpenClaw/Codex workflows. Skills provide task-specific rules; `SOUL.md` provides the behavioural layer above them.
+Before reasoning about or executing work from this repository, consult [`SOUL.md`](SOUL.md). It defines the default decision style, challenge standard, evidence discipline, communication approach, model-routing invariant, and operating philosophy for David's OpenClaw/Codex workflows. Skills provide task-specific rules; `SOUL.md` provides the behavioural layer above them.
 
 ## NTA automation system
 
@@ -15,8 +15,10 @@ Financial, debt, repayment, banking, and accounting workflows are deliberately o
 ### Control plane
 
 - `nta-automation-orchestrator` — selects the workflow, establishes the job envelope and completion contract.
-- `adaptive-model-router` — selects a configured execution route; models never receive authority merely because they are expensive.
+- `adaptive-model-router` — sole authority for model/provider selection and escalation. It removes deterministic work first, then resolves model-required phases against live OpenClaw configuration. The intended provider policy is OpenAI/ChatGPT primary → Qwen Token Plan fallback → Qwen API backup.
 - `nta-product-orchestrator` — coordinates product-domain modules.
+
+The model-routing rule is global. A specialist skill invoked directly still inherits `adaptive-model-router` through `SOUL.md`; specialist wording such as `cheap model`, `vision model`, `reasoning reviewer`, or `stronger model` is capability guidance only and must not create an independent provider/model policy.
 
 ### Canonical shared modules
 
@@ -49,7 +51,7 @@ Specialist product workflows that sit on top of the modular system:
 
 Core architecture rule:
 
-**Skills decide. Writers write. Auditors verify.**
+**Skills decide. Writers write. Auditors verify. The adaptive router chooses model capacity.**
 
 Physical inventory and customer availability/preorder state are separate concerns. Product-domain rules should have one canonical source of truth and should be referenced by specialist workflows rather than copied into them.
 
