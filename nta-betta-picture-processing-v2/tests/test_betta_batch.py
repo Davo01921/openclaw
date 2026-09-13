@@ -31,6 +31,7 @@ class LedgerTests(unittest.TestCase):
                 "fish_name": "Turquoise White Red Marble",
                 "tail_type": "Halfmoon",
                 "sex": "Male",
+                "sex_confidence": 0.0,
                 "title": title,
                 "evidence": {"provider": "google", "model": "gemini", "call_id": "cat-1", "timestamp": bb.now(), "input_hashes": [assets["source"]["sha256"]], "output": {"tank_id": "4BT41"}},
             },
@@ -65,11 +66,15 @@ class LedgerTests(unittest.TestCase):
         )
 
     def test_unknown_sex_defaults_male(self):
-        cat = dict(self.item["catalogue"], sex=None)
+        cat = dict(self.item["catalogue"], sex=None, sex_confidence=0)
+        self.assertEqual(bb.expected_catalogue_title(cat), "4BT41 - Turquoise White Red Marble Halfmoon Male")
+
+    def test_low_confidence_female_defaults_male(self):
+        cat = dict(self.item["catalogue"], sex="Female", sex_confidence=0.70)
         self.assertEqual(bb.expected_catalogue_title(cat), "4BT41 - Turquoise White Red Marble Halfmoon Male")
 
     def test_confident_female_is_female(self):
-        cat = dict(self.item["catalogue"], sex="Female")
+        cat = dict(self.item["catalogue"], sex="Female", sex_confidence=0.95)
         self.assertEqual(bb.expected_catalogue_title(cat), "4BT41 - Turquoise White Red Marble Halfmoon Female")
 
     def test_rejects_deviated_title(self):
