@@ -47,7 +47,7 @@ def digest(path: Path) -> str:
 
 
 def compose_title(output: dict) -> dict:
-    """Normalize the catalogue output and deterministically build the NTA Shopify title."""
+    """Normalize catalogue output and deterministically build the NTA Shopify title."""
     tank_id = "".join(str(output.get("tank_id") or "").split())
     fish_name = " ".join(str(output.get("fish_name") or "").split())
     tail_type = " ".join(str(output.get("tail_type") or "").split())
@@ -66,11 +66,30 @@ def compose_title(output: dict) -> dict:
     return output
 
 
+def normalized_usage(envelope: dict) -> dict:
+    outputs = envelope.get("outputs") or []
+    output_usage = outputs[0].get("usage", {}) if outputs and isinstance(outputs[0], dict) else {}
+    usage = envelope.get("usage") or output_usage or {}
+    if not isinstance(usage, dict):
+        usage = {}
+    input_tokens = usage.get("input_tokens", usage.get("prompt_tokens", 0)) or 0
+    output_tokens = usage.get("output_tokens", usage.get("completion_tokens", 0)) or 0
+    result = dict(usage)
+    try:
+        result["tokens_input"] = int(input_tokens)
+    except (TypeError, ValueError):
+        result["tokens_input"] = 0
+    try:
+        result["tokens_output"] = int(output_tokens)
+    except (TypeError, ValueError):
+        result["tokens_output"] = 0
+    return result
+
+
 def run_review(files: list[Path], mode: str, agent: str, models: list[str]) -> dict:
     prompt = CATALOGUE_PROMPT if mode == "catalogue" else QA_PROMPT
     errors = []
     child_env = os.environ.copy()
-    # OpenClaw requires modern Node; avoid an obsolete /usr/local/bin/node shadow.
     preferred = ["/opt/homebrew/opt/node/bin", "/opt/homebrew/bin"]
     child_env["PATH"] = os.pathsep.join(preferred + child_env.get("PATH", "").split(os.pathsep))
     for model in models:
@@ -98,6 +117,7 @@ def run_review(files: list[Path], mode: str, agent: str, models: list[str]) -> d
                 "call_id": str(uuid.uuid4()),
                 "timestamp": datetime.now(timezone.utc).isoformat(),
                 "input_hashes": [digest(path) for path in files],
+                "usage": normalized_usage(envelope),
                 "output": output,
                 "attempts": errors,
             }
