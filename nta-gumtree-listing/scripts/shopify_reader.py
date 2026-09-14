@@ -1,4 +1,4 @@
-"""Read-only Shopify GraphQL normalizer for Gumtree Phase 1B.
+"""Read-only Shopify GraphQL normalizer for the NTA Gumtree workflow.
 
 This module contains no Shopify credentials and performs no writes. The caller is
 responsible for executing SHOPIFY_PRODUCTS_QUERY and passing each response page to
@@ -10,19 +10,12 @@ from __future__ import annotations
 from decimal import Decimal, InvalidOperation
 from typing import Any, Mapping
 
-
 GUMTREE_KEYS = (
-    "gumtree_policy",
-    "gumtree_priority",
-    "gumtree_min_stock",
-    "gumtree_stockout_policy",
-    "gumtree_stockout_grace_days",
-    "gumtree_price_override",
-    "gumtree_title_override",
-    "gumtree_description_override",
-    "gumtree_desired_listing_count",
-    "gumtree_campaign_start",
-    "gumtree_campaign_end",
+    "gumtree_policy", "gumtree_priority", "gumtree_min_stock",
+    "gumtree_stockout_policy", "gumtree_stockout_grace_days",
+    "gumtree_price_override", "gumtree_title_override",
+    "gumtree_description_override", "gumtree_desired_listing_count",
+    "gumtree_campaign_start", "gumtree_campaign_end",
     "gumtree_availability_override",
 )
 
@@ -37,9 +30,13 @@ query GumtreeProducts($first: Int!, $after: String) {
       handle
       productType
       status
+      description
       totalInventory
       tracksInventory
       onlineStoreUrl
+      featuredImage { url }
+      images(first: 10) { nodes { url } }
+      variants(first: 20) { nodes { sku } }
       priceRangeV2 {
         minVariantPrice { amount currencyCode }
         maxVariantPrice { amount currencyCode }
@@ -65,11 +62,7 @@ query GumtreeProducts($first: Int!, $after: String) {
 }
 """.strip()
 
-INTEGER_KEYS = {
-    "gumtree_min_stock",
-    "gumtree_stockout_grace_days",
-    "gumtree_desired_listing_count",
-}
+INTEGER_KEYS = {"gumtree_min_stock", "gumtree_stockout_grace_days", "gumtree_desired_listing_count"}
 DECIMAL_KEYS = {"gumtree_price_override"}
 
 
@@ -82,7 +75,7 @@ def _parse_metafield(key: str, value: Any) -> Any:
         try:
             return int(value)
         except (TypeError, ValueError):
-            return value  # preserve invalid source value so validation can reject it
+            return value
     if key in DECIMAL_KEYS:
         try:
             return str(Decimal(str(value)))
@@ -91,8 +84,24 @@ def _parse_metafield(key: str, value: Any) -> Any:
     return value
 
 
+def _url_list(node: Mapping[str, Any]) -> list[str]:
+    out: list[str] = []
+    for image in ((node.get("images") or {}).get("nodes") or []):
+        url = str(image.get("url") or "").strip()
+        if url and url not in out:
+            out.append(url)
+    return out
+
+
+def _first_sku(node: Mapping[str, Any]) -> str | None:
+    for variant in ((node.get("variants") or {}).get("nodes") or []):
+        sku = str(variant.get("sku") or "").strip()
+        if sku:
+            return sku
+    return None
+
+
 def normalize_product(node: Mapping[str, Any]) -> dict[str, Any]:
-    """Convert a Shopify Product node into the Phase 1 normalized contract."""
     raw_metafields = (node.get("metafields") or {}).get("nodes") or []
     gumtree = {key: None for key in GUMTREE_KEYS}
     for metafield in raw_metafields:
@@ -105,6 +114,11 @@ def normalize_product(node: Mapping[str, Any]) -> dict[str, Any]:
     price_range = node.get("priceRangeV2") or {}
     min_price = price_range.get("minVariantPrice") or {}
     max_price = price_range.get("maxVariantPrice") or {}
+    featured = node.get("featuredImage") or {}
+    image_urls = _url_list(node)
+    featured_url = featured.get("url")
+    if featured_url and featured_url not in image_urls:
+        image_urls.insert(0, featured_url)
 
     return {
         "shopify_product_id": node.get("legacyResourceId") or node.get("id"),
@@ -113,18 +127,21 @@ def normalize_product(node: Mapping[str, Any]) -> dict[str, Any]:
         "handle": node.get("handle", ""),
         "product_type": node.get("productType", ""),
         "status": node.get("status"),
+        "description": node.get("description"),
         "inventory": node.get("totalInventory"),
         "tracks_inventory": node.get("tracksInventory"),
         "online_store_url": node.get("onlineStoreUrl"),
         "price": min_price.get("amount"),
         "max_price": max_price.get("amount"),
         "currency": min_price.get("currencyCode"),
+        "featured_image_url": featured_url,
+        "image_urls": image_urls,
+        "sku": _first_sku(node),
         "gumtree": gumtree,
     }
 
 
 def normalize_page(payload: Mapping[str, Any]) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    """Normalize one Shopify GraphQL page and return products plus pageInfo."""
     products = ((payload.get("data") or {}).get("products") or {})
     nodes = products.get("nodes") or []
     page_info = products.get("pageInfo") or {}
