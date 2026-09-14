@@ -22,11 +22,13 @@ GUMTREE_FIELDS = (
     "gumtree_desired_listing_count",
     "gumtree_campaign_start",
     "gumtree_campaign_end",
+    "gumtree_availability_override",
 )
 
 POLICIES = {"DO_NOT_LIST", "ALWAYS_ON", "WHEN_IN_STOCK", "UNIQUE", "CAMPAIGN"}
 PRIORITIES = {"CORE_TRAFFIC", "HIGH", "NORMAL", "LOW"}
 STOCKOUT_POLICIES = {"PAUSE", "KEEP_ACTIVE", "GRACE_PERIOD"}
+AVAILABILITY_OVERRIDES = {"AVAILABLE", "UNAVAILABLE"}
 
 
 def is_blank(value: Any) -> bool:
@@ -56,6 +58,10 @@ def validate_populated_fields(fields: Mapping[str, Any]) -> list[str]:
     stockout = fields.get("gumtree_stockout_policy")
     if not is_blank(stockout) and stockout not in STOCKOUT_POLICIES:
         errors.append("INVALID_STOCKOUT_POLICY")
+
+    availability_override = fields.get("gumtree_availability_override")
+    if not is_blank(availability_override) and availability_override not in AVAILABILITY_OVERRIDES:
+        errors.append("INVALID_AVAILABILITY_OVERRIDE")
 
     min_stock = fields.get("gumtree_min_stock")
     if not is_blank(min_stock) and not _positive_int(min_stock):
@@ -135,6 +141,19 @@ def classify_product(product: Mapping[str, Any]) -> ConfigDecision:
             report_only=False,
             allowed_to_create=False,
             reason="EXPLICIT_DO_NOT_LIST",
+        )
+
+    # Availability override is supplemental evidence only. It can affect the
+    # availability resolver, but it must never create listing authority by itself.
+    if is_blank(fields.get("gumtree_policy")):
+        return ConfigDecision(
+            shopify_product_id=product_id,
+            title=title,
+            config_state="CONFIG_ERROR",
+            report_only=True,
+            allowed_to_create=False,
+            reason="POLICY_REQUIRED_FOR_AUTHORITY",
+            errors=("GUMTREE_POLICY_REQUIRED",),
         )
 
     return ConfigDecision(
