@@ -1,0 +1,10 @@
+# Runtime state is local and must never be committed.
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+operator-queue*.json
+backups/
+
+# Keep this directory in Git.
+!.gitignore
