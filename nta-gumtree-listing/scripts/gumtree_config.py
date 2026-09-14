@@ -24,6 +24,9 @@ GUMTREE_FIELDS = (
     "gumtree_campaign_end",
     "gumtree_availability_override",
 )
+# Availability override is deliberately supplemental: by itself it must never
+# convert an otherwise unconfigured product into an authorised configuration.
+ACTIVATION_FIELDS = GUMTREE_FIELDS[:-1]
 
 POLICIES = {"DO_NOT_LIST", "ALWAYS_ON", "WHEN_IN_STOCK", "UNIQUE", "CAMPAIGN"}
 PRIORITIES = {"CORE_TRAFFIC", "HIGH", "NORMAL", "LOW"}
@@ -32,12 +35,15 @@ AVAILABILITY_OVERRIDES = {"AVAILABLE", "UNAVAILABLE"}
 
 
 def is_blank(value: Any) -> bool:
-    """Blank means absent/null or an empty/whitespace string. Zero is not blank."""
     return value is None or (isinstance(value, str) and not value.strip())
 
 
 def all_gumtree_fields_blank(fields: Mapping[str, Any]) -> bool:
     return all(is_blank(fields.get(name)) for name in GUMTREE_FIELDS)
+
+
+def _all_activation_fields_blank(fields: Mapping[str, Any]) -> bool:
+    return all(is_blank(fields.get(name)) for name in ACTIVATION_FIELDS)
 
 
 def _positive_int(value: Any) -> bool:
@@ -46,46 +52,34 @@ def _positive_int(value: Any) -> bool:
 
 def validate_populated_fields(fields: Mapping[str, Any]) -> list[str]:
     errors: list[str] = []
-
     policy = fields.get("gumtree_policy")
     if not is_blank(policy) and policy not in POLICIES:
         errors.append("INVALID_POLICY")
-
     priority = fields.get("gumtree_priority")
     if not is_blank(priority) and priority not in PRIORITIES:
         errors.append("INVALID_PRIORITY")
-
     stockout = fields.get("gumtree_stockout_policy")
     if not is_blank(stockout) and stockout not in STOCKOUT_POLICIES:
         errors.append("INVALID_STOCKOUT_POLICY")
-
-    availability_override = fields.get("gumtree_availability_override")
-    if not is_blank(availability_override) and availability_override not in AVAILABILITY_OVERRIDES:
+    override = fields.get("gumtree_availability_override")
+    if not is_blank(override) and override not in AVAILABILITY_OVERRIDES:
         errors.append("INVALID_AVAILABILITY_OVERRIDE")
-
     min_stock = fields.get("gumtree_min_stock")
     if not is_blank(min_stock) and not _positive_int(min_stock):
         errors.append("INVALID_MIN_STOCK")
-
     grace_days = fields.get("gumtree_stockout_grace_days")
     if not is_blank(grace_days) and not _positive_int(grace_days):
         errors.append("INVALID_STOCKOUT_GRACE_DAYS")
-
     desired_count = fields.get("gumtree_desired_listing_count")
-    if not is_blank(desired_count) and (
-        not _positive_int(desired_count) or desired_count < 1
-    ):
+    if not is_blank(desired_count) and (not _positive_int(desired_count) or desired_count < 1):
         errors.append("INVALID_DESIRED_LISTING_COUNT")
-
     if stockout == "GRACE_PERIOD" and is_blank(grace_days):
         errors.append("GRACE_PERIOD_REQUIRES_DAYS")
-
     if policy == "CAMPAIGN":
         if is_blank(fields.get("gumtree_campaign_start")):
             errors.append("CAMPAIGN_REQUIRES_START")
         if is_blank(fields.get("gumtree_campaign_end")):
             errors.append("CAMPAIGN_REQUIRES_END")
-
     return errors
 
 
@@ -106,61 +100,20 @@ class ConfigDecision:
 
 
 def classify_product(product: Mapping[str, Any]) -> ConfigDecision:
-    """Classify one normalized Shopify product without side effects."""
     product_id = str(product.get("shopify_product_id", ""))
     title = str(product.get("title", ""))
     fields = product.get("gumtree") or {}
 
-    if all_gumtree_fields_blank(fields):
-        return ConfigDecision(
-            shopify_product_id=product_id,
-            title=title,
-            config_state="UNCONFIGURED",
-            report_only=True,
-            allowed_to_create=False,
-            reason="ALL_GUMTREE_FIELDS_BLANK",
-        )
+    if _all_activation_fields_blank(fields):
+        return ConfigDecision(product_id, title, "UNCONFIGURED", True, False, "ALL_GUMTREE_FIELDS_BLANK")
 
     errors = validate_populated_fields(fields)
     if errors:
-        return ConfigDecision(
-            shopify_product_id=product_id,
-            title=title,
-            config_state="CONFIG_ERROR",
-            report_only=True,
-            allowed_to_create=False,
-            reason="INVALID_GUMTREE_CONFIGURATION",
-            errors=tuple(errors),
-        )
+        return ConfigDecision(product_id, title, "CONFIG_ERROR", True, False,
+                              "INVALID_GUMTREE_CONFIGURATION", tuple(errors))
 
     if fields.get("gumtree_policy") == "DO_NOT_LIST":
-        return ConfigDecision(
-            shopify_product_id=product_id,
-            title=title,
-            config_state="EXCLUDED",
-            report_only=False,
-            allowed_to_create=False,
-            reason="EXPLICIT_DO_NOT_LIST",
-        )
+        return ConfigDecision(product_id, title, "EXCLUDED", False, False, "EXPLICIT_DO_NOT_LIST")
 
-    # Availability override is supplemental evidence only. It can affect the
-    # availability resolver, but it must never create listing authority by itself.
-    if is_blank(fields.get("gumtree_policy")):
-        return ConfigDecision(
-            shopify_product_id=product_id,
-            title=title,
-            config_state="CONFIG_ERROR",
-            report_only=True,
-            allowed_to_create=False,
-            reason="POLICY_REQUIRED_FOR_AUTHORITY",
-            errors=("GUMTREE_POLICY_REQUIRED",),
-        )
-
-    return ConfigDecision(
-        shopify_product_id=product_id,
-        title=title,
-        config_state="CONFIGURED",
-        report_only=False,
-        allowed_to_create=True,
-        reason="GUMTREE_CONFIGURATION_PRESENT",
-    )
+    return ConfigDecision(product_id, title, "CONFIGURED", False, True,
+                          "GUMTREE_CONFIGURATION_PRESENT")
