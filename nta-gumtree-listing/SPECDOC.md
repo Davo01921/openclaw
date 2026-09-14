@@ -1,292 +1,208 @@
-# NTA Gumtree Automation - SPECDOC
+# NTA Gumtree Listing - SPECDOC
 
-Status: Phase 0 specification locked for initial implementation
-Version: 1.0-draft
+Status: Production manual-post workflow
+Version: 1.1
 
 ## Objective
 
-Build a deterministic Gumtree advertising control system for Nano Tanks Australia. Shopify expresses business intent, SQLite stores operational memory, Gumtree is observed real-world state, and Python reconciles desired state with actual state.
+Provide a deterministic Gumtree advertising control system for Nano Tanks Australia in which Shopify expresses current business intent, SQLite stores operational memory, Python decides eligibility and prepares complete posting packages, and David performs all Gumtree account interaction manually.
 
-Normal routine operation should not require an LLM. AI may assist only with unresolved identity or optional language work, and may never bypass validation or authority gates.
+Routine queue preparation requires no LLM. AI may assist with optional wording only after the deterministic facts are established and may never bypass validation or authority gates.
+
+## Production architecture
+
+```text
+Current Shopify data
+  -> configuration + availability resolution
+  -> registry identity/state
+  -> deterministic reconciliation
+  -> listing-plan validation
+  -> live Sydney-date operator queue
+  -> David manually posts on Gumtree
+  -> operator supplies Gumtree ID/URL
+  -> registry POSTED record
+  -> explicit verification
+  -> VERIFIED
+```
+
+There is no production Gumtree browser writer.
 
 ## Hard safety invariants
 
-1. If ALL NTA Gumtree Shopify metafields are blank/null, the product is UNCONFIGURED.
-2. UNCONFIGURED products are REPORT_ONLY and MUST NOT be automatically listed, edited, adopted, paused, removed, relisted, or published.
-3. Suggested policies for UNCONFIGURED products are informational only and grant no authority.
+1. Unconfigured products are report-only and cannot enter the operator queue.
+2. `nta.gumtree_availability_override` is supplemental and alone never grants listing authority.
+3. Uncertain availability never becomes permission to create a listing.
 4. Discovery of an existing Gumtree listing does not grant management authority.
-5. Publish and paid promotion are David-only actions in v1.
-6. Active-listing modification, pause, removal, and relisting require review in v1.
-7. Draft creation and draft correction may become automatic only after deterministic validation.
-8. If identity, price, configuration, Gumtree state, or snapshot integrity is uncertain, preserve existing state and report the problem.
-9. Browser automation executes a validated plan; it does not make business decisions.
-10. Reconciliation must be idempotent.
+5. Only `MAPPED` or `MANAGED` identities may enter the operator queue.
+6. Gumtree posting, editing, pausing, removal, relisting and paid promotion are manual unless Gumtree explicitly approves an integration for the account/workflow.
+7. `publish_authority` is always `false` in this version.
+8. `browser_automation` is always `false` in this version.
+9. Live queue generation uses the current `Australia/Sydney` date and exposes no caller-supplied date override.
+10. Live queue days are Thursday, Friday and Saturday only; Sunday-Wednesday return zero items.
+11. Maximum queue size is three items per live day.
+12. Missing price, description, image, identity, mapping, configuration or trustworthy source data fails closed.
+13. A Gumtree listing ID already mapped to one NTA ad cannot be silently remapped to another ad.
+14. Operator-supplied existing/listed ads record provenance `MANUAL_OPERATOR`.
+15. Reconciliation and queue generation are deterministic and idempotent for the same frozen inputs.
+16. Runtime SQLite databases, queue artifacts and backups are local state and must not be committed.
 
-## Shopify configuration state
+## Shopify Gumtree metafields
 
-- UNCONFIGURED: every Gumtree-specific Shopify field is blank/null.
-- CONFIGURED: at least one Gumtree-specific field is populated and the effective configuration validates.
-- EXCLUDED: explicit gumtree_policy = DO_NOT_LIST.
-- CONFIG_ERROR: populated configuration is invalid or contradictory.
+The supported fields are:
 
-Preferred activation field: nta.gumtree_policy. Blank fields inherit only AFTER a product has passed the UNCONFIGURED gate.
+- `nta.gumtree_policy`
+- `nta.gumtree_priority`
+- `nta.gumtree_min_stock`
+- `nta.gumtree_stockout_policy`
+- `nta.gumtree_stockout_grace_days`
+- `nta.gumtree_price_override`
+- `nta.gumtree_title_override`
+- `nta.gumtree_description_override`
+- `nta.gumtree_desired_listing_count`
+- `nta.gumtree_campaign_start`
+- `nta.gumtree_campaign_end`
+- `nta.gumtree_availability_override`
 
-## Shopify Gumtree fields
+Policy values: `DO_NOT_LIST`, `ALWAYS_ON`, `WHEN_IN_STOCK`, `UNIQUE`, `CAMPAIGN`.
 
-- nta.gumtree_policy
-- nta.gumtree_priority
-- nta.gumtree_min_stock
-- nta.gumtree_stockout_policy
-- nta.gumtree_stockout_grace_days
-- nta.gumtree_price_override
-- nta.gumtree_title_override
-- nta.gumtree_description_override
-- nta.gumtree_desired_listing_count
-- nta.gumtree_campaign_start
-- nta.gumtree_campaign_end
+Priority values: `CORE_TRAFFIC`, `HIGH`, `NORMAL`, `LOW`.
 
-Policy values:
-- DO_NOT_LIST
-- ALWAYS_ON
-- WHEN_IN_STOCK
-- UNIQUE
-- CAMPAIGN
+Stockout values: `PAUSE`, `KEEP_ACTIVE`, `GRACE_PERIOD`.
 
-Priority values:
-- CORE_TRAFFIC
-- HIGH
-- NORMAL
-- LOW
+Availability override values: `AVAILABLE`, `UNAVAILABLE`. A populated override does not activate Gumtree management by itself.
 
-Stockout policy values:
-- PAUSE
-- KEEP_ACTIVE
-- GRACE_PERIOD
+## Configuration states
 
-## Configuration precedence
+- `UNCONFIGURED`: activation fields are blank. Availability override alone remains UNCONFIGURED.
+- `CONFIGURED`: Gumtree configuration is present and validates.
+- `EXCLUDED`: explicit `gumtree_policy = DO_NOT_LIST`.
+- `CONFIG_ERROR`: populated configuration is invalid or contradictory.
 
-1. Advertisement-specific override
-2. Shopify product override
-3. Product-type configuration
-4. System default
+Null means inherit only after the product passes the unconfigured gate. Explicit values such as `0` are not null.
 
-Null means inherit. Explicit values such as 0 are not equivalent to null.
+## Availability
 
-System defaults must be conservative. A completely unconfigured product never reaches inheritance.
+Availability statuses are `AVAILABLE`, `UNAVAILABLE`, `UNKNOWN`, `NOT_APPLICABLE`.
 
-## Desired-state rules
+Rules are deterministic. For stock-dependent policies, missing/untracked inventory becomes `UNKNOWN` unless an authorised deterministic exception applies. UNIQUE Betta handling requires Shopify product type to identify Betta plus a valid NTA `BT` identifier and positive quantity.
 
-ALWAYS_ON:
-Maintain one valid advertising presence by default, subject to explicit stockout policy. Missing or expired presence requires restoration workflow, not blind duplicate posting.
+## Registry
 
-WHEN_IN_STOCK:
-Desired ACTIVE when inventory >= gumtree_min_stock; otherwise desired ABSENT.
+SQLite is the operational registry. Core entities are:
 
-UNIQUE:
-Desired ACTIVE only while the exact item remains available. Once sold, its advertisement lineage must never be recreated merely because the old Gumtree listing is missing.
+- products
+- advertisements
+- product_ad_links
+- gumtree_instances
+- snapshots
+- actions
+- runs
 
-CAMPAIGN:
-Desired ACTIVE only during configured campaign dates and while other eligibility conditions pass. Campaigns do not auto-extend.
+Registry schema v2 adds `gumtree_instances.source` and protects Gumtree listing IDs from cross-ad remapping.
 
-DO_NOT_LIST:
-Desired ABSENT. Unexpected existing listings are reported for review rather than automatically deleted.
+Allowed instance provenance values are `UNKNOWN`, `MANUAL_OPERATOR`, `APPROVED_IMPORT`, and `VERIFIED_OBSERVATION`.
 
-## Gumtree actual states
-
-- UNKNOWN
-- MISSING
-- DRAFT
-- ACTIVE
-- PAUSED
-- EXPIRED
-- SOLD
-- REMOVED
-- ERROR
-- NEEDS_REVIEW
+Passwords, API keys, browser cookies and secrets must never be stored in the registry.
 
 ## Reconciliation outcomes
 
-Every ad reconciliation returns exactly one primary action:
+The deterministic reconciliation engine emits one primary action:
 
-- NO_ACTION
-- CREATE_DRAFT
-- UPDATE_DRAFT
-- UPDATE_ACTIVE_REVIEW
-- RELIST_REVIEW
-- PAUSE_REVIEW
-- REMOVE_REVIEW
-- DUPLICATE_REVIEW
-- CONFIG_REVIEW
-- IDENTITY_REVIEW
-- ERROR
+- `NO_ACTION`
+- `CREATE_DRAFT`
+- `UPDATE_DRAFT`
+- `UPDATE_ACTIVE_REVIEW`
+- `RELIST_REVIEW`
+- `PAUSE_REVIEW`
+- `REMOVE_REVIEW`
+- `DUPLICATE_REVIEW`
+- `CONFIG_REVIEW`
+- `IDENTITY_REVIEW`
+- `ERROR`
 
-PUBLISH is deliberately not a reconciliation action in v1.
+`PUBLISH` is not a reconciliation action.
 
-## Authority matrix v1
+For the production manual-post workflow, `CREATE_DRAFT` and `UPDATE_DRAFT` mean "prepare a complete operator posting package"; they do not authorize automated Gumtree interaction.
 
-Automatic/read-only:
-- read Shopify
-- read Gumtree
-- update registry from validated observations
-- calculate desired/actual state
-- generate reconciliation result
-- generate listing plan
-- validate listing plan
-- identify/report duplicates and configuration issues
+## Listing plan
 
-Potential automatic write after validation:
-- create Gumtree draft
-- update Gumtree draft
-- save draft
+A queue candidate must produce a `READY` listing plan containing:
 
-Review required initially:
-- update active listing
-- pause active listing
-- remove active listing
-- relist expired listing
-
-David only:
-- publish new ad
-- purchase paid Gumtree promotion/add-on
-
-## Registry model
-
-SQLite is the initial registry.
-
-Core entities:
-- products: cached Shopify identity/config state
-- advertisements: stable NTA advertising concepts such as GT-NTA-000001
-- product_ad_links: supports product, component, and future bundle relationships
-- gumtree_instances: each real Gumtree listing instance and its historical status
-- snapshots: time-series Gumtree observations/metrics
-- actions: proposed/approved/executed action audit trail
-- runs: reconciliation/census run health and provenance
-
-One Shopify product may map to zero, one, or multiple NTA advertisements. One NTA advertisement may have multiple historical Gumtree instances across expiry/relisting.
-
-Never store passwords, API keys, browser cookies, or secrets in the registry.
-
-## Census/import
-
-Before any Gumtree write automation, run a read-only census of existing NTA Gumtree ads.
-
-Capture only fields actually exposed by Gumtree. Candidate fields include listing ID, title, price, status, URL, description, website URL, location, category, attributes, images, dates, views, favourites, and enquiries.
-
-Matching evidence priority:
-1. known Gumtree listing ID
-2. stored relationship
-3. exact Shopify product URL/handle
-4. exact stable identifier/SKU when available
-5. exact normalized title
-6. deterministic similarity supported by other evidence
-7. optional AI-assisted match
-8. human review
-
-Matching buckets:
-- MATCHED
-- LIKELY_MATCH
-- UNMATCHED
-- ORPHAN
-- DUPLICATE_CANDIDATE
-
-Price may support identity but must not establish identity by itself.
-
-Existing Gumtree listing + all Shopify Gumtree fields blank remains UNCONFIGURED / REPORT_ONLY. Do not modify Shopify or Gumtree automatically.
-
-Discovery lifecycle:
-DISCOVERED -> IDENTIFIED -> MAPPED -> POLICY_CONFIGURED -> MANAGED
-
-Only MANAGED advertisements may eventually receive automatic management actions.
-
-## Reconciliation contract
-
-Input is a frozen snapshot containing:
-- run_id
-- product facts
-- resolved policy
-- advertisement identity/history
-- observed Gumtree state
-
-The reconciliation engine itself performs no browsing and no Shopify/Gumtree writes.
-
-Processing order:
-1. configuration gate
-2. data-integrity/identity gate
-3. determine desired state
-4. compare desired vs actual
-5. calculate dirty fields
-6. calculate authority/review requirements
-7. emit deterministic decision record
-
-Dirty dimensions:
-- PRICE_DIRTY
-- CONTENT_DIRTY
-- IMAGE_DIRTY
-- INVENTORY_DIRTY
-- STATUS_DIRTY
-
-A reconciliation result answers WHAT needs to happen. A listing plan separately specifies exactly WHAT DATA the browser would enter.
-
-## Listing-plan execution gate
-
-Every executable plan is either READY or BLOCKED.
-
-Browser execution is forbidden unless plan_status == READY.
-
-Blocking examples:
-- missing/uncertain identity
-- invalid price
-- missing required image
-- invalid Gumtree attributes
-- unconfigured product
-- suspected duplicate
-- stale or anomalous source snapshot
-
-Maximum v1 automated execution is SAVE_DRAFT. There should be no generic post/publish capability available to routine execution.
-
-## Run-level safety
-
-Before any write-capable run, validate:
-- Shopify snapshot health
-- Gumtree snapshot health
-- configuration validity
-- registry/database health
-
-An anomalous Gumtree census must block writes. Example: a normal estate of ~40 listings suddenly returning zero must be treated as collector failure, not 40 missing advertisements.
-
-Severity levels:
-- INFO
-- LOW
-- MEDIUM
-- HIGH
-- CRITICAL
-
-CORE_TRAFFIC missing presence is HIGH. An untrustworthy Gumtree account snapshot is CRITICAL and blocks writes.
-
-## Unconfigured-product report
-
-All products whose Gumtree Shopify fields are entirely blank must appear in a review report rather than being listed.
-
-Useful report fields:
+- stable NTA `ad_id`
 - Shopify product ID
 - title
-- product type/classification
-- inventory
-- current price
-- configuration state = UNCONFIGURED
-- deterministic suggested policy where available
-- reason = all Gumtree metafields blank
-- whether an existing Gumtree listing was discovered
+- description
+- valid positive price
+- category
+- location
+- at least one valid image URL
+- source fingerprint
+- truthful attributes when required
 
-Suggestion does not equal permission.
+Identity uncertainty, duplicate suspicion, stale/anomalous snapshots or missing required fields block the plan.
 
-## First implementation milestone
+## Production queue runner
 
-Build a read-only Shopify configuration reader that:
-1. reads product identity and Gumtree metafields
-2. detects whether all Gumtree fields are blank
-3. classifies each product as UNCONFIGURED, CONFIGURED, EXCLUDED, or CONFIG_ERROR
-4. validates populated fields
-5. produces the unconfigured/configuration review report
+`gumtree_queue_runner.py` is the production entry point. It:
 
-No Gumtree writes, no publication, and no LLM should be required for this milestone.
+1. consumes current normalized Shopify product records supplied through an approved/read-only Shopify adapter boundary;
+2. classifies configuration;
+3. resolves availability;
+4. refreshes cached product facts without escalating management authority;
+5. resolves registry product/ad identity;
+6. derives current recorded Gumtree state without live Gumtree scraping;
+7. builds listing input and source fingerprint;
+8. calls `build_live_operator_queue(...)`;
+9. optionally writes the queue artifact to local disk.
+
+The runner does not contact Gumtree.
+
+Default operational invocation:
+
+```bash
+PYTHONPATH=scripts python3 scripts/gumtree_queue_runner.py \
+  --input data/current-shopify-products.json \
+  --db data/gumtree.db \
+  --output data/operator-queue.json
+```
+
+## Operator lifecycle
+
+`READY_TO_POST` -> `POSTED` -> `VERIFIED`
+
+- `READY_TO_POST`: validated posting package exists.
+- `POSTED`: David has manually posted and supplied a valid Gumtree listing ID or URL; registry source is `MANUAL_OPERATOR`.
+- `VERIFIED`: verification explicitly succeeded.
+
+The system must not infer `POSTED` or `VERIFIED` merely from elapsed time or a planned action.
+
+## Existing listing bootstrap
+
+`gumtree_manual_bootstrap.py` accepts an operator-supplied Gumtree listing ID or URL only. It performs no network access or identity guessing. The target NTA advertisement must already exist. Cross-ad listing-ID collisions are rejected.
+
+## Runtime data and backup
+
+`data/.gitignore` excludes SQLite files, queue artifacts and backup directories.
+
+Before registry maintenance, create a consistent SQLite backup with:
+
+```bash
+PYTHONPATH=scripts python3 scripts/gumtree_registry_backup.py \
+  --db data/gumtree.db \
+  --backup-dir data/backups
+```
+
+## Definition of complete
+
+The v1.1 skill is complete when all of the following are true:
+
+- Shopify reader exposes all 12 Gumtree metafields;
+- configuration and availability safety invariants are tested;
+- registry schema v2 is migration-safe and rejects listing-ID remaps;
+- manual bootstrap records provenance;
+- production runner creates a max-3 Sydney-date Thu/Fri/Sat queue and zero items on blocked days;
+- required listing data fails closed;
+- manual post and verification lifecycle is tested;
+- runtime DB/queue files are ignored and backup utility is tested;
+- SKILL.md reflects manual Gumtree interaction only;
+- CI passes the full Gumtree test suite.
