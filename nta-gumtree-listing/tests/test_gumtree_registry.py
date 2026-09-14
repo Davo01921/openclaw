@@ -38,20 +38,14 @@ def test_initialize_is_idempotent(tmp_path):
     r2 = initialize_registry(db)
     assert r1.db_path == r2.db_path
     with r2.connect() as conn:
-        version = conn.execute("SELECT version FROM schema_migrations").fetchone()[0]
-        tables = {
-            row[0]
-            for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
-        }
-    assert version == 1
+        versions = [row[0] for row in conn.execute("SELECT version FROM schema_migrations ORDER BY version")]
+        tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(gumtree_instances)")}
+    assert versions[-1] == 2
+    assert "source" in columns
     assert {
-        "products",
-        "advertisements",
-        "product_ad_links",
-        "gumtree_instances",
-        "snapshots",
-        "actions",
-        "runs",
+        "products", "advertisements", "product_ad_links", "gumtree_instances",
+        "snapshots", "actions", "runs",
     }.issubset(tables)
 
 
@@ -87,16 +81,12 @@ def test_listing_id_is_unique_and_repeat_observation_updates_instance(tmp_path):
     registry = make_registry(tmp_path)
     registry.upsert_advertisement({"ad_id": "GT-NTA-000001"})
     first = registry.record_instance({
-        "ad_id": "GT-NTA-000001",
-        "gumtree_listing_id": "987654321",
-        "actual_state": "DRAFT",
-        "title": "Red Cherry Shrimp",
+        "ad_id": "GT-NTA-000001", "gumtree_listing_id": "987654321",
+        "actual_state": "DRAFT", "title": "Red Cherry Shrimp",
     })
     second = registry.record_instance({
-        "ad_id": "GT-NTA-000001",
-        "gumtree_listing_id": "987654321",
-        "actual_state": "ACTIVE",
-        "title": "RCS Red Cherry Shrimp",
+        "ad_id": "GT-NTA-000001", "gumtree_listing_id": "987654321",
+        "actual_state": "ACTIVE", "title": "RCS Red Cherry Shrimp",
     })
     assert first == second
     rows = registry.list_instances("GT-NTA-000001")
@@ -105,21 +95,43 @@ def test_listing_id_is_unique_and_repeat_observation_updates_instance(tmp_path):
     assert rows[0]["title"] == "RCS Red Cherry Shrimp"
 
 
+def test_listing_id_cannot_be_remapped_to_another_ad(tmp_path):
+    registry = make_registry(tmp_path)
+    registry.upsert_advertisement({"ad_id": "GT-NTA-000001"})
+    registry.upsert_advertisement({"ad_id": "GT-NTA-000002"})
+    registry.record_instance({
+        "ad_id": "GT-NTA-000001", "gumtree_listing_id": "987654321",
+        "actual_state": "ACTIVE", "source": "MANUAL_OPERATOR",
+    })
+    with pytest.raises(ValueError, match="cannot be remapped"):
+        registry.record_instance({
+            "ad_id": "GT-NTA-000002", "gumtree_listing_id": "987654321",
+            "actual_state": "ACTIVE", "source": "MANUAL_OPERATOR",
+        })
+    assert registry.list_instances("GT-NTA-000002") == []
+
+
+def test_invalid_instance_source_is_rejected(tmp_path):
+    registry = make_registry(tmp_path)
+    registry.upsert_advertisement({"ad_id": "GT-NTA-000001"})
+    with pytest.raises(ValueError, match="invalid instance source"):
+        registry.record_instance({
+            "ad_id": "GT-NTA-000001", "gumtree_listing_id": "1",
+            "actual_state": "ACTIVE", "source": "SCRAPED_AUTOMATICALLY",
+        })
+
+
 def test_one_canonical_live_instance_per_ad(tmp_path):
     registry = make_registry(tmp_path)
     registry.upsert_advertisement({"ad_id": "GT-NTA-000001"})
     registry.record_instance({
-        "ad_id": "GT-NTA-000001",
-        "gumtree_listing_id": "1",
-        "actual_state": "ACTIVE",
-        "is_canonical": True,
+        "ad_id": "GT-NTA-000001", "gumtree_listing_id": "1",
+        "actual_state": "ACTIVE", "is_canonical": True,
     })
     with pytest.raises(sqlite3.IntegrityError):
         registry.record_instance({
-            "ad_id": "GT-NTA-000001",
-            "gumtree_listing_id": "2",
-            "actual_state": "DRAFT",
-            "is_canonical": True,
+            "ad_id": "GT-NTA-000001", "gumtree_listing_id": "2",
+            "actual_state": "DRAFT", "is_canonical": True,
         })
 
 
@@ -127,16 +139,12 @@ def test_multiple_historical_instances_are_allowed(tmp_path):
     registry = make_registry(tmp_path)
     registry.upsert_advertisement({"ad_id": "GT-NTA-000001"})
     registry.record_instance({
-        "ad_id": "GT-NTA-000001",
-        "gumtree_listing_id": "old-1",
-        "actual_state": "EXPIRED",
-        "is_canonical": True,
+        "ad_id": "GT-NTA-000001", "gumtree_listing_id": "old-1",
+        "actual_state": "EXPIRED", "is_canonical": True,
     })
     registry.record_instance({
-        "ad_id": "GT-NTA-000001",
-        "gumtree_listing_id": "new-1",
-        "actual_state": "ACTIVE",
-        "is_canonical": True,
+        "ad_id": "GT-NTA-000001", "gumtree_listing_id": "new-1",
+        "actual_state": "ACTIVE", "is_canonical": True,
     })
     assert len(registry.list_instances("GT-NTA-000001")) == 2
 
@@ -145,16 +153,12 @@ def test_action_idempotency_prevents_duplicate_execution_record(tmp_path):
     registry = make_registry(tmp_path)
     registry.start_run("run-1", "RECONCILE")
     action1, created1 = registry.record_action(
-        idempotency_key="run-1:123:CREATE_DRAFT",
-        action="CREATE_DRAFT",
-        run_id="run-1",
-        payload={"product_id": "123"},
+        idempotency_key="run-1:123:CREATE_DRAFT", action="CREATE_DRAFT",
+        run_id="run-1", payload={"product_id": "123"},
     )
     action2, created2 = registry.record_action(
-        idempotency_key="run-1:123:CREATE_DRAFT",
-        action="CREATE_DRAFT",
-        run_id="run-1",
-        payload={"product_id": "123"},
+        idempotency_key="run-1:123:CREATE_DRAFT", action="CREATE_DRAFT",
+        run_id="run-1", payload={"product_id": "123"},
     )
     assert action1 == action2
     assert created1 is True
@@ -166,12 +170,7 @@ def test_action_idempotency_prevents_duplicate_execution_record(tmp_path):
 def test_run_lifecycle_records_summary(tmp_path):
     registry = make_registry(tmp_path)
     registry.start_run("run-1", "CENSUS")
-    registry.finish_run(
-        "run-1",
-        "COMPLETED",
-        warning_count=2,
-        summary={"discovered": 17},
-    )
+    registry.finish_run("run-1", "COMPLETED", warning_count=2, summary={"discovered": 17})
     with registry.connect() as conn:
         row = conn.execute("SELECT * FROM runs WHERE run_id='run-1'").fetchone()
     assert row["status"] == "COMPLETED"
@@ -191,7 +190,6 @@ def test_invalid_actual_state_is_rejected(tmp_path):
     registry.upsert_advertisement({"ad_id": "GT-NTA-000001"})
     with pytest.raises(ValueError):
         registry.record_instance({
-            "ad_id": "GT-NTA-000001",
-            "gumtree_listing_id": "1",
+            "ad_id": "GT-NTA-000001", "gumtree_listing_id": "1",
             "actual_state": "PUBLISHED_BY_AI",
         })

@@ -21,6 +21,7 @@ class BootstrapResult:
     gumtree_listing_id: str
     gumtree_url: str | None
     instance_id: int
+    source: str = "MANUAL_OPERATOR"
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -37,7 +38,9 @@ def bootstrap_existing_listing(
     """Record a listing reference explicitly supplied by the operator.
 
     The advertisement must already exist in the registry. A listing ID may be
-    supplied directly or parsed offline from the supplied Gumtree URL.
+    supplied directly or parsed offline from the supplied Gumtree URL. Existing
+    listing IDs can be refreshed only for the same ad; cross-ad remapping is
+    rejected by the registry.
     """
     ad_id = str(ad_id).strip()
     if not ad_id:
@@ -63,6 +66,7 @@ def bootstrap_existing_listing(
             "url": str(gumtree_url).strip() if gumtree_url else None,
             "actual_state": actual_state,
             "is_canonical": True,
+            "source": "MANUAL_OPERATOR",
         }
     )
     return BootstrapResult(

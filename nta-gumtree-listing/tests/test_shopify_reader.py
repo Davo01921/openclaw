@@ -16,9 +16,16 @@ def node(metafields=None, inventory=100):
         "handle": "test-fish",
         "productType": "Fish",
         "status": "ACTIVE",
+        "description": "Current Shopify description",
         "totalInventory": inventory,
         "tracksInventory": True,
         "onlineStoreUrl": "https://example.test/products/test-fish",
+        "featuredImage": {"url": "https://cdn.example.test/featured.jpg"},
+        "images": {"nodes": [
+            {"url": "https://cdn.example.test/featured.jpg"},
+            {"url": "https://cdn.example.test/second.jpg"},
+        ]},
+        "variants": {"nodes": [{"sku": "1BT11"}]},
         "priceRangeV2": {
             "minVariantPrice": {"amount": "12.95", "currencyCode": "AUD"},
             "maxVariantPrice": {"amount": "12.95", "currencyCode": "AUD"},
@@ -51,13 +58,22 @@ def test_reader_maps_policy_and_integer_fields():
 
 
 def test_reader_preserves_availability_override_without_granting_configuration():
-    normalized = normalize_product(node([
-        mf("gumtree_availability_override", "AVAILABLE"),
-    ]))
+    normalized = normalize_product(node([mf("gumtree_availability_override", "AVAILABLE")]))
     assert normalized["gumtree"]["gumtree_availability_override"] == "AVAILABLE"
     decision = classify_product(normalized)
     assert decision.config_state == "UNCONFIGURED"
     assert decision.allowed_to_create is False
+
+
+def test_reader_normalizes_description_images_and_sku_for_listing_pipeline():
+    normalized = normalize_product(node())
+    assert normalized["description"] == "Current Shopify description"
+    assert normalized["featured_image_url"] == "https://cdn.example.test/featured.jpg"
+    assert normalized["image_urls"] == [
+        "https://cdn.example.test/featured.jpg",
+        "https://cdn.example.test/second.jpg",
+    ]
+    assert normalized["sku"] == "1BT11"
 
 
 def test_invalid_integer_is_preserved_for_validator():
