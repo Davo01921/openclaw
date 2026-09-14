@@ -13,7 +13,9 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-DEFAULT_MODELS = "google/gemini-3.5-flash,openai/gpt-5.6-sol"
+# Empty means adaptive-model-router resolves the live general inference route.
+# BETTA_VISION_MODELS/--models is an explicit one-off operator override.
+DEFAULT_MODELS = ""
 FEMALE_ACCEPT = 0.85
 
 CATALOGUE_PROMPT = (
@@ -105,9 +107,11 @@ def run_review(files: list[Path], mode: str, agent: str, models: list[str]) -> d
     child_env = os.environ.copy()
     preferred = ["/opt/homebrew/opt/node/bin", "/opt/homebrew/bin"]
     child_env["PATH"] = os.pathsep.join(preferred + child_env.get("PATH", "").split(os.pathsep))
-    for model in models:
-        cmd = ["openclaw", "infer", "model", "run", "--agent", agent, "--model", model,
-               "--prompt", prompt, "--json"]
+    for model in (models or [None]):
+        cmd = ["openclaw", "infer", "model", "run", "--agent", agent]
+        if model:
+            cmd.extend(["--model", model])
+        cmd.extend(["--prompt", prompt, "--json"])
         for path in files:
             cmd.extend(["--file", str(path)])
         completed = subprocess.run(cmd, capture_output=True, text=True, timeout=60, env=child_env)
@@ -124,7 +128,9 @@ def run_review(files: list[Path], mode: str, agent: str, models: list[str]) -> d
             except (KeyError, json.JSONDecodeError, TypeError, ValueError) as exc:
                 errors.append({"model": model, "error": f"invalid structured output: {exc}", "usage": usage})
                 continue
-            provider, resolved_model = model.split("/", 1)
+            # Attest what actually executed; the requested override is not proof.
+            provider = envelope.get("provider") or "unknown"
+            resolved_model = envelope.get("model") or "unknown"
             return {
                 "provider": provider,
                 "model": resolved_model,

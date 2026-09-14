@@ -6,6 +6,8 @@ Do **not** implement the skill as a single giant prompt that lets the active mod
 
 Use a deterministic orchestrator for state, validation, timing, retries, and mutation authority. Use model workers only where visual judgement or image generation is required.
 
+General vision and reasoning model selection is owned by `adaptive-model-router` v2.1. Betta declares capability and escalation requirements, while OpenClaw resolves the live OpenAI → Qwen Token Plan → Qwen API route. Do not pin a provider/model or duplicate that fallback chain inside this workflow. The fixed `grok_hero` Grok/xAI image-generation stage remains a bounded specialist service outside general inference routing.
+
 ```text
 Discord batch collector
         |
@@ -67,6 +69,8 @@ This makes retry cost proportional to the failed work instead of the entire fish
 ## Suggested implementation boundary
 
 `scripts/betta_batch.py` is the authoritative local validation, title, transition, fork/join, and mutation-envelope gate. Runtime adapters remain responsible for Discord, image generation/editing, and Shopify API calls.
+
+`scripts/vision_review.py` invokes general inference without `--model`, preserving the live adaptive-router chain. It records the actual provider/model reported by the returned execution envelope. `BETTA_VISION_MODELS` or `--models` is an explicit one-off operator override, not workflow policy.
 
 Typed operations should include:
 

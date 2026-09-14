@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -30,7 +31,7 @@ def main() -> int:
     parser.add_argument("manifest", type=Path)
     parser.add_argument("--workers", type=int, default=4)
     parser.add_argument("--agent", default="fred")
-    parser.add_argument("--models", default="google/gemini-3.5-flash,openai/gpt-5.6-sol")
+    parser.add_argument("--models", default=os.getenv("BETTA_VISION_MODELS", ""))
     args = parser.parse_args()
     jobs = json.loads(args.manifest.read_text(encoding="utf-8"))
     if not isinstance(jobs, list) or not jobs:

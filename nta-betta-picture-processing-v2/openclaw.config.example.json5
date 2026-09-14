@@ -1,16 +1,13 @@
 // Example OpenClaw configuration fragment.
 // Merge carefully into the existing openclaw.json; do not replace unrelated config.
-// Exact provider/model IDs must match models already configured on David's OpenClaw installation.
+// General inference inherits the live adaptive-model-router v2.1 chain. Do not pin
+// provider/model IDs here. grok_hero remains a fixed Grok/xAI specialist service.
 
 {
   agents: {
     entries: {
       "betta-vision-worker": {
         name: "Betta Vision Worker",
-        model: {
-          primary: "google/gemini-3.5-flash",
-          fallbacks: ["openai/gpt-5.6-sol"]
-        },
         thinkingDefault: "low",
         skills: [],
         tools: {
@@ -22,10 +19,6 @@
 
       "betta-escalation": {
         name: "Betta Exception Reviewer",
-        model: {
-          primary: "<GPT_5_6_SOL_MODEL>",
-          fallbacks: []
-        },
         // Restrict this agent to diagnosis/review tools where practical.
         skills: ["betta-picture-processing"]
       }
