@@ -1,6 +1,6 @@
 # TECHDOC — NTA StoreUse order
 
-Version: 1.0  
+Version: 1.1  
 Runtime owner: Fred/OpenClaw  
 Canonical repository: `Davo01921/openclaw-skills`
 
@@ -214,4 +214,8 @@ The initial StoreUse deployment was validated with non-destructive and local-sta
 
 No fake Shopify StoreUse order was created during deployment testing.
 
-The first real authorised StoreUse batch remains the production mutation proof for the complete `CLOSED_VERIFIED` path.
+## Production mutation proof
+
+The complete production path has subsequently been exercised with an authorised real StoreUse event for **1 × Seachem Prime 100 mL**. Intake, execute and daily-close behaviour completed successfully through the StoreUse workflow, providing the production mutation proof that was still pending at initial deployment.
+
+The production contract therefore remains: one idempotent `$0.00 AUD`, paid and fulfilled `NTA StoreUse` order per Sydney date, with Shopify inventory decremented through the order path and verified by fresh read-back. The system must continue to fail closed on ambiguity, missing authorization or verification mismatch.
