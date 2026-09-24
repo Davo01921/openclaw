@@ -1,16 +1,17 @@
 ---
 name: "nta-dymo-tank-label"
-description: "Deterministically format, preview, check, and explicitly print NTA livestock tank labels to a local DYMO LetraTag 200B over Bluetooth LE."
+description: "Deterministically format, preview, check, and explicitly print NTA livestock tank labels, with an optional Shopify Code 128 barcode, to a local DYMO LetraTag 200B over Bluetooth LE."
 ---
 
 # NTA DYMO Tank Label
 
 ## Purpose
 
-Render the compact two-line DYMO text for a received livestock item, preview it,
-check the local printer, and print only when physical printing is explicitly
-authorized. This presentation module does not resolve identity, decide price or
-bulk pricing, interpret stock, set arrival dates, or write to Shopify.
+Render the compact two-line DYMO text for a received livestock item, optionally
+append its verified Shopify barcode as Code 128-B, preview it, check the local
+printer, and print only when physical printing is explicitly authorized. This
+presentation module does not resolve identity, decide price or bulk pricing,
+interpret stock, set arrival dates, create barcode values, or write to Shopify.
 
 It is called by `nta-inventory-update` through `nta-product-orchestrator` only
 after the intake state has been resolved. In write mode, use the fresh Shopify
@@ -77,6 +78,7 @@ label:
   shopify_arrival_date:     # custom.arrival_date, ISO YYYY-MM-DD
   quantity:                 # received Shopify-selling units; positive integer
   source: shopify_readback | dry_run_proposed_shopify_state
+  shopify_barcode: null     # optional verified Shopify variant barcode
 ```
 
 `quantity` is the received quantity after the established supplier-pack to
@@ -113,6 +115,12 @@ The standard two-line raster uses **Arial Bold 15 px** and an ordinary ASCII
 manual physical-cut marker. The LetraTag cutter is manual: never attempt to
 actuate, simulate, or control it.
 
+When `shopify_barcode` is present, append a full-height **Code 128-B** raster
+after the two-line text. Preserve 12-module quiet zones and do not print the
+human-readable barcode value below the bars. Accept only non-empty printable
+ASCII values of at most 48 characters. Never generate, infer, transform, or
+silently replace the verified Shopify barcode value.
+
 ## Bulk-pricing rule
 
 Append the optional bulk segment only when all of the following are true:
@@ -134,6 +142,8 @@ do not invent a threshold or discount.
   today's date, supplier ETA, photo date, availability date, or a tank date.
 - Reject quantity or price unit ambiguity rather than formatting a misleading
   label.
+- Reject a supplied barcode that is empty, longer than 48 characters, or not
+  printable ASCII. Omit the barcode only when the optional field is null.
 - Return `READY` with `text` and `warnings`, or `REVIEW_REQUIRED` with the
   missing/invalid fields. Never mutate Shopify.
 - For BLE failures, return a concise code and message covering printer not
@@ -150,6 +160,9 @@ labels:
       Blue Emperor Tetra | $8ea
       090926 | Q30
     source: shopify_readback | dry_run_proposed_shopify_state
+    shopify_barcode: null | string
+    barcode_format: null | CODE128_B
+    barcode_human_readable: null | false
     warnings: []
 ```
 

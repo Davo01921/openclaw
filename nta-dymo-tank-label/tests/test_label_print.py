@@ -68,6 +68,36 @@ class LabelPrintTests(unittest.TestCase):
             "Cardinal Tetra | $8ea\n090926 | Q20",
         )
 
+    def test_shopify_barcode_is_encoded_as_code128_b(self):
+        symbols = MODULE.code128b_symbols("X12ENA3C59")
+        self.assertEqual(symbols[0], 104)
+        self.assertEqual(symbols[-1], 106)
+        expected_checksum = (
+            104 + sum(i * code for i, code in enumerate(symbols[1:-2], 1))
+        ) % 103
+        self.assertEqual(symbols[-2], expected_checksum)
+        modules = MODULE._barcode_modules("X12ENA3C59")
+        self.assertTrue(modules.startswith("0" * MODULE.BARCODE_QUIET_MODULES))
+        self.assertTrue(modules.endswith("0" * MODULE.BARCODE_QUIET_MODULES))
+
+    def test_barcode_preview_appends_to_text_and_keeps_head_height(self):
+        text_only = MODULE.render_image("RCS Red Cherry Shrimp | $5ea\n240926 | Q100")
+        with_barcode = MODULE.render_image(
+            "RCS Red Cherry Shrimp | $5ea\n240926 | Q100", "X12ENA3C59"
+        )
+        self.assertEqual(with_barcode.height, 30)
+        self.assertGreater(with_barcode.width, text_only.width)
+
+    def test_barcode_uses_full_height_without_human_readable_text(self):
+        image = MODULE._render_barcode_raster("X12ENA3C59")
+        self.assertEqual(image.height, 30)
+        ink_rows = [
+            y
+            for y in range(image.height)
+            if any(image.getpixel((x, y)) == 0 for x in range(image.width))
+        ]
+        self.assertEqual(ink_rows, list(range(30)))
+
     def test_structured_input_never_invents_missing_date(self):
         payload = {
             "product_name": "Cardinal Tetra",

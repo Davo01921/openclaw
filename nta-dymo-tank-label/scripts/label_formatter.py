@@ -73,6 +73,18 @@ def render_label(label: dict[str, Any]) -> dict[str, Any]:
     if source not in _ALLOWED_SOURCES:
         invalid.append("source")
 
+    barcode = label.get("shopify_barcode")
+    if barcode is not None:
+        if (
+            not isinstance(barcode, str)
+            or not barcode.strip()
+            or len(barcode.strip()) > 48
+            or any(ord(char) < 32 or ord(char) > 126 for char in barcode.strip())
+        ):
+            invalid.append("shopify_barcode")
+        else:
+            barcode = barcode.strip()
+
     bulk_segment = ""
     bulk_price = label.get("bulk_price")
     bulk_minimum = label.get("bulk_min_quantity")
@@ -124,5 +136,6 @@ def render_label(label: dict[str, Any]) -> dict[str, Any]:
         "status": "READY",
         "text": text,
         "source": source,
+        "shopify_barcode": barcode,
         "warnings": warnings,
     }

@@ -1,6 +1,6 @@
 # SPECDOC — NTA DYMO tank labels
 
-Version: 2.0
+Version: 2.1
 
 Status: production-capable with explicit per-print authorization
 
@@ -28,6 +28,11 @@ Structured input MUST contain:
 only when the price is finite and non-negative, the minimum is an integer of at
 least 2, and the bulk price is strictly less than retail for the same selling
 unit. Invalid optional bulk data MUST be omitted with a warning.
+
+`shopify_barcode` MAY be null. When supplied, it MUST be the verified Shopify
+variant barcode, contain 1-48 printable ASCII characters, and be encoded
+without alteration as Code 128-B. The system MUST NOT generate or infer a
+barcode value.
 
 Missing, invalid, ambiguous, or unit-mismatched required input MUST produce
 `REVIEW_REQUIRED`. The system MUST NOT invent or infer a replacement.
@@ -59,6 +64,13 @@ ASCII `$` character.
 A standard two-line label MUST use Arial Bold at 15 px. The raster MUST be
 monochrome and 30 pixels high. Horizontal scaling MAY compensate for the
 printer's pixel geometry but MUST preserve hard monochrome edges.
+
+When a barcode is supplied, its raster MUST be appended after the text with a
+12-pixel source-raster gap. Bars MUST occupy the full 30-pixel print-head
+height and MUST include at least 12 quiet modules on both sides. The raster
+MUST NOT include human-readable characters below the bars. Barcode results
+MUST identify `barcode_format: CODE128_B` and
+`barcode_human_readable: false`.
 
 ## Operation contract
 
@@ -145,7 +157,9 @@ The release is acceptable when:
 3. structured preview produces the exact expected two-line text and 30-pixel
    raster without Bluetooth;
 4. pipe and cutter invariants are covered by tests;
-5. a powered-printer acceptance test, when explicitly authorised, returns a
+5. Code 128-B symbol, checksum, quiet-zone, full-height, and optional-rendering
+   invariants are covered by tests;
+6. a powered-printer acceptance test, when explicitly authorised, returns a
    successful driver result for exactly one label;
-6. no model call, Shopify mutation, cutter action, or automatic physical retry
+7. no model call, Shopify mutation, cutter action, or automatic physical retry
    occurs in the deterministic print path.

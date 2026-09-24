@@ -32,9 +32,11 @@ Provide or verify:
 - Shopify `custom.arrival_date` in write mode, or the proposed value for that
   same field in dry-run mode;
 - received quantity in Shopify selling units.
+- verified Shopify variant barcode, when a barcode is requested.
 
 Never guess a missing name, price, date, quantity, bulk threshold, or selling
-unit. Stop for review when any required fact is uncertain.
+unit. Never create or infer a barcode. Stop for review when any required fact
+is uncertain.
 
 ## Preview procedure
 
@@ -49,14 +51,17 @@ unit. Stop for review when any required fact is uncertain.
 3. Confirm the name, price, optional bulk tier, date, and quantity against the
    approved source.
 4. Confirm the text uses Arial Bold 15 px and an ordinary `$` symbol.
-5. If anything is wrong, correct the approved input and request another preview.
+5. When a barcode is requested, confirm full-height Code 128 bars appear after
+   the text with blank quiet margins and no printed value below the bars.
+6. If anything is wrong, correct the approved input and request another preview.
    Previewing never scans for the printer or consumes tape.
 
 Example request:
 
 ```text
 Fred, preview a tank label for Cardinal Tetra, $7 each, bulk $6 each for 10+,
-arrival 9 September 2026, quantity 40. Send me the PNG.
+arrival 9 September 2026, quantity 40, using verified Shopify barcode
+X12ENA3C59. Send me the PNG.
 ```
 
 ## Physical print procedure
