@@ -1,10 +1,10 @@
 ---
 name: "nta-shopify-product-writer"
-version: "1.1"
+version: "1.2"
 description: "Write-phase implementation for nta-shopify-write-verifier; applies only authorised NTA Shopify changes and records before/after state."
 ---
 
-# NTA Shopify Product Writer — v1.0
+# NTA Shopify Product Writer — v1.2
 
 ## Purpose
 
@@ -41,7 +41,10 @@ writes:
 - Write only fields explicitly authorised by the calling workflow.
 - Preserve descriptions, images, handles, collections, tags, price, inventory, vendor, status and metafields unless each affected field is explicitly included in the change set.
 - Treat inventory quantity as a separate operation from product/variant metadata.
+- Variant `barcode` is an explicitly supported variant metadata field. Apply it only when the exact target variant ID and exact proposed barcode are authorised. For missing-barcode label workflows, use Shopify `productVariantsBulkUpdate`; never generate the barcode inside the writer.
 - Never infer additional changes from context.
+- Never overwrite a non-empty existing barcode as part of the automatic label workflow. If the pre-write read shows a non-empty barcode, preserve it and return the mismatch upstream for review.
+- An internal `NTA-V-...` barcode is scan identification only; never write it into a GTIN/UPC/EAN/ISBN/MPN field or advertise it as a standards-issued identifier.
 - Use exact product and variant IDs established by `nta-product-resolver`.
 - Refuse LOW-confidence identity writes.
 - If one uncertain field can be safely skipped without blocking independent deterministic fields, apply only the independent approved fields and report the partial result.
