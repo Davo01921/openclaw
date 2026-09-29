@@ -1,10 +1,10 @@
 ---
 name: "nta-product-orchestrator"
-version: "1.3"
+version: "1.4"
 description: "Coordinate NTA product decisions through canonical modules, canonical general-model routing, and the shared Shopify write-verification boundary."
 ---
 
-# NTA Product Orchestrator — v1.3
+# NTA Product Orchestrator — v1.4
 
 ## Purpose
 
@@ -23,19 +23,20 @@ Do not duplicate child-skill rules here. When a canonical child skill changes, t
 Use these modules where applicable:
 
 1. `nta-product-resolver` — match/create decision, SKU, vendor identity, duplicate prevention. `nta-product-identity-resolver` is a compatible legacy entry point.
-2. `nta-product-classifier` — category, subtype, one-off/replenishable classification.
-3. `nta-supplier-unit-cost-normalizer` — GST, packs, retail-unit conversion, landed cost inputs.
-4. `nta-retail-pricing-standard` — final retail-pricing decision and price confidence.
-5. `nta-product-facts-research` — verified product facts/specifications for content and decision support.
-6. `nta-product-description-standard` — canonical NTA description generation and content QA.
-7. `nta-inventory-state` — physical quantity interpretation and inventory-set/delta decision.
-8. `nta-product-availability` — preorder/orderability state independent of physical stock.
-9. `nta-product-merchandising` — tags, collections and customer-facing merchandising classifications.
-10. `nta-product-metafields` — map approved product state to Shopify metafields.
-11. `nta-shopify-write-verifier` — the only canonical Shopify mutation boundary: authorised write then fresh live-state assertion.
-12. `nta-product-exception-gate` — AUTO_APPROVE / WARNING / REVIEW_REQUIRED / BLOCK.
-13. `nta-dymo-tank-label` — deterministic read-only two-line DYMO tank-label output from approved livestock intake state and Shopify arrival-date state.
-14. `adaptive-model-router` — the sole authority for interchangeable reasoning, extraction, review and vision-inference model selection whenever a product phase genuinely needs a general model.
+2. `nta-product-barcode` — preserve a live existing variant barcode or deterministically propose an internal NTA barcode when a label workflow finds the barcode missing; owns barcode collision policy but never invents GTIN/UPC/EAN/ISBN/MPN identifiers.
+3. `nta-product-classifier` — category, subtype, one-off/replenishable classification.
+4. `nta-supplier-unit-cost-normalizer` — GST, packs, retail-unit conversion, landed cost inputs.
+5. `nta-retail-pricing-standard` — final retail-pricing decision and price confidence.
+6. `nta-product-facts-research` — verified product facts/specifications for content and decision support.
+7. `nta-product-description-standard` — canonical NTA description generation and content QA.
+8. `nta-inventory-state` — physical quantity interpretation and inventory-set/delta decision.
+9. `nta-product-availability` — preorder/orderability state independent of physical stock.
+10. `nta-product-merchandising` — tags, collections and customer-facing merchandising classifications.
+11. `nta-product-metafields` — map approved product state to Shopify metafields.
+12. `nta-shopify-write-verifier` — the only canonical Shopify mutation boundary: authorised write then fresh live-state assertion.
+13. `nta-product-exception-gate` — AUTO_APPROVE / WARNING / REVIEW_REQUIRED / BLOCK.
+14. `nta-dymo-tank-label` — deterministic read-only two-line DYMO tank-label output from approved livestock intake state and Shopify arrival-date state.
+15. `adaptive-model-router` — the sole authority for interchangeable reasoning, extraction, review and vision-inference model selection whenever a product phase genuinely needs a general model.
 
 Existing specialist workflows remain valid entry points but must call these modules instead of maintaining conflicting copies of the same rules:
 
@@ -66,6 +67,8 @@ product:
     resolution_status:
     sku:
     barcode:
+    barcode_source: existing_shopify | generated_internal | null
+    barcode_verification: VERIFIED | PROPOSED | null
     vendor:
     supplier_sku:
     match_confidence:
@@ -167,7 +170,7 @@ Do not increase available inventory from an order alone.
 
 Run:
 
-`supplier-order parser/intake → identity → classifier → cost normalizer → inventory state → pricing if required → availability → metafields → exception gate → Shopify writer → QA auditor → DYMO tank label when requested`
+`supplier-order parser/intake → identity → barcode policy when label requested → classifier → cost normalizer → inventory state → pricing if required → availability → metafields → exception gate → Shopify writer/verifier → QA auditor → DYMO tank label when requested`
 
 ### Existing-product catalogue cleanup
 
@@ -194,6 +197,8 @@ Betta image processing remains specialised and is not replaced by this orchestra
 ## Dependency rules
 
 - Identity must be resolved before any write.
+- When a DYMO label is requested, barcode policy runs only after exact variant identity is resolved. Existing non-empty Shopify barcodes are preserved. A missing barcode may be generated only as the internal `NTA-V-<legacyResourceId>` value, collision-checked, written through the verifier, and freshly read back before physical printing.
+- Internal NTA barcodes are not GTIN/UPC/EAN/ISBN/MPN values and must never be represented to Google or another external channel as such.
 - Classification must be resolved before category-specific description or pricing logic.
 - Cost normalisation must complete before pricing when supplier cost is part of the decision.
 - Physical inventory and customer availability are separate states.
@@ -201,7 +206,7 @@ Betta image processing remains specialised and is not replaced by this orchestra
 - Description generation must consume verified facts rather than invent missing specifications.
 - Shopify Writer must receive an explicit authorised field list.
 - QA Auditor must independently re-read changed fields after writing.
-- DYMO tank-label generation is read-only and occurs after QA in write mode so it consumes the verified `custom.arrival_date`. In dry-run mode it consumes the proposed value for that same field; it must not invent a second arrival or availability date.
+- DYMO tank-label generation is read-only and occurs after QA in write mode so it consumes the verified `custom.arrival_date` and verified variant barcode. In dry-run mode it may consume a proposed internal barcode for preview only; physical printing of a newly generated barcode is blocked until Shopify write/read-back verification succeeds.
 
 ## Write safety
 
