@@ -1,10 +1,14 @@
 # TECHDOC — NTA DYMO tank labels
 
-Version: 2.2
+Version: 2.3
 
 Runtime owner: Fred/OpenClaw
 
-Canonical repository: `Davo01921/openclaw-skills`
+Canonical repository / source of truth: `Davo01921/openclaw-skills`
+
+Deployment mirrors: `Davo01921/agent-memory/skills` and
+`~/.openclaw/workspace/fred/skills`. Mirrors must follow the canonical source and
+must not introduce conflicting behavior.
 
 ## System overview
 
@@ -15,6 +19,15 @@ Discord / Telegram / WhatsApp
               |
               v
         Fred / OpenClaw
+              |
+              v
+ exact Shopify variant resolution
+              |
+              v
+ nta-product-barcode (only if barcode missing)
+              |
+              v
+ Shopify collision check -> verified write -> fresh read-back
               |
               v
   nta-dymo-tank-label formatter
@@ -30,8 +43,11 @@ Discord / Telegram / WhatsApp
 ```
 
 The conversation layer interprets the staff request and collects missing facts.
-Formatting, validation, rendering, discovery, printing, and result
-interpretation are deterministic code and require zero model calls.
+Barcode fallback policy, formatting, validation, rendering, discovery,
+verification sequencing, printing, and result interpretation are deterministic
+code and require zero model calls. `nta-product-barcode` owns only the missing-
+barcode policy and Shopify verification sequence; the DYMO presentation skill
+remains Shopify-read-only.
 
 ## Components
 
@@ -43,12 +59,16 @@ interpretation are deterministic code and require zero model calls.
 - `requirements.lock`: pinned printer dependency.
 - `tests/test_label_print.py`: non-mutating regression suite.
 - `scripts/dry_run.py`: canonical formatter regression fixture.
+- `../nta-product-barcode/`: canonical missing-barcode policy, Shopify adapter,
+  collision checks, read-back verification, and regression tests.
 - `SOP.md`: staff operating procedure.
 - `SPECDOC.md`: normative behavior and acceptance contract.
 
-The deployed Fred skill is under
-`~/.openclaw/workspace/fred/skills/nta-label-print`. The canonical shared source
-is `nta-dymo-tank-label` in the skills repository.
+The deployed Fred label skill is under
+`~/.openclaw/workspace/fred/skills/nta-label-print`; the barcode policy mirror is
+under `~/.openclaw/workspace/fred/skills/nta-product-barcode` when synced. The
+canonical shared sources are `nta-dymo-tank-label` and `nta-product-barcode` in
+`Davo01921/openclaw-skills`.
 
 ## Runtime and dependencies
 
@@ -97,8 +117,27 @@ instead of inventing an invalid or missing required field.
 
 `shopify_barcode` is required for every structured NTA product label. It must
 be the verified Shopify variant barcode containing 1-48 printable ASCII
-characters. Missing or invalid barcode data returns `REVIEW_REQUIRED`; the
-formatter and renderer never create or change barcode values.
+characters. Missing or invalid barcode data returns `REVIEW_REQUIRED` at the
+DYMO skill boundary. If the wider workflow fresh-reads a null or blank barcode,
+`nta-product-barcode` generates `NTA-V-<legacyResourceId>`, checks for foreign-
+variant collisions, writes only the exact variant barcode through Shopify, then
+freshly reads and rechecks uniqueness before the barcode is accepted for print.
+
+## Missing-barcode Shopify sequence
+
+The concrete adapter is `../nta-product-barcode/scripts/shopify_adapter.py`.
+With an authenticated Shopify Admin GraphQL transport it performs:
+
+1. fresh variant read (`id`, `legacyResourceId`, `barcode`, `product.id`);
+2. preserve existing barcode, or deterministically propose `NTA-V-<legacyResourceId>`;
+3. pre-write barcode collision search;
+4. one exact `productVariantsBulkUpdate` barcode write when required;
+5. independent fresh variant read-back;
+6. post-write collision search;
+7. return `VERIFIED` only when all checks pass.
+
+A mutation response by itself is never proof of completion. Dry-run may propose
+the internal barcode but may not write Shopify or physically print it.
 
 ## Rendering
 
@@ -159,6 +198,10 @@ Required non-mutating checks are:
 - canonical formatter dry run;
 - the regression suite, including Code 128-B checksum, quiet-zone, full-height,
   required-structured-barcode, and rendering checks;
+- `nta-product-barcode` policy tests for preserve-existing, deterministic generation,
+  collision handling, and read-back comparison;
+- Shopify adapter tests for dry-run no-write, exact write, fresh verification,
+  collision block, and mismatch failure;
 - a structured Cardinal Tetra dry-run preview;
 - skill frontmatter and reference validation.
 
