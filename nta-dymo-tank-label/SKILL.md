@@ -119,8 +119,12 @@ For every structured NTA product label, append the verified `shopify_barcode`
 as a full-height **Code 128-B** raster after the two-line text. Preserve 12-module quiet zones and do not print the
 human-readable barcode value below the bars. Accept only non-empty printable
 ASCII values of at most 48 characters. Never generate, infer, transform, or silently replace the verified Shopify
-barcode value. If the structured label has no verified Shopify barcode, return
-`REVIEW_REQUIRED` rather than printing a text-only product label.
+barcode value inside this presentation skill. When Fred is executing the wider
+NTA workflow and the resolved Shopify variant barcode is missing, route upstream
+to `nta-product-barcode`: preserve any existing barcode, otherwise propose the
+internal `NTA-V-<legacyResourceId>` value, collision-check it, write it through
+`nta-shopify-write-verifier`, and freshly verify it before a physical print.
+Direct invocation of this skill with no barcode still returns `REVIEW_REQUIRED`.
 
 ## Bulk-pricing rule
 
