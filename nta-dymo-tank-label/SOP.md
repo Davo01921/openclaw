@@ -35,8 +35,12 @@ Provide or verify:
 - verified Shopify variant barcode for every normal structured product label.
 
 Never guess a missing name, price, date, quantity, bulk threshold, selling
-unit, or barcode. Never create or infer a barcode. Stop for review when any
-required fact is uncertain; do not print a text-only structured product label.
+unit, or barcode inside the DYMO presentation skill. If the resolved Shopify
+variant has no barcode, Fred must route upstream to `nta-product-barcode`, which
+creates only the deterministic internal `NTA-V-<legacyResourceId>` value,
+collision-checks it, writes it to Shopify through the canonical verifier, and
+freshly verifies it before printing. Do not print a text-only structured
+product label.
 
 ## Preview procedure
 
@@ -63,6 +67,21 @@ Fred, preview a tank label for Cardinal Tetra, $7 each, bulk $6 each for 10+,
 arrival 9 September 2026, quantity 40, using verified Shopify barcode
 X12ENA3C59. Send me the PNG.
 ```
+
+## Missing-barcode procedure
+
+If the exact resolved Shopify variant has a null or blank barcode:
+
+1. Fred fresh-reads the variant barcode and numeric `legacyResourceId` from Shopify.
+2. `nta-product-barcode` proposes `NTA-V-<legacyResourceId>`.
+3. Fred checks Shopify for a collision with another variant.
+4. If collision-free, the exact variant barcode field is written through `nta-shopify-write-verifier`.
+5. Fred independently re-reads Shopify and requires the exact barcode value to match.
+6. Fred searches the barcode again; any different variant match blocks printing.
+7. Only a final `VERIFIED` barcode may be passed to the DYMO label skill.
+
+Existing non-empty Shopify barcodes are preserved and are never automatically overwritten.
+The generated NTA barcode is an internal scan identifier, not a GTIN/UPC/EAN/ISBN/MPN.
 
 ## Physical print procedure
 
@@ -115,5 +134,8 @@ single print.
 
 ## Production boundary
 
-This workflow formats, previews, checks, and prints labels. It must not change
-Shopify, inventory, pricing, product data, or any other production workflow.
+`nta-dymo-tank-label` itself formats, previews, checks, and prints labels and
+must not mutate Shopify. The wider Fred/OpenClaw workflow may invoke
+`nta-product-barcode` before the label step solely to populate a missing variant
+barcode through the canonical Shopify write-verification boundary. That upstream
+write must complete and verify before a physical label print is allowed.
