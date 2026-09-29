@@ -1,6 +1,6 @@
 # TECHDOC — NTA DYMO tank labels
 
-Version: 2.1
+Version: 2.2
 
 Runtime owner: Fred/OpenClaw
 
@@ -95,9 +95,10 @@ Allowed sources are `shopify_readback` and
 `dry_run_proposed_shopify_state`. The formatter returns `REVIEW_REQUIRED`
 instead of inventing an invalid or missing required field.
 
-`shopify_barcode` is optional. When present, it must be a verified Shopify
-variant barcode containing 1-48 printable ASCII characters. The formatter and
-renderer never create or change barcode values.
+`shopify_barcode` is required for every structured NTA product label. It must
+be the verified Shopify variant barcode containing 1-48 printable ASCII
+characters. Missing or invalid barcode data returns `REVIEW_REQUIRED`; the
+formatter and renderer never create or change barcode values.
 
 ## Rendering
 
@@ -110,8 +111,8 @@ The renderer preserves single and triple pipe runs and rejects all other pipe
 runs. It reports the number of visible `|||` markers but never exposes a cutter
 control operation.
 
-An optional barcode is encoded directly as Code 128-B with a calculated modulo
-103 checksum, 12 quiet modules on each side, full 30-row bar height, and no
+The verified Shopify barcode is encoded directly as Code 128-B with a calculated
+modulo 103 checksum, 12 quiet modules on each side, full 30-row bar height, and no
 human-readable characters. It is appended after a 12-pixel source-raster gap.
 The entire image is then horizontally doubled with nearest-neighbour scaling.
 
@@ -156,8 +157,8 @@ Required non-mutating checks are:
 
 - Python compilation;
 - canonical formatter dry run;
-- the ten-test regression suite, including Code 128-B checksum, quiet-zone,
-  full-height, and optional-rendering checks;
+- the regression suite, including Code 128-B checksum, quiet-zone, full-height,
+  required-structured-barcode, and rendering checks;
 - a structured Cardinal Tetra dry-run preview;
 - skill frontmatter and reference validation.
 

@@ -32,11 +32,11 @@ Provide or verify:
 - Shopify `custom.arrival_date` in write mode, or the proposed value for that
   same field in dry-run mode;
 - received quantity in Shopify selling units.
-- verified Shopify variant barcode, when a barcode is requested.
+- verified Shopify variant barcode for every normal structured product label.
 
-Never guess a missing name, price, date, quantity, bulk threshold, or selling
-unit. Never create or infer a barcode. Stop for review when any required fact
-is uncertain.
+Never guess a missing name, price, date, quantity, bulk threshold, selling
+unit, or barcode. Never create or infer a barcode. Stop for review when any
+required fact is uncertain; do not print a text-only structured product label.
 
 ## Preview procedure
 
@@ -51,8 +51,8 @@ is uncertain.
 3. Confirm the name, price, optional bulk tier, date, and quantity against the
    approved source.
 4. Confirm the text uses Arial Bold 15 px and an ordinary `$` symbol.
-5. When a barcode is requested, confirm full-height Code 128 bars appear after
-   the text with blank quiet margins and no printed value below the bars.
+5. Confirm full-height Code 128 bars appear after the text with blank quiet
+   margins and no printed value below the bars.
 6. If anything is wrong, correct the approved input and request another preview.
    Previewing never scans for the printer or consumes tape.
 

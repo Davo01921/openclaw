@@ -61,12 +61,15 @@ class LabelPrintTests(unittest.TestCase):
             "shopify_arrival_date": "2026-09-09",
             "quantity": 20,
             "source": "shopify_readback",
+            "shopify_barcode": "X12ENA3C59",
         }
         args = argparse.Namespace(text=None, label_file=None, label_json=json.dumps(payload))
         self.assertEqual(
             MODULE.resolve_label_text(args),
             "Cardinal Tetra | $8ea\n090926 | Q20",
         )
+        _, barcode = MODULE.resolve_label_content(args)
+        self.assertEqual(barcode, "X12ENA3C59")
 
     def test_shopify_barcode_is_encoded_as_code128_b(self):
         symbols = MODULE.code128b_symbols("X12ENA3C59")
@@ -98,12 +101,25 @@ class LabelPrintTests(unittest.TestCase):
         ]
         self.assertEqual(ink_rows, list(range(30)))
 
+    def test_structured_input_requires_verified_shopify_barcode(self):
+        payload = {
+            "product_name": "Cardinal Tetra",
+            "retail_price": "8.00",
+            "shopify_arrival_date": "2026-09-09",
+            "quantity": 20,
+            "source": "shopify_readback",
+        }
+        result = MODULE.render_label(payload)
+        self.assertEqual(result["status"], "REVIEW_REQUIRED")
+        self.assertIn("shopify_barcode", result["missing_or_invalid_fields"])
+
     def test_structured_input_never_invents_missing_date(self):
         payload = {
             "product_name": "Cardinal Tetra",
             "retail_price": "8.00",
             "quantity": 20,
             "source": "shopify_readback",
+            "shopify_barcode": "X12ENA3C59",
         }
         args = argparse.Namespace(text=None, label_file=None, label_json=json.dumps(payload))
         with self.assertRaises(MODULE.LabelError):

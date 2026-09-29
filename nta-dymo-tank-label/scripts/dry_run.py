@@ -18,6 +18,7 @@ def main():
                 "shopify_arrival_date": "2026-09-09",
                 "quantity": 30,
                 "source": "dry_run_proposed_shopify_state",
+                "shopify_barcode": "X12ENA3C59",
             },
             "Blue Emperor Tetra | $8ea\n090926 | Q30",
         ),
@@ -30,6 +31,7 @@ def main():
                 "shopify_arrival_date": "2026-09-09",
                 "quantity": 40,
                 "source": "dry_run_proposed_shopify_state",
+                "shopify_barcode": "X12ENA3C59",
             },
             "Cardinal Tetra | $7ea | $6ea/10+\n090926 | Q40",
         ),
@@ -72,7 +74,7 @@ def main():
 
     print(
         "DRY_RUN_PASS: deterministic formatter; 2 ready cases, "
-        "bulk-warning case, invalid-date case; no Shopify writes, "
+        "bulk-warning case, invalid-date case, required barcode; no Shopify writes, "
         "print operations, or model calls"
     )
     for payload, _ in ready_cases:
