@@ -23,6 +23,8 @@ expect("nta-shopify-write-verifier" not in r["route"], "dry run must not route t
 r = build_route({**base, "mode": "write", "price_review_required": True, "label_requested": True})
 expect(r["status"] == "READY", "write route should be READY")
 expect("nta-retail-pricing-standard" in r["route"], "pricing missing")
+expect("nta-product-barcode" in r["route"], "barcode policy missing for label route")
+expect(r["route"].index("nta-product-barcode") < r["route"].index("nta-product-classifier"), "barcode policy must follow identity and precede downstream write planning")
 expect(r["route"][-2:] == ["nta-shopify-write-verifier", "nta-dymo-tank-label"], "write verification must precede label")
 
 r = build_route({**base, "supplier_cost_supplied": False})
@@ -51,7 +53,7 @@ expect(child_block["workflow_status"] == "BLOCK", "BLOCK workflow status mismatc
 child_ready = child_result_gate("nta-product-resolver", "READY")
 expect(child_ready["action"] == "CONTINUE", "non-terminal child result should not trigger terminal gate")
 
-print("DRY_RUN_PASS: deterministic inventory-update routing and fail-fast gating; received/write/dry-run, optional cost/pricing, ORDERED redirect, invalid-state gate, label-after-verification ordering, REVIEW_REQUIRED/BLOCK short-circuit; no Shopify writes, network calls, or model calls")
+print("DRY_RUN_PASS: deterministic inventory-update routing and fail-fast gating; received/write/dry-run, optional cost/pricing, ORDERED redirect, invalid-state gate, barcode-before-write plus label-after-verification ordering, REVIEW_REQUIRED/BLOCK short-circuit; no Shopify writes, network calls, or model calls")
 print("Received dry-run route:", " -> ".join(build_route(base)["route"]))
 print("Write+label final steps:", " -> ".join(build_route({**base, "mode": "write", "price_review_required": True, "label_requested": True})["route"][-3:]))
 print("ORDERED status:", build_route({**base, "job_state": "ORDERED"})["status"])
