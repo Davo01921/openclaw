@@ -1,10 +1,10 @@
 ---
 name: "nta-shopify-write-verifier"
-version: "1.2"
+version: "1.3"
 description: "Canonical deterministic Shopify mutation boundary that routes authorised writes to entity-specific writers and independent auditors."
 ---
 
-# NTA Shopify Write Verifier — v1.2
+# NTA Shopify Write Verifier — v1.3
 
 ## Purpose
 
@@ -54,12 +54,13 @@ A request without a stable job ID, stable idempotency key, explicit authorisatio
 2. Read current live state before consequential mutation when the selected writer requires it.
 3. Invoke only the selected canonical writer with the exact authorised change/request.
 4. Fail fast if the writer returns failure, block or review-required state. Do not invoke downstream verification merely to repeat the failure.
-5. If the writer returns `SUCCESS` or `DUPLICATE_NOOP`, perform a fresh independent live read from Shopify. Never use the writer response as verification evidence.
-6. Invoke the selected canonical auditor against caller-supplied expected state and the fresh live snapshot.
-7. Map auditor `PASS` to `VERIFIED`; `PASS_WITH_WARNING` to `VERIFIED_WITH_WARNING`.
-8. On auditor `FAIL`, retry at most once and only when retry safety is positively established and retry is explicitly authorised. Reuse the original idempotency key.
-9. A second mismatch, unsafe retry, write failure or material audit failure returns `FAILED` or `REVIEW_REQUIRED` as appropriate.
-10. Return one immutable operation record containing route, before/after evidence, mutation identifiers, audit result, warnings and retry count.
+5. If the writer returns `SUCCESS` or `DUPLICATE_NOOP`, perform a fresh independent live read from Shopify. Never use the writer response as verification evidence. For a variant barcode write, fresh-read `productVariant(id) { id barcode }` and require an exact match before downstream printing.
+6. For an automatically generated internal barcode, also confirm that a fresh barcode search returns no different variant using the same barcode. Any foreign-variant match is `REVIEW_REQUIRED` and blocks label printing.
+7. Invoke the selected canonical auditor against caller-supplied expected state and the fresh live snapshot.
+8. Map auditor `PASS` to `VERIFIED`; `PASS_WITH_WARNING` to `VERIFIED_WITH_WARNING`.
+9. On auditor `FAIL`, retry at most once and only when retry safety is positively established and retry is explicitly authorised. Reuse the original idempotency key.
+10. A second mismatch, unsafe retry, write failure or material audit failure returns `FAILED` or `REVIEW_REQUIRED` as appropriate.
+11. Return one immutable operation record containing route, before/after evidence, mutation identifiers, audit result, warnings and retry count.
 
 ## Order-specific boundary
 
