@@ -26,6 +26,7 @@ A fixed, non-substitutable specialist service may remain owned by the specialist
 
 - `nta-product-resolver` — canonical exact product/variant resolution and duplicate prevention.
 - `nta-product-identity-resolver` — compatibility entry point for the resolver.
+- `nta-product-barcode` — preserves existing Shopify variant barcodes; when a DYMO label workflow finds one missing, deterministically creates an internal `NTA-V-<variant-id>` barcode, collision-checks it, writes it through the canonical verifier, and requires fresh Shopify read-back before printing.
 - `nta-product-classifier`
 - `nta-supplier-unit-cost-normalizer`
 - `nta-retail-pricing-standard`
@@ -39,7 +40,7 @@ A fixed, non-substitutable specialist service may remain owned by the specialist
 - `nta-shopify-write-verifier` — canonical write boundary: authorised change set → write → fresh read-back assertion.
 - `nta-shopify-product-writer` — write-phase implementation used by the verifier.
 - `nta-product-qa-auditor` — verification-phase implementation used by the verifier.
-- `nta-dymo-tank-label` — read-only deterministic two-line DYMO livestock tank-label formatter; Shopify `custom.arrival_date` is its only arrival-date source.
+- `nta-dymo-tank-label` — deterministic two-line DYMO livestock tank-label formatter/printer. The label module itself is read-only with respect to Shopify; missing-barcode creation is owned upstream by `nta-product-barcode` and must be verified in Shopify before physical printing.
 
 Specialist product workflows that sit on top of the modular system:
 
@@ -56,6 +57,8 @@ Core architecture rule:
 **Skills decide. Writers write. Auditors verify. The adaptive router chooses general model capacity.**
 
 Physical inventory and customer availability/preorder state are separate concerns. Product-domain rules should have one canonical source of truth and should be referenced by specialist workflows rather than copied into them.
+
+`Davo01921/openclaw-skills` is the canonical source of truth. Fred’s `agent-memory/skills` and local `~/.openclaw/workspace/fred/skills` copies are deployment mirrors only and must not override canonical skill behavior.
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for routing, ownership and model-cost rules, and [GAPS_AND_DUPLICATES.md](GAPS_AND_DUPLICATES.md) for the current migration register.
 
