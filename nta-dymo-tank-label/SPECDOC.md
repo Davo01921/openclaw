@@ -1,8 +1,8 @@
 # SPECDOC — NTA DYMO tank labels
 
-Version: 2.2
+Version: 2.3
 
-Status: production-capable with explicit per-print authorization
+Status: COMPLETED / production-capable with explicit per-print authorization
 
 Normative words `MUST`, `MUST NOT`, `SHOULD`, and `MAY` indicate requirement
 strength.
@@ -31,10 +31,13 @@ unit. Invalid optional bulk data MUST be omitted with a warning.
 
 `shopify_barcode` MUST be present for every structured NTA product label. It
 MUST be the verified Shopify variant barcode, contain 1-48 printable ASCII
-characters, and be encoded without alteration as Code 128-B. The system MUST
-NOT generate or infer a barcode value. A missing or invalid barcode MUST produce
-`REVIEW_REQUIRED`; the system MUST NOT silently fall back to a text-only product
-label.
+characters, and be encoded without alteration as Code 128-B. The DYMO
+presentation module MUST NOT generate or infer a barcode value. When the wider
+Fred/OpenClaw workflow encounters a missing Shopify variant barcode, it MUST
+route upstream to `nta-product-barcode`; only a final verified Shopify barcode
+may enter this skill. A missing or invalid barcode at this skill boundary MUST
+produce `REVIEW_REQUIRED`; the system MUST NOT silently fall back to a text-only
+product label.
 
 Missing, invalid, ambiguous, or unit-mismatched required input MUST produce
 `REVIEW_REQUIRED`. The system MUST NOT invent or infer a replacement.
@@ -131,10 +134,17 @@ print retry behavior.
 
 ## Production boundary
 
-This system MUST NOT mutate Shopify, inventory, pricing, product copy, media,
-metafields, collections, or any unrelated workflow. In write-mode orchestration,
-label generation MUST use freshly verified Shopify state. In dry-run
-orchestration, it MAY use the proposed value for the same Shopify field.
+`nta-dymo-tank-label` MUST NOT mutate Shopify, inventory, pricing, product copy,
+media, metafields, collections, or any unrelated workflow. The wider label
+orchestration MAY invoke `nta-product-barcode` before this skill solely when the
+resolved variant barcode is null or blank. That upstream module may propose the
+internal `NTA-V-<legacyResourceId>` barcode and route the exact variant barcode
+write through `nta-shopify-write-verifier`; fresh read-back and uniqueness
+verification MUST succeed before physical printing. Existing non-empty barcodes
+MUST be preserved. The internal NTA barcode MUST NOT be represented as a
+GTIN/UPC/EAN/ISBN/MPN. In write-mode orchestration, label generation MUST use
+freshly verified Shopify state. In dry-run orchestration, it MAY use a proposed
+internal barcode for preview only and MUST NOT physically print it.
 
 ## Status contract
 
@@ -164,4 +174,6 @@ The release is acceptable when:
 6. a powered-printer acceptance test, when explicitly authorised, returns a
    successful driver result for exactly one label;
 7. no model call, Shopify mutation, cutter action, or automatic physical retry
-   occurs in the deterministic print path.
+   occurs inside the deterministic DYMO print path;
+8. missing-barcode orchestration is covered by deterministic tests for preserve-existing, generate-internal, collision block, Shopify write, fresh read-back verification, and mismatch failure;
+9. the canonical source is `Davo01921/openclaw-skills`; Fred deployment copies are mirrors only.
