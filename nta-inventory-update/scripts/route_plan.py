@@ -73,7 +73,10 @@ def build_route(data: dict) -> dict:
             "notes": [],
         }
 
-    route = ["nta-product-resolver", "nta-product-classifier"]
+    route = ["nta-product-resolver"]
+    if label_requested:
+        route.append("nta-product-barcode")
+    route.append("nta-product-classifier")
     if cost_supplied:
         route.append("nta-supplier-unit-cost-normalizer")
     if price_review:
@@ -99,6 +102,7 @@ def build_route(data: dict) -> dict:
         "notes": [
             "Route planning is deterministic; child modules own all product-domain decisions.",
             "Execute sequentially and stop dependent work immediately when a required child returns REVIEW_REQUIRED or BLOCK.",
+            "When a label is requested, barcode policy runs after identity resolution; a missing barcode may be proposed deterministically in dry_run and must be written and verified before physical printing in write mode.",
             "In write mode, DYMO label generation occurs only after verified Shopify state; in dry_run it uses proposed state.",
         ],
     }
