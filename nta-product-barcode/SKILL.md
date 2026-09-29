@@ -69,6 +69,17 @@ requires_shopify_write: true | false
 collision_query: barcode:NTA-V-123456789
 ~~~
 
+## Concrete Shopify adapter
+
+Use `scripts/shopify_adapter.py` when Fred has an authenticated Shopify Admin
+GraphQL transport. `ShopifyBarcodeGateway.ensure_verified_barcode(...)` performs
+the live read → deterministic plan → collision check → single authorised write →
+fresh read-back → second collision check sequence. The transport is injected;
+the code contains no credentials and write execution is disabled unless the
+caller explicitly enables write mode.
+
+Only a final `status: VERIFIED` result may be passed to the physical-print step.
+
 ## Write-mode procedure
 
 1. Resolve the exact product and variant.
