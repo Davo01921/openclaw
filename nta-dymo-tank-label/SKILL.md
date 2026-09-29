@@ -179,3 +179,4 @@ labels:
   testing the Python/BLE implementation.
 - Read [SPECDOC.md](SPECDOC.md) when changing or auditing the normative label,
   authorization, safety, or result contracts.
+- Read [PROJECT_CLOSEOUT.md](PROJECT_CLOSEOUT.md) for the completed production scope, barcode fallback architecture, source-of-truth hierarchy, and project closure record.
