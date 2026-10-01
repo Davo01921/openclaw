@@ -2,7 +2,7 @@
 
 Owner: Nano Tanks Australia  
 Skill: `nta-death-loss-order`  
-Version: 1.4
+Version: 1.4.1
 Timezone: `Australia/Sydney`  
 Daily close: 6:00 pm
 

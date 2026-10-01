@@ -1,6 +1,6 @@
 ---
 name: "nta-death-loss-order"
-version: "1.4"
+version: "1.4.1"
 description: "Queue verified Discord livestock deaths, amend quantities safely, and close one paid/fulfilled $0 Shopify loss order at 6 pm Sydney."
 ---
 

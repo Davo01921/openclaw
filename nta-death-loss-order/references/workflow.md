@@ -1,7 +1,7 @@
 # NTA death-loss order workflow reference
 
 Owner: Nano Tanks Australia (NTA)
-Version: 1.4
+Version: 1.4.1
 
 This reference describes orchestration only. Exact identity belongs to `nta-product-resolver`; Shopify mutation and fresh read-back belong to the verified Shopify write boundary.
 

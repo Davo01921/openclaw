@@ -614,12 +614,13 @@ def close(shop, args):
                 save_queue(queue)  # Crash after this point must never submit another order.
                 try:
                     payload = shop.gql(base.CREATE_MUTATION, variables)['orderCreate']
-                except Exception:
+                except Exception as error:
                     recovered = completed_with_tag(shop, tag)
                     if recovered:
                         queue['order'] = {'id': recovered['id'], 'name': recovered['name']}
                     failure(queue, 'INDETERMINATE_EXISTING' if recovered else 'INDETERMINATE',
-                            'Order creation result is uncertain. Reconcile the existing order; do not retry creation.', True)
+                            'Order creation result is uncertain. Reconcile the existing order; do not retry creation.', True,
+                            **base.bridge_failure_details(error))
                 if payload.get('userErrors') or not (payload.get('order') or {}).get('id'):
                     failure(queue, 'FAILED', 'Shopify rejected creation or returned no order identity; review before any retry.', True)
                 existing = payload['order']
@@ -646,8 +647,9 @@ def close(shop, args):
                     save_queue(queue)
                     try:
                         fulfillment = fulfill_remaining(shop, order['id'], aggregate(queue['items']), LOCATION_ID)
-                    except Exception:
-                        failure(queue, 'INDETERMINATE_EXISTING', 'Fulfilment result is uncertain. Inspect the existing order; do not blindly repeat fulfilment.', True)
+                    except Exception as error:
+                        failure(queue, 'INDETERMINATE_EXISTING', 'Fulfilment result is uncertain. Inspect the existing order; do not blindly repeat fulfilment.', True,
+                                **base.bridge_failure_details(error))
                     recovery['fulfillment_result'] = fulfillment
                     queue['status'] = 'VERIFYING'
                     save_queue(queue)
@@ -668,10 +670,16 @@ def close(shop, args):
                 stop('Closed queue read-back mismatch.', order=queue['order']['name'])
             emit({'status': 'CLOSED_VERIFIED', 'batch_date': date, 'order': queue['order'], 'checks': checks,
                   'inventory': inventory, 'inventory_verified': True, 'fulfillment': fulfillment, 'records': queue['items']})
-    except Exception:
+    except Exception as error:
         if 'queue' in locals() and (queue.get('recovery') or queue.get('order')):
-            failure(queue, 'FAILED', 'A bridge or verification read failed. Inspect the saved order and recovery state before retrying.', args.execute)
-        stop('Preflight could not complete; verify configuration, queue, and bridge health.')
+            # A failed read does not invalidate previously persisted successful proof.
+            # Preserve CLOSED evidence so later sales cannot turn a read outage into
+            # an impossible replay of the original inventory-baseline audit.
+            failure(queue, 'FAILED', 'A bridge or verification read failed. Inspect the saved order and recovery state before retrying.',
+                    args.execute and queue['status'] != 'CLOSED',
+                    **base.bridge_failure_details(error))
+        stop('Preflight could not complete; verify configuration, queue, and bridge health.',
+             batch_date=date, **base.bridge_failure_details(error))
     finally:
         shop.write_authorized = False
 

@@ -40,7 +40,11 @@ def notification(result):
         return '\n'.join(lines)[:1900]
     if status in {'READY_TO_CLOSE', 'READY_TO_RECONCILE'}:
         return f'NTA deaths {day}: {status}; preview only, no writes.'
-    return (f'NTA deaths {day}: {clean(status or "FAILED")} — {name}. '
+    diagnostic = ''
+    if result.get('error_code'):
+        diagnostic = (f" [{clean(result.get('operation', 'helper'), 32)}: {clean(result['error_code'], 60)}"
+                      f"; attempts {clean(result.get('bridge_attempts', 'unknown'), 8)}]")
+    return (f'NTA deaths {day}: {clean(status or "FAILED")} — {name}.{diagnostic} '
             f'{clean(result.get("message", "Inspect the saved queue and recovery state."), 500)} '
             'Review the existing order and local recovery journal before retrying; do not create a replacement order.')[:1900]
 

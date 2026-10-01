@@ -521,6 +521,29 @@ class RuntimeTests(unittest.TestCase):
         self.assertEqual(result['status'], 'BLOCKED')
         self.assertNotIn('synthetic-secret-value', json.dumps(result))
 
+    def test_preflight_bridge_error_retains_safe_diagnostics_and_date(self):
+        self.seed()
+        error = base.BridgeError('customers', 'bridge_internal_error', 3, 'TimeoutError', '23')
+        with patch.object(self.shop, 'gql', side_effect=error):
+            result = self.close()
+        self.assertEqual(result['status'], 'BLOCKED')
+        self.assertEqual(result['batch_date'], DATE)
+        self.assertEqual(result['operation'], 'customers')
+        self.assertEqual(result['bridge_attempts'], 3)
+        self.assertEqual(self.shop.create_calls, 0)
+        self.assertEqual(daily.load_queue(DATE)['status'], 'OPEN')
+
+    def test_read_outage_preserves_previously_verified_closed_batch(self):
+        self.seed()
+        self.assertEqual(self.close()['status'], 'CLOSED_VERIFIED')
+        before = daily.queue_path(DATE).read_bytes()
+        error = base.BridgeError('customers', 'bridge_internal_error', 3, 'TimeoutError', '23')
+        with patch.object(self.shop, 'gql', side_effect=error):
+            result = self.close()
+        self.assertEqual(result['status'], 'FAILED')
+        self.assertEqual(daily.queue_path(DATE).read_bytes(), before)
+        self.assertEqual(self.shop.create_calls, 1)
+
     def test_saved_order_is_audited_not_mutation_response(self):
         self.seed()
         self.shop.on_create = lambda: self.shop.orders[0].update(discountCodes=['OTHER'])

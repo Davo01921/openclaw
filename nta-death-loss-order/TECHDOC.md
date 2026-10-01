@@ -1,6 +1,6 @@
 # TECHDOC — NTA death-loss order
 
-Version: 1.4
+Version: 1.4.1
 Runtime owner: Fred/OpenClaw  
 Canonical repository: `Davo01921/openclaw-skills`
 

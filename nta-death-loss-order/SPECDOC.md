@@ -1,6 +1,6 @@
 # SPECDOC — NTA death-loss order
 
-Version: 1.4
+Version: 1.4.1
 Status: production-enabled with explicit scheduled write gate
 
 Normative words `MUST`, `MUST NOT`, `SHOULD`, and `MAY` indicate requirement strength.

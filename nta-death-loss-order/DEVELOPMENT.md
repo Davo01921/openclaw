@@ -17,7 +17,7 @@ The main planner now rejects malformed request types, non-GID variants, boolean/
 - `scripts/configuration.py` and `config.example.json`: validated non-secret paths, exact customer/location IDs, authorized Discord IDs, timezone and cutoff. Required configuration is explicit; sample placeholders intentionally fail validation.
 - `integration/shopify-session-bridge.patch`: additive read-query fields only. Authentication, credentials, supported operations and mutation inputs remain owned by the original bridge.
 - `scripts/scheduled_close.py`: direct command adapter, bounded child execution, private machine-readable result journals, native empty-batch silence and concise success/recovery alerts. OpenClaw owns Discord delivery.
-- `tests/test_runtime.py` and `tests/test_scheduled_close.py`: 53 offline tests using temporary queues and a fake Shopify transport, plus the existing planner regression.
+- `tests/test_runtime.py` and `tests/test_scheduled_close.py`: 65 offline tests using temporary queues and a fake Shopify transport, plus the existing planner regression.
 
 Runtime prerequisites are Python 3.10+ with Sydney timezone data and Node 20+ for the existing bridge. The patched bridge's offline authentication/write-gate self-test passed using Node 24 in a temporary development copy with existing dependencies. The shell's default Node was older, so deployment must pin or verify the actual executable rather than assume the shell default is suitable.
 
@@ -104,3 +104,14 @@ Installed-helper read-only validation confirmed required scopes, the configured 
 Using Fred's unverified estimate of roughly 15,000 uncached input tokens per active AI-powered close, direct scheduling eliminates that model run and is estimated to save roughly 15,000 uncached input tokens plus cached context and model output per active close. At 30 active closes/month, that is about 450,000 uncached input tokens/month. Dollar savings depend on the actual model, billing/cache rates and active-close count. Intake's AI interpretation is unaffected.
 
 Documented Shopify fields and fulfilment semantics were checked against [Order](https://shopify.dev/docs/api/admin-graphql/latest/objects/order), [orders pagination](https://shopify.dev/docs/api/admin-graphql/latest/queries/orders), [FulfillmentOrder](https://shopify.dev/docs/api/admin-graphql/latest/objects/FulfillmentOrder), and [fulfillmentCreate](https://shopify.dev/docs/api/admin-graphql/latest/mutations/fulfillmentCreate). Deployment must still prove compatibility with the installed bridge's pinned API version and real permissions; offline tests do not prove a live mutation.
+
+
+**Scheduled preflight resilience — v1.4.1**
+
+The first direct 18:00 run stopped at preflight, kept its batch OPEN and delivered a BLOCKED alert. Its generic catch did not retain the original bridge error, so its exact cause cannot be reconstructed. Read-only testing through the actual OpenClaw command runner subsequently passed customer, daily-order and both variant reads; there is no evidence of a persistent configuration/environment failure. The explicitly approved manual close then returned CLOSED_VERIFIED for the real two-record batch.
+
+Read operations now retry allowlisted transient transport/HTTP failures at most three times with 1/2-second backoff, within the original per-read deadline. Nested fulfilment polling retains its overall 45-second deadline. Mutation operations still run once only and return uncertain outcomes to the durable recovery path. Permission, reauthorization, malformed response and identified database-configuration errors fail without retries. Generic bridge internals without a retained diagnostic can be retried only as reads.
+
+The helper enables the bridge's existing safe diagnostic mode, preserves allowlisted operation/error/class/transport codes and attempt count, and includes the batch date in failed preflights. Raw exception text, captured stderr and credentials are never emitted. The result journal retains these diagnostics and Discord alerts include the operation/code and attempt count. An exhausted read against a previously CLOSED batch preserves its saved successful verification; it does not reset that proof or re-audit its original inventory baseline after later sales. Contract mismatches remain blocking failures.
+
+Tests cover transient-read recovery, exhausted retries, deadlines including backoff, no mutation retry, permission/database failures, secret redaction, preserved CLOSED proof and actionable dated alerts. A mutation-prohibited probe through the live command runner validates real reads and an injected first-read 503; the injection never sends a failing HTTP request or Shopify mutation.

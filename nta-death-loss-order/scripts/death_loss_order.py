@@ -7,6 +7,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 import unicodedata
 from pathlib import Path
 
@@ -15,6 +16,65 @@ DEFAULT_ENV_FILE = None
 DEFAULT_SESSION_BRIDGE = None
 CUSTOMER_NAME = "NTA Losses"
 DISCOUNT_CODE = "Ntalosses"
+
+SAFE_BRIDGE_CODES = {
+    'bridge_internal_error', 'bridge_request_failed', 'bridge_response_invalid',
+    'bridge_timeout', 'bridge_launch_failed', 'persisted_offline_session_not_verified',
+    'graphql_access_denied', 'graphql_request_failed', 'shop_domain_invalid',
+    'bridge_input_invalid', 'bridge_operation_invalid', 'explicit_write_enable_required',
+    'explicit_fulfilment_write_enable_required', 'offline_session_not_found',
+    'offline_session_shop_invalid', 'offline_session_shop_mismatch',
+    'offline_session_id_mismatch', 'offline_access_token_missing', 'offline_session_ambiguous',
+    'offline_refresh_configuration_missing', 'offline_refresh_failed',
+    'offline_refresh_in_progress', 'offline_refresh_lock_failed',
+    'offline_refresh_reauthorization_required', 'offline_refresh_response_invalid',
+    'offline_refresh_retryable',
+}
+TRANSIENT_BRIDGE_CODES = {'bridge_internal_error', 'bridge_timeout',
+                         'offline_refresh_in_progress', 'offline_refresh_retryable',
+                         'http:429', 'http:500', 'http:502', 'http:503', 'http:504'}
+TRANSIENT_TRANSPORT_CODES = {'UND_ERR_CONNECT_TIMEOUT', 'UND_ERR_HEADERS_TIMEOUT',
+                            'UND_ERR_SOCKET', 'ECONNRESET', 'ETIMEDOUT', 'EAI_AGAIN',
+                            'ENOTFOUND', 'ECONNREFUSED', 'ABORT_ERR', '23', 'unknown'}
+
+
+class BridgeError(RuntimeError):
+    """Bounded machine-readable diagnostics; never raw bridge output."""
+    def __init__(self, operation, code, attempts, error_type=None, transport_code=None):
+        super().__init__(code)
+        self.details = {'operation': operation, 'error_code': code, 'bridge_attempts': attempts}
+        if error_type:
+            self.details['bridge_error_type'] = error_type
+        if transport_code:
+            self.details['transport_code'] = transport_code
+
+    @property
+    def retryable(self):
+        code = self.details['error_code']
+        transport = self.details.get('transport_code')
+        return code in TRANSIENT_BRIDGE_CODES and (
+            code != 'bridge_internal_error' or transport in TRANSIENT_TRANSPORT_CODES or transport is None)
+
+
+def bridge_failure_details(error):
+    if isinstance(error, BridgeError):
+        return dict(error.details)
+    return {'error_code': 'internal_helper_error'}
+
+
+def bridge_response_error(response, operation, attempts):
+    errors = response.get('errors') or []
+    raw = errors[0] if isinstance(errors, list) and errors and isinstance(errors[0], str) else ''
+    if re.fullmatch(r'http:[45]\d{2}', raw):
+        return BridgeError(operation, raw, attempts)
+    parts = raw.split(':')
+    code = parts[0] if parts[0] in SAFE_BRIDGE_CODES else 'bridge_request_failed'
+    classes = {'Error', 'TypeError', 'TimeoutError', 'AbortError',
+               'PrismaClientKnownRequestError', 'PrismaClientInitializationError'}
+    kind = parts[1] if len(parts) == 3 and parts[1] in classes else None
+    transport = parts[2] if len(parts) == 3 and (
+        parts[2] in TRANSIENT_TRANSPORT_CODES or re.fullmatch(r'P\d{4}', parts[2])) else None
+    return BridgeError(operation, code, attempts, kind, transport)
 
 def output(payload, code=0):
     print(json.dumps(payload, indent=2))
@@ -105,12 +165,33 @@ class Shopify:
             child_env['NTA_SHOPIFY_ORDER_WRITE_ENABLED'] = 'true'
             child_env['NTA_SHOPIFY_FULFILMENT_WRITE_ENABLED'] = 'true'
         child_env.update({
+            "NTA_AUTH_BRIDGE_SAFE_DIAGNOSTICS": "true",
             "SHOPIFY_STORE": self.env["SHOPIFY_STORE"],
             "SHOPIFY_CLIENT_ID": self.env["SHOPIFY_CLIENT_ID"],
             "SHOPIFY_CLIENT_SECRET": self.env["SHOPIFY_CLIENT_SECRET"],
             "SHOPIFY_API_KEY": self.env["SHOPIFY_CLIENT_ID"],
             "SHOPIFY_API_SECRET": self.env["SHOPIFY_CLIENT_SECRET"],
         })
+        mutation = operation in {'create_order', 'create_fulfillment'}
+        deadline = time.monotonic() + self.read_timeout
+        last_error = None
+        # Only reads retry, within the caller's existing deadline (including backoff).
+        # A mutation's uncertain result always returns to the durable recovery path.
+        for attempt in range(1, 2 if mutation else 4):
+            remaining = deadline - time.monotonic()
+            if not mutation and remaining <= 0:
+                raise last_error or BridgeError(operation, 'bridge_timeout', attempt - 1)
+            try:
+                return self._bridge_request(operation, variables, child_env,
+                                            35 if mutation else remaining, attempt)
+            except BridgeError as error:
+                last_error = error
+                delay = attempt  # 1 then 2 seconds; no unbounded/full-job retries.
+                if mutation or attempt == 3 or not error.retryable or deadline - time.monotonic() <= delay:
+                    raise
+                time.sleep(delay)
+
+    def _bridge_request(self, operation, variables, child_env, timeout, attempt):
         try:
             result = subprocess.run(
                 [self.node, str(self.bridge)],
@@ -119,28 +200,31 @@ class Shopify:
                 capture_output=True,
                 cwd=str(self.bridge.parent.parent),
                 env=child_env,
-                timeout=self.read_timeout if operation not in {'create_order', 'create_fulfillment'} else 35,
+                timeout=timeout,
                 check=False,
             )
         except subprocess.TimeoutExpired as error:
-            raise RuntimeError("bridge_timeout") from error
+            raise BridgeError(operation, 'bridge_timeout', attempt) from error
+        except OSError as error:
+            raise BridgeError(operation, 'bridge_launch_failed', attempt) from error
         try:
             response = json.loads(result.stdout.strip())
         except json.JSONDecodeError as error:
-            raise RuntimeError("bridge_response_invalid") from error
+            raise BridgeError(operation, 'bridge_response_invalid', attempt) from error
+        if not isinstance(response, dict):
+            raise BridgeError(operation, 'bridge_response_invalid', attempt)
         auth = response.get("auth") or {}
         if not response.get("ok") or result.returncode != 0:
-            errors = response.get("errors") or ["bridge_request_failed"]
-            # Bridge errors are bounded codes, never raw Shopify/model/user text.
-            safe = [item for item in errors if isinstance(item, str) and re.fullmatch(r'[a-z_]+(?::\d{3})?', item)]
-            raise RuntimeError(safe[0] if safe else 'bridge_request_failed')
+            raise bridge_response_error(response, operation, attempt)
+        if not isinstance(auth, dict) or not isinstance(response.get('data'), dict):
+            raise BridgeError(operation, 'bridge_response_invalid', attempt)
         if (
             auth.get("source") != "persisted_offline_session"
             or auth.get("token_mode") != "offline"
             or auth.get("persisted_offline_session_verified") is not True
             or auth.get("access_token_unexpired") is not True
         ):
-            raise RuntimeError("persisted_offline_session_not_verified")
+            raise BridgeError(operation, 'persisted_offline_session_not_verified', attempt)
         return response["data"]
 
 def norm(value):
