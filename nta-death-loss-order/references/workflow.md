@@ -1,7 +1,7 @@
 # NTA death-loss order workflow reference
 
 Owner: Nano Tanks Australia (NTA)
-Version: 1.3
+Version: 1.4
 
 This reference describes orchestration only. Exact identity belongs to `nta-product-resolver`; Shopify mutation and fresh read-back belong to the verified Shopify write boundary.
 
@@ -52,7 +52,7 @@ Do not call a model to bypass any of these deterministic safety gates.
 
 ## Manual-deduction reconciliation
 
-The loss order is the canonical inventory-loss event. If a prior manual deduction for the same death is verified, restore the correct pre-loss baseline through the canonical inventory/write path and verify it before creating the order. Never make both a manual deduction and a loss-order deduction for the same event.
+The loss order is the canonical inventory-loss event. If a prior manual deduction for the same death is verified, stop for explicit reconciliation; do not reverse it automatically. Independently authorized reconciliation must verify the correct pre-loss baseline before an order is created. Never make both a manual deduction and a loss-order deduction for the same event.
 
 ## Verification
 

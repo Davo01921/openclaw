@@ -2,7 +2,7 @@
 
 Owner: Nano Tanks Australia  
 Skill: `nta-death-loss-order`  
-Version: 1.3  
+Version: 1.4
 Timezone: `Australia/Sydney`  
 Daily close: 6:00 pm
 
@@ -27,7 +27,7 @@ Never infer a fish from an empty-tank photograph. A photograph or free-form desc
 
 ## Intake procedure
 
-1. Resolve the report to one exact active Shopify variant.
+1. Resolve the reported fish to one exact active Shopify variant. A tank-only match cannot authorize HIGH confidence; explicit staff text takes precedence over conflicting images and stale tank labels.
 2. Require `HIGH` confidence, a positive quantity, one unambiguous inventory location, and enough available stock.
 3. Check the stable source reference for an existing completed order or queue entry.
 4. If a prior manual inventory deduction is known or suspected, stop for explicit reconciliation.
@@ -36,9 +36,13 @@ Never infer a fish from an empty-tank photograph. A photograph or free-form desc
 7. Confirm the result is `QUEUED_VERIFIED` and report the batch date, fish, tank, and quantity.
 8. Tell staff that Shopify inventory remains unchanged until the 6:00 pm close.
 
+## Quantity corrections
+
+Locate exactly one original record by source reference or record ID. Preview `amend` with the new absolute quantity, expected current quantity, stable correction-event ID and trusted Discord metadata, then repeat with `--execute` only on READY. Confirm AMENDED_VERIFIED or ALREADY_AMENDED. Preserve the original reference and never add a second loss for the correction. The helper rechecks aggregate available stock and saves audit history; batches whose order creation has started require reconciliation instead.
+
 ## Daily close procedure
 
-The production scheduler checks the current Sydney-date queue at 6:00 pm. It stays silent when no open items exist.
+The production scheduler checks the current Sydney-date queue at 6:00 pm. It stays silent when no items exist. Recovery states are handled without another creation attempt.
 
 When a batch exists, the fixed command:
 
@@ -64,7 +68,7 @@ Success is `CLOSED_VERIFIED`. Report:
 - the fulfilment result;
 - each verified inventory delta.
 
-`ALREADY_CLOSED` is a safe idempotent result only when the existing Shopify order is already fulfilled.
+`ALREADY_CLOSED` requires independent verification of the entire existing paid/fulfilled zero-dollar order contract. Historical inventory evidence may be previously verified or unavailable; report that limitation explicitly.
 
 ## Stop conditions
 
@@ -77,7 +81,7 @@ Stop without a mutation when any of these applies:
 - multiple orders share an idempotency tag;
 - the dedicated scheduled write gate is absent;
 - persisted offline authentication or required Shopify capability is unverified;
-- an existing daily order is not fulfilled;
+- an existing unfulfilled daily order lacks a valid durable recovery baseline;
 - Shopify returns a mutation error or an indeterminate result;
 - fresh post-write verification fails.
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from hashlib import sha256
+import re
 from typing import Any
 
 CUSTOMER_NAME = "NTA Losses"
@@ -18,7 +19,7 @@ def _nonempty_string(value: Any) -> bool:
 
 
 def _positive_int(value: Any) -> bool:
-    return isinstance(value, int) and not isinstance(value, bool) and value > 0
+    return isinstance(value, int) and not isinstance(value, bool) and 1 <= value <= 100
 
 
 def _as_bool(value: Any, field: str, errors: list[str]) -> bool | None:
@@ -34,12 +35,12 @@ def _canonical_item(item: dict, index: int, errors: list[str]) -> dict | None:
     variant_id = item.get("shopify_variant_id")
     quantity = item.get("quantity")
 
-    if resolution_status not in VALID_RESOLUTION_STATUSES:
+    if not isinstance(resolution_status, str) or resolution_status not in VALID_RESOLUTION_STATUSES:
         errors.append(f"{prefix}.resolution_status")
     elif resolution_status != "RESOLVED":
         errors.append(f"{prefix}.resolution_status:{resolution_status}")
 
-    if not _nonempty_string(variant_id):
+    if not _nonempty_string(variant_id) or not re.fullmatch(r'gid://shopify/ProductVariant/[1-9]\d*', variant_id.strip()):
         errors.append(f"{prefix}.shopify_variant_id")
     if not _positive_int(quantity):
         errors.append(f"{prefix}.quantity")
@@ -53,14 +54,18 @@ def _canonical_item(item: dict, index: int, errors: list[str]) -> dict | None:
         return None
 
     confidence = item.get("identification_confidence")
-    if confidence is not None and not _nonempty_string(confidence):
+    if confidence is not None and confidence != 'HIGH':
         errors.append(f"{prefix}.identification_confidence")
         return None
 
     evidence = item.get("evidence")
-    if evidence is not None and not isinstance(evidence, list):
+    if evidence is not None and (not isinstance(evidence, list) or any(not _nonempty_string(entry) for entry in evidence)):
         errors.append(f"{prefix}.evidence")
         return None
+    for name in ['fish', 'cause']:
+        if item.get(name) is not None and not _nonempty_string(item[name]):
+            errors.append(f'{prefix}.{name}')
+            return None
 
     return {
         "shopify_variant_id": variant_id.strip(),
@@ -74,18 +79,19 @@ def _canonical_item(item: dict, index: int, errors: list[str]) -> dict | None:
 
 
 def _idempotency_key(source_event_id: str, items: list[dict]) -> str:
-    canonical = [source_event_id]
-    for item in sorted(items, key=lambda x: (x["shopify_variant_id"], x["quantity"])):
-        canonical.append(f'{item["shopify_variant_id"]}:{item["quantity"]}')
-    digest = sha256("|".join(canonical).encode("utf-8")).hexdigest()[:24]
+    # Amending a quantity must not manufacture a new logical event/order key.
+    digest = sha256(source_event_id.encode('utf-8')).hexdigest()[:24]
     return f"nta-loss:{digest}"
 
 
 def build_loss_plan(data: dict) -> dict:
     errors: list[str] = []
+    if not isinstance(data, dict):
+        return {'status': 'REVIEW_REQUIRED', 'write_ready': False, 'order_plan': None,
+                'missing_or_conflicting_fields': ['request'], 'notes': []}
 
     mode = data.get("mode")
-    if mode not in VALID_MODES:
+    if not isinstance(mode, str) or mode not in VALID_MODES:
         errors.append("mode")
 
     source_event_id = data.get("source_event_id")
