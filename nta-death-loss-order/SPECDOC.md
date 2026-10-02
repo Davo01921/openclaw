@@ -1,6 +1,6 @@
 # SPECDOC — NTA death-loss order
 
-Version: 1.3  
+Version: 1.4.1
 Status: production-enabled with explicit scheduled write gate
 
 Normative words `MUST`, `MUST NOT`, `SHOULD`, and `MAY` indicate requirement strength.
@@ -37,7 +37,15 @@ The logical batch timezone MUST be `Australia/Sydney`.
 
 The queue MUST be durable, date-keyed, atomically written, and protected by an exclusive lock.
 
-The same `source_ref` MUST NOT be appended twice. A closed batch MUST NOT accept additional records. Multiple records MAY share a variant, but the source/tank/evidence records MUST remain distinct while mutation quantities MAY be aggregated by variant.
+The same `source_ref` MUST NOT be appended twice across batch dates. New multi-item messages MUST use separate stable item keys, including when multiple fish share a tank. Legacy source references MUST be preserved on retries. A closed batch MUST NOT accept additional records. Multiple records MAY share a variant, but the source/tank/evidence records MUST remain distinct while mutation quantities MAY be aggregated by variant.
+
+## Identity, configuration and amendments
+
+HIGH confidence MUST require a unique exact normalized fish identity from a complete authoritative fish search; tank context alone MUST NOT authorize it. Candidate scores and machine-readable reasons MUST be returned. Broad supporting tank-search pagination MUST NOT invalidate a complete exact fish search. Ambiguity MUST require review.
+
+Runtime paths, exact customer/location IDs, authorized Discord sources, timezone and cutoff MUST come from validated configuration. Missing or placeholder values MUST fail closed. Secrets MUST remain outside configuration and logs. Every write command MUST support preview without local or Shopify writes.
+
+An amendment MUST select one original record, set an integer quantity 1–100, validate its expected current quantity, recheck aggregate outstanding available stock, retain source and audit history, atomically save under the queue lock and read back the changed record. Repeated stable amendment IDs MUST be idempotent. A batch whose order creation has started MUST NOT accept amendments.
 
 ## Order contract
 
@@ -93,7 +101,7 @@ The dedicated flag MUST NOT be exported globally by the OpenClaw gateway wrapper
 
 The workflow MUST search Shopify by the daily tag before writing and again under the queue lock. More than one match MUST block.
 
-An existing fulfilled matching order MAY produce `ALREADY_CLOSED` and synchronize local queue state. An existing unfulfilled matching order MUST block for manual reconciliation. An indeterminate result MUST NOT be blindly retried.
+An existing fulfilled matching order MAY produce `ALREADY_CLOSED` and synchronize local queue state only after the entire order contract passes independent read-back. Historical inventory baseline limitations MUST remain explicit. An existing unfulfilled order MAY resume only with valid durable intent, exact identity and frozen inventory evidence; otherwise it MUST block for manual reconciliation. An indeterminate mutation MUST NOT be blindly retried. Order creation intent MUST be persisted before submitting the mutation; uncertain fulfilment intent MUST prevent blind resubmission.
 
 ## Verification contract
 
@@ -103,7 +111,8 @@ An existing fulfilled matching order MAY produce `ALREADY_CLOSED` and synchroniz
 - `0.00 AUD` total;
 - `PAID` financial state;
 - `FULFILLED` fulfilment state;
-- exact `NTA Losses` customer identity;
+- exact configured `NTA Losses` customer identity;
+- `Ntalosses`, zero AUD outstanding balance, exact line quantities and no cancellation;
 - daily tag and every source reference;
 - expected available-inventory delta per variant;
 - expected aggregate inventory-quantity delta per variant.
@@ -114,7 +123,10 @@ Failure of any check MUST return a non-success status and MUST NOT be reported a
 
 - `READY`: a preview/preflight is valid; no mutation occurred.
 - `QUEUED_VERIFIED`: intake was durably stored once.
-- `NO_BATCH`: no current open items; no mutation occurred.
+- `NO_BATCH`: no current items; no mutation occurred.
+- `AMENDED_VERIFIED` / `ALREADY_AMENDED`: audited amendment or safe replay no-op.
+- `READY_TO_CLOSE` / `READY_TO_RECONCILE`: read-only close previews.
+- `INDETERMINATE`: uncertain operation; preserve state and reconcile.
 - `CLOSED_VERIFIED`: order, fulfilment, and inventory were freshly verified.
 - `ALREADY_CLOSED`: an existing fulfilled idempotent order was found.
 - `ALREADY_QUEUED` / `ALREADY_COMPLETED`: safe duplicate no-op.

@@ -1,0 +1,11 @@
+{
+  "state_dir": "/<absolute-path-to-existing-queue>",
+  "env_file": "/<absolute-path-to-existing-shopify-env>",
+  "session_bridge": "/<absolute-path-to-shopify-session-bridge.mjs>",
+  "customer_id": "gid://shopify/Customer/<verified-customer-id>",
+  "location_id": "gid://shopify/Location/<verified-location-id>",
+  "discord_channel_id": "<deaths-channel-id>",
+  "authorized_sender_ids": ["<david-id>", "<mina-id>"],
+  "timezone": "Australia/Sydney",
+  "cutoff": "18:00"
+}
