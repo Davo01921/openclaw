@@ -84,3 +84,5 @@ for documented settings.
 
 The retired local `betta-picture-processing/` duplicate is intentionally ignored;
 `nta-betta-picture-processing-v2/` is canonical.
+
+Shipping Fulfilment V2: [engineering complete; final live acceptance](nta-shipping-fulfilment/docs/CLOSEOUT.md). PR #17 closes the tracking, handoff and durable-idempotency gaps.

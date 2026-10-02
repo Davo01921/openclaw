@@ -307,7 +307,8 @@ def build_create_payload(write_plan: dict) -> dict:
         errors.append("order_id")
     if not isinstance(write_plan.get("notify_customer"), bool):
         errors.append("notify_customer")
-    if write_plan.get("tracking_info") is not None:
+    tracking = write_plan.get("tracking_info")
+    if tracking is not None and (not isinstance(tracking, dict) or set(tracking) != {"company", "number"} or not all(_nonempty(tracking.get(k)) for k in ("company", "number")) or write_plan.get("tracking_source_verified") is not True):
         errors.append("tracking_info:unsupported_without_verified_source")
     groups = write_plan.get("fulfilment_orders")
     gql_groups: list[dict] = []
@@ -346,6 +347,7 @@ def build_create_payload(write_plan: dict) -> dict:
             "fulfillment": {
                 "lineItemsByFulfillmentOrder": gql_groups,
                 "notifyCustomer": write_plan["notify_customer"],
+                **({"trackingInfo": tracking} if tracking else {}),
             }
         },
     }
