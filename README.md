@@ -88,3 +88,5 @@ The retired local `betta-picture-processing/` duplicate is intentionally ignored
 Shipping Fulfilment V2: [engineering complete; final live acceptance](nta-shipping-fulfilment/docs/CLOSEOUT.md). PR #17 closes the tracking, handoff and durable-idempotency gaps.
 
 Betta Processing: [one canonical V2.1 workflow, final acceptance pending](nta-betta-picture-processing-v2/docs/CLOSEOUT.md). Experimental V3 is deferred.
+
+Catalogue Integrity: [finite audit complete; physical/shipping facts blocked](nta-inventory-state/docs/CLOSEOUT.md). No guessed stock changes.
