@@ -61,6 +61,25 @@ query NtaFulfilmentOrderRead($id: ID!) {
 }
 """
 
+SHIPPING_STATE_QUERY = """
+query NtaShippingState($id: ID!) {
+  order(id: $id) {
+    id
+    fulfillmentOrders(first: 20) {
+      pageInfo { hasNextPage }
+      nodes { id status lineItems(first: 250) {
+        pageInfo { hasNextPage }
+        nodes { id remainingQuantity lineItem { id } }
+      } }
+    }
+    fulfillments { id status trackingInfo { company number }
+      fulfillmentLineItems(first: 250) { nodes { quantity lineItem { id } } }
+    }
+  }
+}
+"""
+
+
 INVENTORY_LEVEL_READ_QUERY = """
 query NtaInventoryLevelRead($id: ID!) {
   inventoryLevel(id: $id) {
@@ -142,6 +161,7 @@ def load_config() -> dict:
 def _bridge_operation(query: str) -> str | None:
     operations = {
         CAPABILITY_QUERY.strip(): "capability",
+        SHIPPING_STATE_QUERY.strip(): "fulfillment_state",
         FULFILMENT_CREATE_MUTATION.strip(): "create_fulfillment",
         FULFILMENT_ORDER_READ_QUERY.strip(): "fulfillment_order",
         INVENTORY_LEVEL_READ_QUERY.strip(): "inventory_level",
