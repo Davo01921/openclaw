@@ -1,4 +1,6 @@
 # SOP — NTA daily death-loss order
+**Closeout status (2026-10-02): READY FOR FINAL LIVE ACCEPTANCE.** See [evidence and the single scheduled acceptance action](docs/CLOSEOUT.md).
+
 
 Owner: Nano Tanks Australia  
 Skill: `nta-death-loss-order`  

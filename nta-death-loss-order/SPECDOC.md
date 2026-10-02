@@ -1,4 +1,6 @@
 # SPECDOC — NTA death-loss order
+**Closeout status (2026-10-02): READY FOR FINAL LIVE ACCEPTANCE.** See [evidence and the single scheduled acceptance action](docs/CLOSEOUT.md).
+
 
 Version: 1.4.1
 Status: production-enabled with explicit scheduled write gate
