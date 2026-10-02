@@ -20,7 +20,7 @@
 
 ## One-action closes
 
-**StreamShelf:** install the latest closeout CI APK and complete [the one device session](https://github.com/cbnaquatics-spec/private-media-player/blob/main/docs/ACCEPTANCE.md): landscape/portrait PiP; interrupted/restarted download and resume; seek/position persistence; real YouTube retry/refusal handling. Record build/device/Android and outcomes. Issues #1–#4 deliberately remain open with linked CI/checklist evidence. Source retention tests cover seven-day startup cleanup without waiting a week on the device.
+**StreamShelf:** install [StreamShelf build 102](https://github.com/cbnaquatics-spec/private-media-player/releases/tag/streamshelf-build-102) from merge 031da27 and complete [the one device session](https://github.com/cbnaquatics-spec/private-media-player/blob/main/docs/ACCEPTANCE.md): landscape/portrait PiP; interrupted/restarted download and resume; seek/position persistence; real YouTube retry/refusal handling. Record build/device/Android and outcomes. Issues #1–#4 deliberately remain open with linked CI/checklist evidence. Source retention tests cover seven-day startup cleanup without waiting a week on the device.
 
 **Death Loss:** observe the next real nonempty 18:00 Australia/Sydney job 2900ada8-d36a-43e2-8243-be4c80e7bf90. Require CLOSED_VERIFIED, one daily-tag order, exact source references/lines/customer/discount, PAID/FULFILLED/$0 AUD/zero balance and frozen-before/fresh-after stock verification. Read-only same-date preview must identify the same order. An empty run does not count. Today's queue still had no October 2 batch at the final inspection.
 
@@ -47,7 +47,7 @@ Catalogue: 91 negative preorder/untracked/nonphysical balances are accounting ex
 | System | Canonical source/runtime | Merged evidence |
 |---|---|---|
 | Shared skills | Davo01921/openclaw-skills; clean /Users/davidlo/openclaw-skills-v3 main | Gumtree PR20 merge 03bce3e; Death Loss PR19 merge 09fd5aa; Shipping PR17 merge aec8abd; Betta PR21 merge d4a7dd4; Catalogue PR22 merge 1b8f14f; shipping runner PR23 merge 42eab70 |
-| StreamShelf | cbnaquatics-spec/private-media-player; isolated clean checkout in central workspace | PR5 merge 385ce44; PR6 merge 031da27; eight tests/lint/assembly pass in [PR CI](https://github.com/cbnaquatics-spec/private-media-player/actions/runs/36971999991); [final main build](https://github.com/cbnaquatics-spec/private-media-player/actions/runs/36972857567) |
+| StreamShelf | cbnaquatics-spec/private-media-player; isolated clean checkout in central workspace | PR5 merge 385ce44; PR6 merge 031da27; eight tests/lint/assembly pass in [PR CI](https://github.com/cbnaquatics-spec/private-media-player/actions/runs/36971999991); [final main CI](https://github.com/cbnaquatics-spec/private-media-player/actions/runs/36972857567) passed; release streamshelf-build-102 / StreamShelf-build-102.apk (SHA-256 7d7a028c718237f56a56adb52c00dc8e93b311ac164cf51c4b8feb22aa519f48) |
 | Cost Sync | Davo01921/shopify-shipstation-sync main 7a33252; runtime ~/.local/share/nta-shipstation-sync | PR1 merged; main CI 36970898516 successful; installed sync.mjs SHA matches canonical source |
 | GMC | ntashopmanager/AdHarbour backend-v0.2-cloudflare; dedicated projects/gmc-maintenance component in isolated clean worktree | PR5 merge ebbbc35; 28 component tests, strict TypeScript and backend CI 36968358450 pass; existing dedicated Worker deployed |
 
