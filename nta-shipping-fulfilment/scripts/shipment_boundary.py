@@ -31,7 +31,8 @@ def execute_shipment(request, context, ledger, writer, fresh_reader):
         ledger.receipt(key, receipt)
         if receipt['writer'].get('status') != 'SUCCESS':
             return {'status': 'REVIEW_REQUIRED', 'receipt': receipt}
-        receipt['audit'] = audit_fulfilment(request['expected_result'], fresh_reader(receipt['writer']))
+        receipt['readback'] = fresh_reader(receipt['writer'])
+        receipt['audit'] = audit_fulfilment(request['expected_result'], receipt['readback'])
         ledger.receipt(key, receipt, verified=receipt['audit']['status'] == 'PASS')
         return {'status': 'VERIFIED' if receipt['audit']['status'] == 'PASS' else 'REVIEW_REQUIRED', 'receipt': receipt}
     except Exception as error:

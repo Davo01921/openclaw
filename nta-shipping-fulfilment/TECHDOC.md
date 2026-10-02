@@ -19,3 +19,5 @@ No credentials are accepted or printed by this skill. Shopify credentials remain
 ## Tracking and handoff
 
 `verification_route.fulfilment_handoff` checks fresh order identity, open fulfillment orders and exact remaining quantities before constructing the writer input. Carrier/number are a paired, source-verified `tracking_info` object. The API maps this to `FulfillmentInput.trackingInfo`; independent audit checks it and successful state.
+
+`run_shipment.py` is the concrete CLI integration: exact existing bridge read, writer capability gate, durable intent, exact created-fulfillment/remaining-line effect normalization and stored independent readback. Its default preflight does not create a ledger or mutate Shopify.

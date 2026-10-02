@@ -2,6 +2,8 @@
 
 **READY FOR FINAL LIVE ACCEPTANCE** — engineering completed in PR #17. [Closeout and exact acceptance](docs/CLOSEOUT.md).
 
+The runnable `scripts/run_shipment.py` defaults to a read-only preflight and supplies the existing adapter plus independent before/after normalization.
+
 Canonical flow: deterministic event → verifier handoff → guarded writer → independent auditor, protected by a durable SQLite shipment ledger. Tracking is preserved and ambiguous outcomes require reconciliation.
 
 Run `python3 -B -m unittest discover -s nta-shipping-fulfilment/tests -v` from repository root and `python3 -B nta-shipping-fulfilment/scripts/dry_run.py`. See SOP.md for operation and TECHDOC.md for persistence/recovery.
