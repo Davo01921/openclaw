@@ -1,0 +1,62 @@
+--- a/scripts/shopify-session-bridge.mjs
++++ b/scripts/shopify-session-bridge.mjs
+@@ -18,14 +18,17 @@
+   products: `#graphql
+     query Products($query: String!) {
+       products(first: 10, query: $query) {
++        pageInfo { hasNextPage }
+         nodes {
+           id title status
+           variants(first: 10) {
++            pageInfo { hasNextPage }
+             nodes {
+               id title sku inventoryQuantity
+               inventoryItem {
+                 id
+                 inventoryLevels(first: 5) {
++                  pageInfo { hasNextPage }
+                   nodes {
+                     location { id name }
+                     quantities(names: ["available", "on_hand", "committed"]) { name quantity }
+@@ -46,6 +49,7 @@
+         inventoryItem {
+           id
+           inventoryLevels(first: 5) {
++            pageInfo { hasNextPage }
+             nodes {
+               location { id name }
+               quantities(names: ["available", "on_hand", "committed"]) { name quantity }
+@@ -58,6 +62,7 @@
+   existing_orders: `#graphql
+     query Existing($query: String!) {
+       orders(first: 10, query: $query, sortKey: CREATED_AT, reverse: true) {
++        pageInfo { hasNextPage }
+         nodes {
+           id name displayFinancialStatus displayFulfillmentStatus
+           currentTotalPriceSet { shopMoney { amount currencyCode } }
+@@ -123,9 +128,10 @@
+   read_order: `#graphql
+     query NtaOrderRead($id: ID!) {
+       order(id: $id) {
+-        id
++        id name displayFulfillmentStatus cancelledAt
+         customer { id }
+         lineItems(first: 250) {
++          pageInfo { hasNextPage }
+           nodes { quantity variant { id } }
+         }
+         discountCodes
+@@ -157,11 +163,13 @@
+         id
+         displayFulfillmentStatus
+         fulfillmentOrders(first: 20) {
++          pageInfo { hasNextPage }
+           nodes {
+             id
+             status
+             assignedLocation { location { id name } }
+             lineItems(first: 250) {
++              pageInfo { hasNextPage }
+               nodes {
+                 id
+                 remainingQuantity
