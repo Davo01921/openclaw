@@ -90,3 +90,5 @@ Shipping Fulfilment V2: [engineering complete; final live acceptance](nta-shippi
 Betta Processing: [one canonical V2.1 workflow, final acceptance pending](nta-betta-picture-processing-v2/docs/CLOSEOUT.md). Experimental V3 is deferred.
 
 Catalogue Integrity: [finite audit complete; physical/shipping facts blocked](nta-inventory-state/docs/CLOSEOUT.md). No guessed stock changes.
+
+[Medium-priority closeout status](STATUS.md) and [executive evidence/acceptance record](docs/NTA_MEDIUM_PRIORITY_CLOSEOUT_2026-10-02.md).

@@ -1,6 +1,6 @@
 # NTA Betta Picture Processing — Standard Operating Procedure
 
-**Status:** Canonical V2.1 — READY FOR FINAL LIVE ACCEPTANCE  
+**Status:** Canonical V2.1 — READY FOR FINAL LIVE ACCEPTANCE
 **Version:** 2.1  
 **Date:** 2026-09-13  
 **System:** `betta-picture-processing`
