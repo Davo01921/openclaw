@@ -1,6 +1,6 @@
 # NTA Gumtree Listing - SPECDOC
 
-Status: Production manual-post workflow
+Status: CLOSED / BAU — production manual-post workflow; see [closeout](docs/CLOSEOUT.md).
 Version: 1.1
 
 ## Objective
