@@ -36,3 +36,7 @@ Before writing, require:
 - dry-run disabled only for a user-approved live test or batch.
 
 After writing, query fresh live state and compare every authorised and protected field. Any transport error, top-level API error, material `userErrors`, missing read-back value, or mismatch results in `FIX_REQUIRED`.
+
+## Closeout safety gates
+
+Require a fresh exact variant and location, tracked DENY inventory and ACTIVE product. Stock may be 0 or 1; zero requires `intake.new_fish_authorised=true`, a genuine `source_reference` and the exact `source_sha256`. Negative/multiple stock is a review hold, never an automatic reset. Independent readback includes source=FRESH_SHOPIFY_READ, variant_id and location_id. Record and resolve conflicting staff/photo identity before writing. Product status stays protected; never auto-archive or revive a sold fish from an old photograph.

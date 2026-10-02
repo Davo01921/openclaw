@@ -447,3 +447,9 @@ Before processing live Shopify data, verify:
 GitHub CI validates the repository implementation, but it does not prove that David's local OpenClaw runtime has pulled the latest commit or that every live external credential/provider is healthy.
 
 Therefore the first production validation remains a one-Betta live test with full evidence capture before scaling to a larger batch.
+
+## 2026-10-02 closeout constraints
+
+V2.1 is the only production processing workflow; experimental V3 is deferred. Before mutation, record a fresh exact Product/Variant/Location/tank snapshot with DENY and tracked inventory. Only ACTIVE individual products with stock 0 or 1 are eligible; zero stock requires explicit new-fish authority tied to the source reference and hash. Negative/multiple stock and inactive products hold for operator review. Photo/text conflicts must be resolved explicitly; no adjacent tank inference.
+
+Fresh independent readback must include exact variant/location and protected fields. ARCHIVED requires existing source and hero files with approved hashes and a verification timestamp; update paths when moving files. Shopify status remains protected: evidence archiving is not authority to archive a sold Shopify product. Serialize ledger writes and retain source references for cross-batch duplicate checks. See CLOSEOUT.md for one final live acceptance exercise and recovery.

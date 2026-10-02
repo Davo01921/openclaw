@@ -20,6 +20,7 @@ class LedgerTests(unittest.TestCase):
             assets[role] = {"path": str(path), "sha256": hashlib.sha256(role.encode()).hexdigest()}
         assets["original"] = dict(assets["source"])
         protected = {k: f"before-{k}" for k in bb.PROTECTED}
+        protected.update(status="ACTIVE", inventory=1, inventory_policy="DENY", tracked=True)
         title = "4BT41 - Turquoise White Red Marble Halfmoon Male"
         self.item = {
             "id": "4BT41", "state": "MUTATION_PENDING",
@@ -35,7 +36,7 @@ class LedgerTests(unittest.TestCase):
                 "title": title,
                 "evidence": {"provider": "google", "model": "gemini", "call_id": "cat-1", "timestamp": bb.now(), "input_hashes": [assets["source"]["sha256"]], "output": {"tank_id": "4BT41"}},
             },
-            "product": {"id": "gid://shopify/Product/1", "before": protected},
+            "product": {"id": "gid://shopify/Product/1", "variant_id": "gid://shopify/ProductVariant/1", "location_id": "gid://shopify/Location/1", "source": "FRESH_SHOPIFY_READ", "tank_id": "4BT41", "before": protected},
             "images": {"hero": assets["hero"]},
             "image_qa": {
                 "deterministic": {k: "PASS" for k in bb.QA_DETERMINISTIC},
@@ -53,6 +54,11 @@ class LedgerTests(unittest.TestCase):
 
     def retank(self, item, tank):
         item["id"] = tank
+        item["product"]["tank_id"] = tank
+        path = Path(self.tmp.name) / f"{tank}-source.png"; path.write_bytes(tank.encode())
+        item["source"] = {"path": str(path), "sha256": bb.sha256(path)}
+        item["image_qa"]["visual"]["input_hashes"] = [item["source"]["sha256"], item["images"]["hero"]["sha256"], item["source"]["sha256"]]
+        item["mutation"]["media"] = [item["images"]["hero"]["sha256"], item["source"]["sha256"]]
         item["catalogue"]["tank_id"] = tank
         item["catalogue"]["title"] = bb.expected_catalogue_title(item["catalogue"])
         item["mutation"]["title"] = item["catalogue"]["title"]
@@ -186,8 +192,8 @@ class LedgerTests(unittest.TestCase):
         items = []
         for n in range(9):
             item = copy.deepcopy(self.item)
-            self.retank(item, f"4BT{n}")
-            item["product"]["id"] = f"gid://shopify/Product/{n}"
+            self.retank(item, f"4BT{n+1}")
+            item["product"]["id"] = f"gid://shopify/Product/{n+1}"
             item["catalogue"]["evidence"]["call_id"] = f"cat-{n}"
             item["image_qa"]["visual"]["call_id"] = f"qa-{n}"
             items.append(item)
@@ -201,10 +207,35 @@ class LedgerTests(unittest.TestCase):
     def test_verified_requires_preserved_fields(self):
         item = copy.deepcopy(self.item); item["state"] = "VERIFIED"
         item["readback"] = dict(item["product"]["before"], product_id=item["product"]["id"],
-            title=item["mutation"]["title"], arrival_date=item["mutation"]["arrival_date"], inventory=1, media_hashes=item["mutation"]["media"])
+            title=item["mutation"]["title"], arrival_date=item["mutation"]["arrival_date"], inventory=1, media_hashes=item["mutation"]["media"], source="FRESH_SHOPIFY_READ", variant_id=item["product"]["variant_id"], location_id=item["product"]["location_id"])
         bb.validate_item(item)
         item["readback"]["description"] = "changed"
         with self.assertRaises(bb.LedgerError): bb.validate_item(item)
 
+
+    def test_zero_stock_requires_explicit_new_fish_authority(self):
+        self.item['product']['before']['inventory']=0
+        with self.assertRaises(bb.LedgerError):bb.validate_ledger(self.ledger)
+        self.item['intake']={'new_fish_authorised':True,'source_reference':'operator-approved-intake','source_sha256':self.item['source']['sha256']}
+        bb.validate_ledger(self.ledger)
+    def test_negative_multiple_and_inactive_stock_are_not_reset(self):
+        for quantity,status in [(-1,'ACTIVE'),(2,'ACTIVE'),(0,'ARCHIVED')]:
+            self.item['product']['before'].update(inventory=quantity,status=status)
+            with self.assertRaises(bb.LedgerError):bb.validate_ledger(self.ledger)
+    def test_wrong_tank_variant_or_location_stops_mutation(self):
+        for field,value in [('tank_id','4BT42'),('variant_id','#1'),('location_id',None),('source','WRITER_RESPONSE')]:
+            item=copy.deepcopy(self.item);item['product'][field]=value
+            with self.assertRaises(bb.LedgerError):bb.validate_item(item)
+    def test_photo_text_conflict_requires_resolution(self):
+        self.item['identity_conflict_resolved']=False
+        with self.assertRaises(bb.LedgerError):bb.validate_item(self.item)
+    def test_archive_requires_real_hash_verified_files(self):
+        item=copy.deepcopy(self.item);item['state']='ARCHIVED'
+        item['readback']=dict(item['product']['before'],product_id=item['product']['id'],title=item['mutation']['title'],arrival_date=item['mutation']['arrival_date'],inventory=1,media_hashes=item['mutation']['media'],source='FRESH_SHOPIFY_READ',variant_id=item['product']['variant_id'],location_id=item['product']['location_id'])
+        with self.assertRaises(bb.LedgerError):bb.validate_item(item)
+        item['archive']={'verified_at':bb.now(),'source':dict(item['source']),'hero':dict(item['images']['hero'])}
+        bb.validate_item(item)
+        item['archive']['source']['sha256']='0'*64
+        with self.assertRaises(bb.LedgerError):bb.validate_item(item)
 
 if __name__ == "__main__": unittest.main()

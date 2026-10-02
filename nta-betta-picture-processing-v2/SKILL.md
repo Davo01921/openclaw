@@ -227,3 +227,7 @@ Use a global maximum of four simultaneous external operations initially. Run ind
 Never restart a fish from intake merely because a downstream stage failed. Resume from the last validated checkpoint whose hashes/evidence still match.
 
 After 20-30 Bettas, review telemetry before considering a concurrency increase.
+
+## Canonical closeout status — 2026-10-02
+
+This V2.1 source is canonical. V3 quota/overnight work is deferred. Status is READY FOR FINAL LIVE ACCEPTANCE; do not report CLOSED until docs/CLOSEOUT.md's one-fish exercise passes. Enforce the updated fresh exact variant/location, zero-stock intake authority, independent readback and archive-hash gates in scripts/betta_batch.py. No paid test assets or invented intake events are authorized by closeout.

@@ -1,6 +1,6 @@
 # NTA Betta Picture Processing — Standard Operating Procedure
 
-**Status:** Current live-test SOP  
+**Status:** Canonical V2.1 — READY FOR FINAL LIVE ACCEPTANCE  
 **Version:** 2.1  
 **Date:** 2026-09-13  
 **System:** `betta-picture-processing`
@@ -300,3 +300,9 @@ The test is PASS only if all of the following are true:
 16. Retry/checkpoint behaviour does not repeat already-completed work.
 
 If any item fails, do not expand the test to a larger batch until the cause is diagnosed and corrected.
+
+## 2026-10-02 closeout constraints
+
+V2.1 is the only production processing workflow; experimental V3 is deferred. Before mutation, record a fresh exact Product/Variant/Location/tank snapshot with DENY and tracked inventory. Only ACTIVE individual products with stock 0 or 1 are eligible; zero stock requires explicit new-fish authority tied to the source reference and hash. Negative/multiple stock and inactive products hold for operator review. Photo/text conflicts must be resolved explicitly; no adjacent tank inference.
+
+Fresh independent readback must include exact variant/location and protected fields. ARCHIVED requires existing source and hero files with approved hashes and a verification timestamp; update paths when moving files. Shopify status remains protected: evidence archiving is not authority to archive a sold Shopify product. Serialize ledger writes and retain source references for cross-batch duplicate checks. See CLOSEOUT.md for one final live acceptance exercise and recovery.
