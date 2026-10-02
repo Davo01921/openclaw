@@ -33,6 +33,9 @@ def build_fulfilment_write_plan(data: dict) -> dict:
         if not isinstance(value, bool):
             errors.append(field)
 
+    tracking = data.get("tracking_info")
+    if tracking is not None and (not isinstance(tracking, dict) or set(tracking) != {"company", "number"} or not all(_nonempty(tracking.get(k)) for k in ("company", "number")) or data.get("tracking_source_verified") is not True):
+        errors.append("tracking_info:unverified_or_invalid")
     groups = data.get("fulfilment_orders")
     canonical_groups: list[dict] = []
     if not isinstance(groups, list) or not groups:
@@ -96,7 +99,8 @@ def build_fulfilment_write_plan(data: dict) -> dict:
             "order_id": data["order_id"].strip(),
             "notify_customer": data["notify_customer"],
             "fulfilment_orders": canonical_groups,
-            "tracking_info": None,
+            "tracking_info": {k: v.strip() for k, v in tracking.items()} if tracking else None,
+            "tracking_source_verified": data.get("tracking_source_verified") is True,
             "retry_authorised": retry_authorised,
         },
         "missing_or_conflicting_fields": [],

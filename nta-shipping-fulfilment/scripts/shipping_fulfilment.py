@@ -4,6 +4,7 @@
 from __future__ import annotations
 import hashlib
 import json
+import re
 from datetime import datetime
 from typing import Any, Dict, List
 
@@ -34,8 +35,11 @@ def validate_event(event: Any) -> Dict[str, Any]:
         problems.append("explicit authorisation is required")
     if not _iso_timestamp(event.get("shipped_at")):
         problems.append("shipped_at must be an offset-aware ISO-8601 timestamp")
-    if event.get("notify_customer") not in (True, False):
+    if not isinstance(event.get("notify_customer"), bool):
         problems.append("notify_customer must be explicit")
+
+    if not re.fullmatch(r"gid://shopify/Order/[1-9]\d*", str(event.get("order_id", ""))):
+        problems.append("exact Shopify Order GID is required")
 
     carrier = event.get("carrier")
     tracking = event.get("tracking_number")
@@ -51,10 +55,16 @@ def validate_event(event: Any) -> Dict[str, Any]:
         problems.append("at least one fulfilment_order is required")
     else:
         seen = set()
+        seen_orders = set()
         for i, fo in enumerate(fos):
             if not isinstance(fo, dict) or not isinstance(fo.get("fulfilment_order_id"), str) or not fo["fulfilment_order_id"].strip():
                 problems.append(f"fulfilment_orders[{i}].fulfilment_order_id is required")
                 continue
+            if not re.fullmatch(r"gid://shopify/FulfillmentOrder/[1-9]\d*", fo["fulfilment_order_id"]):
+                problems.append("exact FulfillmentOrder GID is required")
+            if fo["fulfilment_order_id"] in seen_orders:
+                problems.append("duplicate fulfilment order ID")
+            seen_orders.add(fo["fulfilment_order_id"])
             lines = fo.get("line_items")
             if not isinstance(lines, list) or not lines:
                 problems.append(f"fulfilment_orders[{i}] requires line_items")
@@ -65,6 +75,8 @@ def validate_event(event: Any) -> Dict[str, Any]:
                     continue
                 lid = line.get("fulfilment_order_line_item_id")
                 qty = line.get("quantity")
+                if not re.fullmatch(r"gid://shopify/FulfillmentOrderLineItem/[1-9]\d*", str(lid)):
+                    problems.append("exact FulfillmentOrderLineItem GID is required")
                 if not isinstance(lid, str) or not lid.strip():
                     problems.append(f"fulfilment_orders[{i}].line_items[{j}] requires exact line id")
                 elif lid in seen:
@@ -90,7 +102,7 @@ def canonical_identity(event: Dict[str, Any]) -> Dict[str, Any]:
         "order_id": event["order_id"].strip(),
         "carrier": event.get("carrier").strip() if event.get("carrier") else None,
         "tracking_number": event.get("tracking_number").strip() if event.get("tracking_number") else None,
-        "shipped_at": event["shipped_at"],
+
         "fulfilment_orders": fos,
     }
 
@@ -125,6 +137,7 @@ def build_verifier_request(event: Dict[str, Any]) -> Dict[str, Any]:
             }],
             "protected_fields": ["inventory_adjustment"],
             "expected_result": {
+                "tracking_info": {"company": event["carrier"].strip(), "number": event["tracking_number"].strip()} if event.get("carrier") else None,
                 "order_id": event["order_id"].strip(),
                 "notify_customer": event["notify_customer"],
                 "fulfilled_lines": [

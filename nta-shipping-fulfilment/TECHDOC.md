@@ -8,10 +8,14 @@
 - `nta-shopify-fulfilment-auditor`: fresh-read deterministic audit.
 
 ## Idempotency
-The key hashes order ID, carrier, tracking number, shipment timestamp and sorted fulfilment-order/line identities with quantities. `job_id` is deliberately excluded so replayed source events with a new delivery ID still collapse to the same shipment identity.
+The key hashes order ID, carrier, tracking number and sorted fulfilment-order/line identities with quantities. `job_id` and `shipped_at` are deliberately excluded so replayed source events with a new delivery ID still collapse to the same shipment identity.
 
 ## Persistence boundary
-This skill does not invent a database. The runtime/orchestrator must provide a durable completed-key store. Mark completion only after canonical verification succeeds.
+Use `scripts/shipment_ledger.py` on a persistent private path. Atomic SQLite claims record INDETERMINATE before mutation; only an independent PASS receipt marks VERIFIED. `scripts/shipment_boundary.py` composes the verifier handoff, existing writer and independent reader callbacks. Keep indeterminate intents across crashes and code rollback; reconcile before any retry. Do not substitute an in-memory set.
 
 ## Security
 No credentials are accepted or printed by this skill. Shopify credentials remain owned by the canonical fulfilment writer adapter. No browser fallback is permitted.
+
+## Tracking and handoff
+
+`verification_route.fulfilment_handoff` checks fresh order identity, open fulfillment orders and exact remaining quantities before constructing the writer input. Carrier/number are a paired, source-verified `tracking_info` object. The API maps this to `FulfillmentInput.trackingInfo`; independent audit checks it and successful state.

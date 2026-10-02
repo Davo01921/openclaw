@@ -2,7 +2,7 @@ from __future__ import annotations
 
 
 def _line_map(lines):
-    if not isinstance(lines, list):
+    if not isinstance(lines, list) or not lines:
         return None
     out = {}
     for line in lines:
@@ -25,7 +25,7 @@ def audit_fulfilment(expected: dict, actual: dict) -> dict:
         return {"status": "REVIEW_REQUIRED", "mismatches": ["expected/actual must be objects"]}
     if actual.get("source") != "FRESH_SHOPIFY_READ":
         problems.append("actual.source")
-    if expected.get("order_id") != actual.get("order_id"):
+    if not isinstance(expected.get("order_id"), str) or not expected["order_id"].strip() or expected.get("order_id") != actual.get("order_id"):
         problems.append("order_id")
     expected_lines = _line_map(expected.get("fulfilled_lines"))
     actual_lines = _line_map(actual.get("fulfilled_lines"))
@@ -35,7 +35,9 @@ def audit_fulfilment(expected: dict, actual: dict) -> dict:
         problems.append("actual.fulfilled_lines")
     if expected_lines is not None and actual_lines is not None and expected_lines != actual_lines:
         problems.append("fulfilled_lines")
+    if expected.get("tracking_info") is not None and expected["tracking_info"] != actual.get("tracking_info"):
+        problems.append("tracking_info")
     status = actual.get("status")
-    if status not in {"SUCCESS", "OPEN", "FULFILLED"}:
+    if status not in {"SUCCESS", "FULFILLED"}:
         problems.append("status")
     return {"status": "PASS" if not problems else "FAIL", "mismatches": sorted(set(problems))}
