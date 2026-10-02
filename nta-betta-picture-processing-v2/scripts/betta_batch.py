@@ -14,7 +14,7 @@ import os
 import re
 import sys
 import tempfile
-from datetime import datetime, timezone
+from datetime import datetime, timezone, date
 from pathlib import Path
 
 ITEM_STATES = (
@@ -66,6 +66,8 @@ def save(path: Path, data: dict) -> None:
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
             json.dump(data, fh, indent=2, sort_keys=True)
             fh.write("\n")
+            fh.flush()
+            os.fsync(fh.fileno())
         os.replace(tmp, path)
     finally:
         if os.path.exists(tmp):
@@ -101,7 +103,7 @@ def expected_catalogue_title(cat: dict) -> str:
     tank_id = str(cat.get("tank_id") or "").strip()
     fish_name = " ".join(str(cat.get("fish_name") or "").split())
     tail_type = " ".join(str(cat.get("tail_type") or "").split())
-    require(tank_id, "catalogue tank_id required for title")
+    require(re.fullmatch(r"[1-9]\d*BT[1-9]\d*", tank_id), "canonical tank ID required for title")
     require(fish_name, "catalogue fish_name required for title")
     require(tail_type, "catalogue tail_type required for title")
     require(" - " not in fish_name and " - " not in tail_type, "title components must not contain title separator")
@@ -123,7 +125,16 @@ def validate_file(asset: dict, role: str) -> None:
 def product_snapshot_ready(item: dict) -> bool:
     product = item.get("product", {})
     before = product.get("before")
-    return bool(product.get("id") and isinstance(before, dict) and PROTECTED <= set(before))
+    return bool(
+        re.fullmatch(r"gid://shopify/Product/[1-9]\d*", str(product.get("id", "")))
+        and re.fullmatch(r"gid://shopify/ProductVariant/[1-9]\d*", str(product.get("variant_id", "")))
+        and re.fullmatch(r"gid://shopify/Location/[1-9]\d*", str(product.get("location_id", "")))
+        and product.get("source") == "FRESH_SHOPIFY_READ"
+        and product.get("tank_id") == item.get("id")
+        and isinstance(before, dict) and PROTECTED <= set(before)
+        and isinstance(before.get("inventory"), int) and not isinstance(before["inventory"], bool)
+        and before.get("inventory_policy") == "DENY" and before.get("tracked") is True
+    )
 
 
 def hero_asset_ready(item: dict) -> bool:
@@ -197,6 +208,10 @@ def validate_item(item: dict) -> None:
         require(DATE_RE.match(cat.get("photo_date", "")) is not None, "accepted physical photo date required")
         require(cat.get("title") == expected_catalogue_title(cat),
                 "catalogue title must exactly match '<Tank Number> - <Fish Name> <Tail Type> <Male/Female>'")
+        try:
+            date.fromisoformat(cat["photo_date"])
+        except ValueError:
+            raise LedgerError("physical photo date is not a real calendar date")
         validate_vision_call(cat.get("evidence", {}))
     if item["state"] in ITEM_STATES[ITEM_STATES.index("PRODUCT_RESOLVED"):]:
         require(product_snapshot_ready(item), "product id/snapshot required")
@@ -218,9 +233,26 @@ def validate_item(item: dict) -> None:
         validate_mutation(item)
     if item["state"] in ITEM_STATES[ITEM_STATES.index("VERIFIED"):]:
         verify_readback(item)
+    if item["state"] == "ARCHIVED":
+        archive = item.get("archive", {})
+        require(archive.get("verified_at"), "archive verification timestamp required")
+        for role, expected in (("source", item["source"]), ("hero", item["images"]["hero"])):
+            asset = archive.get(role, {})
+            validate_file(asset, "archived " + role)
+            require(asset["sha256"] == expected["sha256"], "archive hash must match approved asset")
 
 
 def validate_mutation(item: dict) -> None:
+    product = item["product"]
+    before = product["before"]
+    require(before.get("status") == "ACTIVE", "inactive/sold product requires operator review")
+    require(before["inventory"] in {0, 1}, "individual-fish stock must be 0 or 1; do not reset bad stock")
+    if before["inventory"] == 0:
+        intake = item.get("intake", {})
+        require(intake.get("new_fish_authorised") is True and intake.get("source_reference")
+                and intake.get("source_sha256") == item["source"]["sha256"],
+                "zero-stock fish cannot be revived without explicit new-fish intake authority")
+    require(item.get("identity_conflict_resolved", True) is True, "photo/text identity conflict requires resolution")
     mutation = item.get("mutation", {})
     require(set(mutation) == AUTHORISED, "mutation contains missing or unauthorised keys")
     cat = item["catalogue"]
@@ -236,7 +268,10 @@ def validate_mutation(item: dict) -> None:
 def verify_readback(item: dict) -> None:
     before = item["product"]["before"]
     after = item.get("readback", {})
+    require(after.get("source") == "FRESH_SHOPIFY_READ", "read-back must be independent and fresh")
     require(after.get("product_id") == item["product"]["id"], "read-back product id mismatch")
+    for field in ("variant_id", "location_id"):
+        require(after.get(field) == item["product"][field], "read-back exact " + field + " mismatch")
     for key in PROTECTED:
         require(after.get(key) == before.get(key), f"protected field changed: {key}")
     require(after.get("title") == expected_catalogue_title(item["catalogue"]), "read-back title mismatch")
@@ -252,11 +287,14 @@ def verify_readback(item: dict) -> None:
 def validate_ledger(data: dict) -> None:
     require(data.get("schema_version") == 2, "unsupported ledger schema")
     require(data.get("batch_id") and isinstance(data.get("items"), list) and data["items"], "batch/items required")
-    ids, calls, product_ids = set(), set(), set()
+    ids, calls, product_ids, sources = set(), set(), set(), set()
     for item in data["items"]:
         validate_item(item)
         require(item["id"] not in ids, "duplicate item id")
         ids.add(item["id"])
+        digest = item["source"]["sha256"]
+        require(digest not in sources, "duplicate source photograph across batch")
+        sources.add(digest)
         product_id = item.get("product", {}).get("id")
         if product_id:
             require(product_id not in product_ids, "duplicate Shopify product id across batch")

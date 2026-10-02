@@ -503,3 +503,9 @@ A failure in any mandatory criterion stops rollout to a larger production batch 
 ## 18. Change-control rule
 
 Any future change that alters title semantics, Shopify mutation authority, identity resolution, image fidelity rules, telemetry accounting, onboarding-time definition, concurrency or retry behaviour MUST update this specification and corresponding tests in the same change set.
+
+## 2026-10-02 closeout constraints
+
+V2.1 is the only production processing workflow; experimental V3 is deferred. Before mutation, record a fresh exact Product/Variant/Location/tank snapshot with DENY and tracked inventory. Only ACTIVE individual products with stock 0 or 1 are eligible; zero stock requires explicit new-fish authority tied to the source reference and hash. Negative/multiple stock and inactive products hold for operator review. Photo/text conflicts must be resolved explicitly; no adjacent tank inference.
+
+Fresh independent readback must include exact variant/location and protected fields. ARCHIVED requires existing source and hero files with approved hashes and a verification timestamp; update paths when moving files. Shopify status remains protected: evidence archiving is not authority to archive a sold Shopify product. Serialize ledger writes and retain source references for cross-batch duplicate checks. See CLOSEOUT.md for one final live acceptance exercise and recovery.
