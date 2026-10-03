@@ -1,5 +1,9 @@
 # NTA medium-priority closeout — 2 October 2026
 
+## Post-closeout update — 3 October 2026
+
+Shipping Fulfilment V2 was owner-accepted as **CLOSED / BAU**. The genuine-dispatch restart/replay exercise described below was waived as a closure blocker and is now an optional BAU confidence check only. The 2 October table and evidence below are retained as the historical closeout snapshot.
+
 **Two projects CLOSED / BAU; four ready for one final genuine acceptance exercise; two have explicit external facts/permission blockers.** No fake production event was created. All completed source changes are committed, pushed and merged after relevant CI. The raw operational evidence is private under /Users/davidlo/MediumProjectClose02102026/evidence.
 
 | Project | Initial classification/status | Work completed | Evidence | Final status | Remaining human action |
