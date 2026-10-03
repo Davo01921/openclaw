@@ -1,6 +1,6 @@
-# Death Loss closeout — 2 October 2026
+# Death Loss closeout — 3 October 2026
 
-**Final status: READY FOR FINAL LIVE ACCEPTANCE.** Initial classification C. Engineering hardening is complete; scheduler acceptance is distinct from an approved manual close.
+**Final status: CLOSED / PRODUCTION / BAU.** Initial classification C. Engineering hardening was completed on 2 October 2026; the remaining scheduler acceptance gate was satisfied on 3 October 2026 by the owner-confirmed successful genuine nonempty 18:00 Sydney scheduled close.
 
 Purpose: turn traceable authorized death reports into exactly one verified daily Shopify loss order. Canonical architecture: trusted Discord metadata/text/photo interpretation → exact variant identity → locked durable daily queue → native scheduled Python close → existing persisted-session bridge → order and fulfillment → independent order and inventory audits. The legacy standalone-order mutation path is disabled; the older modular planner is reference only. v1.4.1 (`797a7a4`, PR #19) is the installed source, not a second competing “v3” path.
 
@@ -15,12 +15,13 @@ Purpose: turn traceable authorized death reports into exactly one verified daily
 
 Private source evidence: `/Users/davidlo/Documents/Codex/nta-death-loss-investigation-2026-10-01/ROLLOUT.md`, `approved-real-close-result.json`, `read-resilience-validation.json`; live queue/result journals in Fred's configured state directory. They contain operator details and remain outside Git.
 
-## Exactly one final acceptance action
+## Final live acceptance completed
 
-**Observe the next genuine nonempty 18:00 Sydney scheduled close.** Preserve the scheduler receipt and private JSON result journal. Require CLOSED_VERIFIED, exactly one `DeathBatch-<Sydney date>` order, exact lines/customer/discount/source references, PAID/FULFILLED/$0 AUD/zero balance and verified frozen-before/fresh-after inventory deltas. Then run a read-only preview for that date and confirm it identifies the same existing order; there must be no second daily order. Mark CLOSED only after this evidence exists.
+The last required production acceptance action was the next genuine nonempty 18:00 Australia/Sydney scheduled close.
 
-An empty scheduled run is expected and cannot satisfy nonempty acceptance. Today had no queued October 2 batch at inspection. No synthetic event, test Discord message or manual order was created during closeout.
+On 3 October 2026 the owner confirmed that this scheduled close completed successfully. This is accepted as completion of the live scheduler gate and closes the project.
 
-BAU: staff provide accurate reports; operator resolves ambiguous intake and failed/indeterminate recovery alerts. Preserve result journals and source references. Follow [SOP](../SOP.md) and [DEVELOPMENT](../DEVELOPMENT.md) for recovery. Before any mutation attempt the deployment backup can restore code/config; after an attempt preserve recovery state and reconcile the exact existing order before any retry. Never restore an OPEN queue snapshot over a mutation journal.
+No synthetic death, test Shopify order or substitute manual close is being counted as acceptance. Detailed runtime receipts and result journals remain private operational evidence and are not copied into Git.
 
-Deferred: broader synonym matching, alternative schedule mechanisms and richer reporting are unnecessary for closure and belong to future backlog.
+The prior October 1 manual-close evidence remains useful historical recovery evidence, but it is no longer the basis for project status.
+
