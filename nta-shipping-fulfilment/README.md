@@ -1,6 +1,6 @@
 # NTA Shipping Fulfilment V2
 
-**READY FOR FINAL LIVE ACCEPTANCE** — engineering completed in PR #17. [Closeout and exact acceptance](docs/CLOSEOUT.md).
+**CLOSED / BAU — 3 October 2026.** Engineering completed in PR #17 and the owner accepted the production design for closure. The previously planned live restart/replay remains an optional BAU confidence check rather than a project blocker. See [closeout](docs/CLOSEOUT.md).
 
 The runnable `scripts/run_shipment.py` defaults to a read-only preflight and supplies the existing adapter plus independent before/after normalization.
 
