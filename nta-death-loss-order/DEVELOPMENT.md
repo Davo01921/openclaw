@@ -1,5 +1,7 @@
 Deterministic hardening and deployment — 1 October 2026
 
+**Production acceptance:** CLOSED / PRODUCTION / BAU — 3 October 2026. The owner confirmed a genuine nonempty 18:00 Sydney scheduled close completed successfully, satisfying the final live-acceptance gate. The deployment/recovery detail below remains the BAU technical reference.
+
 This branch adds the deployed Python helpers to the canonical skill directory and hardens their boundaries. After David approved rollout, these helpers and the additive bridge read patch were installed in Fred’s live skill. The existing 18:00 Sydney job was converted to a native command payload; no second scheduler was added. A private backup retains the previous skill, bridge, scheduler and queue snapshot. No production `.env`, queue contents or credentials are included in this branch. No Shopify test orders, manual Shopify mutations or test Discord messages were performed during rollout.
 
 **Architecture and risks**
