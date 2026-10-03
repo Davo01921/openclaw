@@ -1,5 +1,5 @@
 # SOP — NTA daily death-loss order
-**Closeout status (2026-10-02): READY FOR FINAL LIVE ACCEPTANCE.** See [evidence and the single scheduled acceptance action](docs/CLOSEOUT.md).
+**Closeout status (2026-10-03): CLOSED / PRODUCTION / BAU.** The owner confirmed the genuine nonempty 18:00 Sydney scheduled close succeeded and the final live-acceptance gate is complete. See [closeout](docs/CLOSEOUT.md).
 
 
 Owner: Nano Tanks Australia  
@@ -101,3 +101,12 @@ Never blindly retry an indeterminate write. Preserve any existing order number a
 ## Schedule changes
 
 Change the existing OpenClaw scheduler record; do not add a duplicate macOS cron entry. Keep the timezone explicit and keep the job as a fixed command with only the dedicated death-batch gate.
+
+
+## BAU operating status
+
+Death Loss v3 is closed as an engineering project as of 3 October 2026.
+
+The live scheduler, queue, exact-resolution checks, order creation, fulfilment and independent verification remain normal BAU operation. Reopen engineering only for a confirmed production defect, Shopify/API compatibility breakage, a security/recovery issue, or a deliberately approved new capability.
+
+Ordinary successful death-loss batches do not reopen the project.
