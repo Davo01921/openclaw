@@ -15,4 +15,4 @@ No line matching by product title/SKU, no tracking inference, no carrier selecti
 ## Acceptance criteria
 Normal validation performs zero model calls and zero network calls; equivalent canonical shipment identities produce the same idempotency key; malformed/ambiguous events cannot produce a writable request; all writes remain behind `nta-shopify-write-verifier`.
 
-Production acceptance remains pending as recorded in docs/CLOSEOUT.md.
+Project status is CLOSED / BAU as recorded in docs/CLOSEOUT.md. A future genuine dispatch restart/replay may still be used as an optional operational confidence check.
