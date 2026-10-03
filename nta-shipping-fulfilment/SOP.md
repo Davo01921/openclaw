@@ -16,4 +16,4 @@ Any missing, conflicting, inferred or ambiguous shipment identity returns `REVIE
 ## Operational rule
 This skill owns shipment-event validation and request construction only. It does not own Shopify transport, inventory mutation, carrier selection, label purchase or fulfilment auditing.
 
-Status: READY FOR FINAL LIVE ACCEPTANCE; see docs/CLOSEOUT.md. Back up the SQLite ledger and retain it when rolling back code.
+Status: CLOSED / BAU as of 3 October 2026; see docs/CLOSEOUT.md. Back up the SQLite ledger and retain it when rolling back code.
