@@ -1,5 +1,7 @@
 # TECHDOC — NTA Shipping Fulfilment v2
 
+**Status: CLOSED / BAU — 3 October 2026.**
+
 ## Components
 - `scripts/shipping_fulfilment.py`: schema/safety validation, canonicalisation, SHA-256 idempotency key and verifier-request builder.
 - `scripts/dry_run.py`: zero-network regression checks.
