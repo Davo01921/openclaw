@@ -6,6 +6,8 @@ description: "Queue verified Discord livestock deaths, amend quantities safely, 
 
 # NTA daily death-loss order
 
+**Status:** CLOSED / PRODUCTION / BAU — 3 October 2026. v1.4.1 passed its final owner-confirmed genuine scheduled production acceptance and now operates as BAU.
+
 Use AI to interpret staff text/photos and request missing details. Python owns identity checks, stock, deduplication, amendments, durable state and Shopify mutation/audits.
 
 Read [DEVELOPMENT.md](DEVELOPMENT.md) for configuration, recovery and rollout. The older modular planner contract is retained in [references/planner-contract.md](references/planner-contract.md) as reference; the daily-batch helpers below are the active execution path.
