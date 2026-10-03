@@ -1,5 +1,5 @@
 # SPECDOC — NTA death-loss order
-**Closeout status (2026-10-02): READY FOR FINAL LIVE ACCEPTANCE.** See [evidence and the single scheduled acceptance action](docs/CLOSEOUT.md).
+**Closeout status (2026-10-03): CLOSED / PRODUCTION / BAU.** The genuine nonempty scheduled production close has been owner-confirmed successful; the final acceptance criterion is satisfied.
 
 
 Version: 1.4.1
@@ -148,4 +148,11 @@ The release is acceptable when:
 2. the read-only capability probe verifies persisted offline authentication and required scopes;
 3. the active scheduler is a fixed 18:00 Sydney command with the dedicated gate only;
 4. no secret value appears in tracked files or test output;
-5. a deliberately authorised production batch can create exactly one order, complete `fulfillmentCreate`, and return `CLOSED_VERIFIED` after fresh read-back.
+5. a deliberately authorised production batch can create exactly one order, complete `fulfillmentCreate`, and return `CLOSED_VERIFIED` after fresh read-back. **Satisfied in production by the owner-confirmed successful genuine scheduled close on 3 October 2026.**
+
+
+## Closure state
+
+All v1.4.1 acceptance requirements are now considered met for the current production scope.
+
+Future enhancements are non-blocking backlog items. A new feature request or production defect may reopen engineering, but ordinary BAU execution does not alter the CLOSED / PRODUCTION status.
