@@ -1,5 +1,5 @@
 # TECHDOC — NTA death-loss order
-**Closeout status (2026-10-02): READY FOR FINAL LIVE ACCEPTANCE.** See [evidence and the single scheduled acceptance action](docs/CLOSEOUT.md).
+**Closeout status (2026-10-03): CLOSED / PRODUCTION / BAU.** Final live acceptance is satisfied by the owner-confirmed successful genuine nonempty scheduled close. See [closeout](docs/CLOSEOUT.md).
 
 
 Version: 1.4.1
@@ -131,3 +131,14 @@ Required non-mutating checks are:
 - scheduler configuration and next-run verification.
 
 No synthetic test order is permitted without explicit approval. Validate mutation behavior through the approved real scheduled workflow or a separately approved manual real batch. Capability probes and dry runs must never be described as proof that a new mutation occurred.
+
+
+## Production acceptance — 3 October 2026
+
+The final acceptance requirement was a genuine nonempty 18:00 Australia/Sydney scheduler execution using the native fixed-command path rather than a manual substitute or synthetic event.
+
+The owner confirmed that this scheduled production close completed successfully on 3 October 2026. That confirmation closes the previously documented acceptance gap.
+
+The detailed operational receipt, queue result journal and Shopify evidence remain private runtime evidence rather than repository content. This document does not invent or restate order-specific values that are not recorded in Git.
+
+Status is therefore **CLOSED / PRODUCTION / BAU**. The scheduler and deterministic verification path remain the production runtime.
