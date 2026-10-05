@@ -1,11 +1,49 @@
-# NTA closeout status — updated 3 October 2026
+# NTA portfolio status — updated 5 October 2026
 
-- Gumtree Automation Engine: CLOSED / BAU; small manual catalogue queue remains.
-- Death Loss v3 (installed v1.4.1): **CLOSED / PRODUCTION / BAU** — genuine nonempty 18:00 Sydney scheduled close owner-confirmed successful on 3 October 2026.
-- Betta Processing: canonical V2.1, READY FOR FINAL LIVE ACCEPTANCE — one genuine fish.
-- Shipping Fulfilment V2: CLOSED / BAU — PR #17 and executable runner merged; final live replay waived as a closure blocker on 3 October 2026 and retained only as an optional BAU confidence check.
-- Catalogue Integrity: BLOCKED — 41 physical balances and 29 packed-heavy-shipping facts.
+Current full portfolio: [PORTFOLIO.md](PORTFOLIO.md)  
+Current visual: [NTA Project Portfolio SVG](docs/NTA_PROJECT_PORTFOLIO.svg)
 
-Cross-repository: Cost Sync CLOSED / BAU; StreamShelf READY FOR FINAL LIVE ACCEPTANCE; GMC cleanup BLOCKED on the strict reader's Shopify permission grant, with Google processing waits separately documented.
+## Production / BAU
+- Gumtree Automation Engine: CLOSED / BAU.
+- Death Loss v3: CLOSED / PRODUCTION / BAU.
+- Shipping Fulfilment V2: CLOSED / BAU.
+- StreamShelf: CLOSED / BAU after physical-device acceptance on 3 October.
+- Live Transcriber private v1: CLOSED / BAU at accepted Build 48.
+- NTA POS v1: CLOSED / PRODUCTION / BAU after genuine Shopify sale #17435.
+- ShipStation → Shopify cost sync: CLOSED / BAU.
+- Aqua Premium order processor: CLOSED / PRODUCTION / BAU.
+- ShipWeave: production-authoritative checkout.
+- TierWeave: production / BAU.
 
-See docs/NTA_MEDIUM_PRIORITY_CLOSEOUT_2026-10-02.md for evidence, exact acceptance actions and runtime recovery. Existing experiments and dirty runtime mirrors are not canonical production authority.
+## Final acceptance / monitoring
+- Betta Processing V2.1: READY FOR FINAL LIVE ACCEPTANCE — one genuine new fish.
+- AdHarbour v0.5: MONITORING — 5 October scheduled run failed at Merchant collection, manual recovery passed; preserve production for the next genuine 12 October run and review on 13 October. v0.6 remains isolated staging.
+
+## Active builds
+- NTA Internal Finance: ACTIVE / SHADOW ACCOUNTING.
+- Direct Carrier Dispatch: ACTIVE inside `nta-shipping-gate`; production carrier credentials absent, booking and fulfilment writes off; MyTeamGE/TGE plug-in readiness remains part of activation.
+- NTA Club: ACTIVE; Phase 1 contracts/mobile foundation complete, next Shopify customer integration.
+- NTA Order Orchestrator: ACTIVE; supersedes legacy Order Status Processor; Phase 3 specialist integration is partial.
+- OpenClaw AI Observatory: ACTIVE local observability / routing-governance infrastructure.
+
+## Blocked operational work
+- Google Merchant Center cleanup: processing / maintenance acceptance still incomplete.
+- Catalogue Integrity: BLOCKED on 41 physical balances + 29 heavy packed-weight facts.
+
+## Upcoming / backlog
+- NTA POS V2 commercial livestock-retail platform — PLANNED / DOCUMENTATION ONLY.
+- NTA Vision (YOLO11) — upcoming proof-of-concept, not yet built.
+- AI Agent Supervisor / Telegram control plane — concept only, no dedicated repo yet.
+- Aqua Premium daily inventory sync.
+- RealtimeStack replacement.
+- Unattended pickup / micro-store.
+- HomeOS.
+- StampOS.
+- 90-day NTA growth plan.
+- Live Transcriber commercial/public phase.
+
+## Superseded
+- Koala Upsell Replacement — cancelled; TierWeave supersedes it.
+- Legacy Order Status Processor — superseded by NTA Order Orchestrator.
+
+See [PORTFOLIO.md](PORTFOLIO.md) for the 35-project table, current-state notes, progress estimates and immediate focus.
