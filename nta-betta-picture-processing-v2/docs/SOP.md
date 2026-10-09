@@ -260,6 +260,33 @@ Archive only successful fish/batches.
 
 Store source files, outputs, CSV, ledger and telemetry export under the dated archive structure. Verify file hashes after moving.
 
+### Verified archive command
+
+Use `scripts/betta_archive.py` (default dry-run; `--apply` to move) with subcommands `plan`, `execute`, `status`, `resume`.
+
+1. `plan` reads the production/batch manifest and one or more independent verification reports, then classifies every fish. It refuses to proceed unless every fish has an independent `FINAL_SHOPIFY_READBACK_PASS`.
+2. A documented, owner-accepted exception is preserved and recorded as `PASS_WITH_ACCEPTED_EXCEPTION`; a failed assertion is never turned into a pass. An unresolved failure or a fish without a readback pass is `NEEDS_REVIEW` and blocks the archive.
+3. On `execute --apply`, each file is copied, its destination SHA-256 is verified against the source, and only then is the specific source removed. A pre-existing destination with different content is refused, never overwritten.
+4. The archive date is the actual Australia/Sydney date (`Archived Bettas/YYYY-MM-DD/`), with `Betta Processing/` for renamed originals (`<Tank ID> Original <Archive Date>.<ext>`) and the inventory CSV, `Betta Processed/` for `<Tank ID>.png` heroes, and `Audit/` for the manifest, receipts, QA evidence, verification reports and owner-approved exceptions.
+5. An immutable `archive-manifest.json` records source/destination paths, hashes and timestamps. `status` reports progress; `resume` is idempotent and skips completed files.
+6. Never move or delete unrelated files, incomplete work, authentication data (`.betta-shopify-state/secrets`) or unresolved Shopify mutation state.
+
+### Owner-accepted noncritical discrepancies vs genuine upload failures
+
+Not every failed assertion means the Shopify upload failed. Classify before archiving:
+
+- **Genuine upload failure — always blocks.** The product identity is wrong or unresolved; the product/variant/location does not match; a protected field (description, price, cost, vendor, product type, handle, status) changed; inventory is not exactly `1`; the arrival date does not equal the physical label; the hero is not Image 1 or the original is not the byte-identical Image 2; media is missing/not READY; or no independent `FINAL_SHOPIFY_READBACK_PASS` exists. These require a fix or re-upload and must never be archived as an exception.
+- **Owner-accepted noncritical discrepancy — recordable, narrowly scoped.** A cosmetic/metadata assertion that does not change product identity, protected fields, inventory, media order/readiness or the uploaded bytes, where the fish is already successfully uploaded and the owner explicitly accepts it. Examples: image-QA identity/fin/colour criticism of an already-uploaded approved hero (2BT13, 3BT24, 3BT32), or a media alt-text label that differs from the descriptive expectation while the media IDs and order are correct (3BT31).
+
+Rules for an owner-accepted discrepancy:
+
+1. The acceptance is explicit, owner-attributed and recorded with a `source_reference` and a reason.
+2. It is scoped to the exact tank and the exact assertion(s); it never widens to other fish or other assertions.
+3. The record preserves the original failed assertion, the previous successful verification, media IDs, media order and audit evidence. It sets `shopify_mutated: false`; it never alters Shopify.
+4. The fish is recorded as `PASS_WITH_ACCEPTED_EXCEPTION`, never as a plain `VERIFIED`. The failure is preserved as a failure, not converted to a pass.
+5. Any other failing assertion for the same fish, or any genuine upload failure, still blocks the archive.
+6. Supply these records via the manifest's accepted `image_qa.exception` and/or an explicit `--exceptions` JSON (see `betta-archive-exceptions-*.json` for the shape).
+
 The final Discord/report result should include:
 
 - PASS/blocked counts;
@@ -306,3 +333,37 @@ If any item fails, do not expand the test to a larger batch until the cause is d
 V2.1 is the only production processing workflow; experimental V3 is deferred. Before mutation, record a fresh exact Product/Variant/Location/tank snapshot with DENY and tracked inventory. Only ACTIVE individual products with stock 0 or 1 are eligible; zero stock requires explicit new-fish authority tied to the source reference and hash. Negative/multiple stock and inactive products hold for operator review. Photo/text conflicts must be resolved explicitly; no adjacent tank inference.
 
 Fresh independent readback must include exact variant/location and protected fields. ARCHIVED requires existing source and hero files with approved hashes and a verification timestamp; update paths when moving files. Shopify status remains protected: evidence archiving is not authority to archive a sold Shopify product. Serialize ledger writes and retain source references for cross-batch duplicate checks. See CLOSEOUT.md for one final live acceptance exercise and recovery.
+
+## 2026-10-09 offline runtime duties
+
+`scripts/betta_runtime.py` implements the deterministic duties that the closeout
+left to the live adapter. Use it where a concrete adapter exists; it performs no
+external calls itself.
+
+- Ledger writes: `LedgerStore` takes an exclusive advisory file lock around load,
+  in-memory validation and atomic save. Never edit the ledger JSON without it while
+  a run is active.
+- Intake deduplication: `IntakeRegistry` rejects a source SHA-256 already recorded
+  under a different batch/intake reference. A genuine resend must be recorded with
+  `allow_duplicate_of` pointing at the original identity.
+- Error handling: only an explicit success with no top-level or user errors is
+  `APPLIED`. Transport/server failures are `UNCERTAIN`; validation/authorisation
+  failures are `REJECTED` (item to `FIX_REQUIRED`).
+- Uncertain writes: an inconclusive mutation is held in `MUTATION_UNCERTAIN` and
+  independently read. It returns to `MUTATION_PENDING` only on a confirmed
+  `NOT_APPLIED` read with explicit operator retry authority; it reconciles to
+  `MUTATED` only on a confirmed `APPLIED` read; otherwise it stays held. Never
+  auto-retry.
+- Read-back trust: `verify_independent_readback` rejects evidence derived from the
+  writer response, a reused writer identity, or a read timestamped before the write
+  completed.
+- Inventory CSV: `validate_inventory_csv` enforces the fixed header, four fields per
+  row, one unique row per accepted tank, tank-set equality and value equality with
+  the live pre-write snapshot, so CSV values can never authorise a price or cost
+  change.
+- Telemetry: `require_telemetry_before_pass` blocks the `PASS` transition unless the
+  per-tank telemetry row already exists in the SQLite database.
+
+Runtime limitation: this repository contains no runnable Shopify/Discord adapter or
+single end-to-end driver. See docs/RUNTIME_ADAPTER_STATUS_2026-10-09.md for the exact
+missing adapters. Offline helper completion is not production acceptance.

@@ -177,6 +177,24 @@ Do deterministic work once per batch. Cache source hashes and Shopify READY-file
 9. Confirm fresh read-back, telemetry row, onboarding duration, media order, inventory, arrival date, protected fields, and archive evidence.
 10. After 20-30 fish, inspect median/p90 onboarding time and slowest states before increasing concurrency.
 
+## Concrete Shopify preflight
+
+`scripts/shopify_live.mjs` is the concrete read-only Shopify adapter used by the
+live-test preflight. It authenticates from the existing private NTA credential
+file, performs an exact tank lookup, and fails closed unless it finds one ACTIVE
+product, one variant, and one inventory location. It emits the Product, Variant,
+InventoryItem and Location IDs plus the complete protected-field baseline.
+
+Run it with the current OpenClaw Node runtime:
+
+```text
+/opt/homebrew/opt/node/bin/node scripts/shopify_live.mjs preflight
+/opt/homebrew/opt/node/bin/node scripts/shopify_live.mjs resolve 3BT31
+```
+
+This adapter deliberately exposes no mutation command yet. A successful
+read-only preflight is not authority or capability for a Shopify write.
+
 ## Do not over-optimise too early
 
 The largest wins are eliminating repeated successful work, overlapping independent I/O, and keeping expensive reasoning out of the normal path. Do not raise concurrency until the telemetry shows where the bottleneck actually is.

@@ -24,6 +24,15 @@ ITEM_STATES = (
     "VERIFIED", "PASS", "ARCHIVED",
 )
 TERMINAL = {"BLOCKED_VISUAL", "BLOCKED_PRODUCT", "FIX_REQUIRED"}
+# Non-terminal hold for an inconclusive Shopify mutation result. It is deliberately
+# outside the linear NEXT chain: an uncertain write must be independently reconciled,
+# never automatically retried.
+HOLD_STATES = {"MUTATION_UNCERTAIN"}
+BRANCH = {
+    ("MUTATION_PENDING", "MUTATION_UNCERTAIN"),
+    ("MUTATION_UNCERTAIN", "MUTATED"),
+    ("MUTATION_UNCERTAIN", "MUTATION_PENDING"),
+}
 NEXT = dict(zip(ITEM_STATES, ITEM_STATES[1:]))
 QA_DETERMINISTIC = {"dimensions", "filenames", "label", "framing", "original_reference_hash"}
 QA_VISUAL = {
@@ -198,7 +207,7 @@ def validate_vision_call(call: dict, required_assertions: set[str] | None = None
 
 def validate_item(item: dict) -> None:
     require(item.get("id"), "item id required")
-    require(item.get("state") in set(ITEM_STATES) | TERMINAL, "invalid item state")
+    require(item.get("state") in set(ITEM_STATES) | TERMINAL | HOLD_STATES, "invalid item state")
     require(isinstance(item.get("history"), list) and item["history"], "state history required")
     validate_file(item["source"], "source")
     if item["state"] in ITEM_STATES[ITEM_STATES.index("VISUAL_ACCEPTED"):]:
@@ -213,6 +222,8 @@ def validate_item(item: dict) -> None:
         except ValueError:
             raise LedgerError("physical photo date is not a real calendar date")
         validate_vision_call(cat.get("evidence", {}))
+        require(cat["evidence"]["input_hashes"] == [item["source"]["sha256"]],
+                "catalogue evidence must match the current source photograph")
     if item["state"] in ITEM_STATES[ITEM_STATES.index("PRODUCT_RESOLVED"):]:
         require(product_snapshot_ready(item), "product id/snapshot required")
         # PRODUCT_RESOLVED is also the join point for parallel preparation. A valid
@@ -231,6 +242,21 @@ def validate_item(item: dict) -> None:
         require(qa["visual"]["input_hashes"] == expected, "QA input hashes/version mismatch")
     if item["state"] in ITEM_STATES[ITEM_STATES.index("MUTATION_PENDING"):]:
         validate_mutation(item)
+    if item["state"] == "MUTATION_UNCERTAIN":
+        record = item.get("uncertain_write", {})
+        require(record.get("attempted_at"), "uncertain write attempt timestamp required")
+        require(
+            record.get("reason") in {"transport_error", "timeout", "server_error", "ambiguous_result"},
+            "uncertain write reason required",
+        )
+        require(record.get("writer_result_class") == "UNCERTAIN", "uncertain write must record UNCERTAIN result")
+        reconciliation = item.get("reconciliation")
+        if reconciliation is not None:
+            require(
+                reconciliation.get("outcome") in {"APPLIED", "NOT_APPLIED", "UNRESOLVED"},
+                "reconciliation outcome required",
+            )
+            require(reconciliation.get("readback_at"), "reconciliation readback timestamp required")
     if item["state"] in ITEM_STATES[ITEM_STATES.index("VERIFIED"):]:
         verify_readback(item)
     if item["state"] == "ARCHIVED":
@@ -260,7 +286,8 @@ def validate_mutation(item: dict) -> None:
     require(cat["title"] == required_title, "catalogue title violates deterministic title contract")
     require(mutation["title"] == required_title, "mutation title violates deterministic title contract")
     require(mutation["arrival_date"] == cat["photo_date"], "arrival date must equal physical photo date")
-    require(mutation["inventory"] == 1, "inventory must equal 1")
+    require(type(mutation["inventory"]) is int and mutation["inventory"] == 1,
+            "inventory must be integer 1")
     approved = [item["images"]["hero"]["sha256"], item["source"]["sha256"]]
     require(mutation["media"] == approved, "mutation media must be approved hero/source hashes in order")
 
@@ -272,12 +299,14 @@ def verify_readback(item: dict) -> None:
     require(after.get("product_id") == item["product"]["id"], "read-back product id mismatch")
     for field in ("variant_id", "location_id"):
         require(after.get(field) == item["product"][field], "read-back exact " + field + " mismatch")
+    require(PROTECTED <= set(after), "read-back missing protected fields")
     for key in PROTECTED:
         require(after.get(key) == before.get(key), f"protected field changed: {key}")
     require(after.get("title") == expected_catalogue_title(item["catalogue"]), "read-back title mismatch")
     require(after.get("title") == item["mutation"]["title"], "read-back mutation title mismatch")
     require(after.get("arrival_date") == item["mutation"]["arrival_date"], "read-back arrival date mismatch")
-    require(after.get("inventory") == 1, "read-back inventory mismatch")
+    require(type(after.get("inventory")) is int and after["inventory"] == 1,
+            "read-back inventory must be integer 1")
     require(
         after.get("media_hashes", [])[:2] == [item["images"]["hero"]["sha256"], item["source"]["sha256"]],
         "read-back media/order mismatch",
@@ -307,16 +336,46 @@ def validate_ledger(data: dict) -> None:
         require(all(i["state"] == "ARCHIVED" for i in data["items"]), "DONE requires every item archived")
 
 
+def _require_branch_evidence(item: dict, current: str, target: str) -> None:
+    if (current, target) == ("MUTATION_PENDING", "MUTATION_UNCERTAIN"):
+        require(
+            item.get("uncertain_write", {}).get("writer_result_class") == "UNCERTAIN",
+            "uncertain transition requires a recorded UNCERTAIN writer result",
+        )
+    elif (current, target) == ("MUTATION_UNCERTAIN", "MUTATED"):
+        require(
+            item.get("reconciliation", {}).get("outcome") == "APPLIED",
+            "cannot mark MUTATED until independent reconciliation confirms the change applied",
+        )
+    elif (current, target) == ("MUTATION_UNCERTAIN", "MUTATION_PENDING"):
+        reconciliation = item.get("reconciliation", {})
+        require(
+            reconciliation.get("outcome") == "NOT_APPLIED",
+            "only a confirmed NOT_APPLIED read may return to MUTATION_PENDING",
+        )
+        require(
+            reconciliation.get("retry_authorised") is True,
+            "returning to MUTATION_PENDING requires explicit retry authority",
+        )
+
+
 def advance(data: dict, item_id: str, target: str) -> None:
     item = next((i for i in data["items"] if i["id"] == item_id), None)
     require(item is not None, "unknown item")
     current = item["state"]
-    require(target in TERMINAL or NEXT.get(current) == target, f"illegal transition {current} -> {target}")
+    if target in TERMINAL:
+        pass
+    elif NEXT.get(current) == target:
+        pass
+    elif (current, target) in BRANCH:
+        _require_branch_evidence(item, current, target)
+    else:
+        require(False, f"illegal transition {current} -> {target}")
     old = current
     item["state"] = target
     item["history"].append({"from": old, "to": target, "at": now()})
     try:
-        validate_item(item)
+        validate_ledger(data)
     except Exception:
         item["state"] = old
         item["history"].pop()
@@ -330,6 +389,7 @@ def execution_plan(data: dict, workers: int) -> dict:
     runnable = [
         i for i in data["items"]
         if i["state"] not in TERMINAL
+        and i["state"] not in HOLD_STATES
         and i["state"] not in {"ARCHIVED", "VISUAL_ACCEPTED"}
     ]
     waves = []
@@ -362,7 +422,7 @@ def main() -> int:
             validate_ledger(data)
             item = next(i for i in data["items"] if i["id"] == args.item)
             require(item["state"] == "MUTATION_PENDING", "item is not mutation-ready")
-            print(json.dumps({"batch_id": data["batch_id"], "item_id": item["id"], "product_id": item["product"]["id"], "changes": item["mutation"]}, sort_keys=True))
+            print(json.dumps({"batch_id": data["batch_id"], "item_id": item["id"], "product_id": item["product"]["id"], "variant_id": item["product"]["variant_id"], "location_id": item["product"]["location_id"], "changes": item["mutation"]}, sort_keys=True))
         elif args.cmd == "parallel-plan":
             validate_ledger(data)
             print(json.dumps(parallel_preparation_plan(data, args.workers), sort_keys=True))
