@@ -183,6 +183,9 @@ Feature:
 
 - Image 1 → approved hero;
 - Image 2 → complete uncropped original source photograph.
+- no other media remains after the replacements are independently READY and ordered.
+
+Use `scripts/betta_shopify_batch.py` for a manifest-approved batch. It defaults to dry-run, persists each product's state, journals every mutation intent before dispatch, uses inventory compare-and-set plus a persisted idempotency key, and refuses automatic replay after an uncertain outcome. See [SHOPIFY_BATCH_UPLOADER.md](SHOPIFY_BATCH_UPLOADER.md).
 
 Protected fields must remain identical to the pre-write snapshot:
 
@@ -208,7 +211,8 @@ After mutation, query Shopify again independently and verify:
 - inventory equals `1`;
 - approved hero is Image 1;
 - complete original is Image 2;
-- no unintended media loss occurred.
+- exactly two images remain in the required order;
+- inventory remains tracked with policy `DENY`.
 
 Failure produces `FIX_REQUIRED`; prose must not override a failed assertion.
 

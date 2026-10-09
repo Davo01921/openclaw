@@ -64,8 +64,30 @@ def data_uri(path: Path) -> str:
 
 def request_candidate(source: Path, model: str, quality: str, timeout: int) -> tuple[bytes, dict]:
     api_key = os.getenv("XAI_API_KEY")
+
     if not api_key:
-        raise RuntimeError("XAI_API_KEY is not set")
+        import subprocess
+
+        result = subprocess.run(
+            [
+                "security",
+                "find-generic-password",
+                "-a", "XAI_API_KEY",
+                "-s", "nta-betta-xai",
+                "-w",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+
+        if result.returncode == 0:
+            api_key = result.stdout.strip()
+
+    if not api_key:
+        raise RuntimeError(
+            "xAI credential unavailable from environment or macOS Keychain"
+        )
 
     payload = {
         "model": model,
