@@ -353,7 +353,6 @@ def execute_plan(plan: dict, apply: bool = False) -> dict:
             + json.dumps(plan.get("blockers"), sort_keys=True)
         )
     base = Path(plan["archive_root"]) / plan["archive_date"]
-    base.mkdir(parents=True, exist_ok=True)
     state_path = base / "archive-state.json"
     manifest_path = base / "archive-manifest.json"
 

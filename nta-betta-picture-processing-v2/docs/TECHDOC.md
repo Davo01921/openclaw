@@ -86,6 +86,14 @@ Responsibilities:
 
 It performs no network, Shopify or model calls and never touches unrelated files, authentication data or unresolved mutation state.
 
+### `scripts/betta_shopify_batch.py`
+
+Manifest-bound, hash-locked Shopify batch writer. Dry-run by default; live writes require `--live`, batch-level and per-item `write_authorised`, and `--confirm-manifest-sha256`. Uses the existing authenticated bridge. Persistent per-batch/per-manifest state, immutable events, staged-media READY/order/delete gates, protected-field readback, inventory compare-and-set + idempotency key, uncertain-write reconciliation (never automatic replay), completion receipts and duplicate rejection. Secrets stay outside the repository; live credentials live in the bridge environment file and the macOS Keychain.
+
+### `scripts/betta_finish_heroes.py`
+
+Batch-independent hero pipeline over a batch workspace. Resolves `<batch-dir>/evidence/betta-labels-reconciled.json`, writes heroes and results under the same workspace, re-verifies each source hash, reads sources without modifying them, and disables paid Grok/xAI generation unless `--authorise-paid-generation` is supplied. The xAI credential resolves from `XAI_API_KEY` or macOS Keychain (`nta-betta-xai`) via `grok_hero.py`.
+
 ### `scripts/betta_batches.py`
 
 Generic, isolated batch lifecycle. Allocates a unique batch id and workspace per intake so historical batches are immutable and can never block or contaminate new work. Commands: `new`, `list`, `active`, `status`, `close`, `register-historical`.
