@@ -52,6 +52,25 @@ Reject non-images from fish identification while retaining their ledger entries.
 
 **Complete when:** every candidate source has a stable ID/hash, immutable `date_entered`, and the accepted source set is unique.
 
+### Batch lifecycle and isolation
+
+Every new intake is a new, uniquely identified batch. Use `scripts/betta_batches.py`:
+
+```
+python3 scripts/betta_batches.py new --label "<free-text batch label>"
+python3 scripts/betta_batches.py list
+python3 scripts/betta_batches.py active
+python3 scripts/betta_batches.py status <batch_id>
+python3 scripts/betta_batches.py close <batch_id>
+python3 scripts/betta_batches.py register-historical <approved-manifest.json>
+```
+
+- A new batch gets a generated id (`betta-YYYYMMDD-HHMMSS-<token>`) and its own workspace: `intake/ evidence/ manifest/ state/ reports/ receipts/ archive/` under `~/Documents/Betta Processing/batches/<batch_id>/`.
+- Manifests, processing state, approvals, receipts and archives are isolated per batch. Never reuse a batch id, and never write a new batch into a completed batch's workspace.
+- Completed batches are immutable history. `assert_batch_writable` refuses writes to a `COMPLETE`/`ABANDONED` batch, and `register-historical` records an already-finished batch (reading only its own manifest) so it can never block or contaminate new work.
+- Nothing about a previous batch (tank numbers, dates, image filenames) is hardcoded. A historical batch is referenced only by its own id.
+- Historical batches are read-only evidence. Do not reset, reopen, or delete them; the generic flow always starts a fresh batch.
+
 ## 2. Visual catalogue and deterministic title
 
 Request a first-pass route from `adaptive-model-router` with image/vision-inference capability and use the lowest sufficient routing class it returns. Do not choose a provider/model locally. Return structured:

@@ -86,6 +86,16 @@ Responsibilities:
 
 It performs no network, Shopify or model calls and never touches unrelated files, authentication data or unresolved mutation state.
 
+### `scripts/betta_batches.py`
+
+Generic, isolated batch lifecycle. Allocates a unique batch id and workspace per intake so historical batches are immutable and can never block or contaminate new work. Commands: `new`, `list`, `active`, `status`, `close`, `register-historical`.
+
+- Workspace layout: `batches/<batch_id>/{intake,evidence,manifest,state,reports,receipts,archive}` under `~/Documents/Betta Processing/batches` (configurable).
+- Registry (`registry.json`) is append-only and guarded by an advisory lock; ids are never reused.
+- `close` makes a batch terminal; `assert_batch_writable` refuses writes to a `COMPLETE`/`ABANDONED` batch.
+- `register-historical` records an existing completed batch by reading only its own manifest `batch_id`/digest; no tank numbers, dates or filenames are hardcoded.
+- Local and deterministic; no network calls, no Shopify writes.
+
 ### Shared NTA services
 
 The workflow integrates conceptually with:
