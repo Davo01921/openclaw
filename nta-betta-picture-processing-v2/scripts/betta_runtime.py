@@ -22,6 +22,7 @@ adapter exists this runtime must not be presented as production-capable.
 from __future__ import annotations
 
 import csv
+import concurrent.futures
 import fcntl
 import io
 import sqlite3
@@ -638,24 +639,32 @@ class BettaRuntime:
         snapshot = self.store.read()
         plan = bb.parallel_preparation_plan(snapshot, workers)
         tasks = [task for task in plan["tasks"] if task["item_id"] == item_id]
-        for task in tasks:
+        def execute(task: dict) -> tuple[str, dict]:
             operation = task["operation"]
             if operation == "shopify_resolve":
                 resolved = self.shopify.resolve(item_id)
                 bb.require(resolved.get("status") == "RESOLVED",
                            f"Shopify resolution did not identify exactly one product for {item_id}")
-
-                def record_product(data: dict) -> None:
-                    _find_item(data, item_id)["product"] = resolved["snapshot"]
-                self.store.update(record_product)
-            elif operation == "grok_hero":
+                return operation, resolved
+            if operation == "grok_hero":
                 generated = self.hero_generator.generate(self.store.read(), item_id)
+                return operation, generated
+            raise RuntimeError_(f"unsupported preparation operation: {operation}")
 
-                def record_hero(data: dict) -> None:
-                    entry = _find_item(data, item_id)
-                    entry.setdefault("images", {})["hero"] = generated["asset"]
-                    entry["grok"] = generated.get("record")
-                self.store.update(record_hero)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(workers, len(tasks) or 1)) as pool:
+            futures = {pool.submit(execute, task): task for task in tasks}
+            for future in concurrent.futures.as_completed(futures):
+                operation, result = future.result()
+                if operation == "shopify_resolve":
+                    def record_product(data: dict) -> None:
+                        _find_item(data, item_id)["product"] = result["snapshot"]
+                    self.store.update(record_product)
+                else:
+                    def record_hero(data: dict) -> None:
+                        entry = _find_item(data, item_id)
+                        entry.setdefault("images", {})["hero"] = result["asset"]
+                        entry["grok"] = result.get("record")
+                    self.store.update(record_hero)
         joined = self.store.read()
         entry = _find_item(joined, item_id)
         if entry["state"] == "VISUAL_ACCEPTED":
@@ -696,13 +705,20 @@ class BettaRuntime:
 
         current = _find_item(self.store.read(), item_id)
         evidence = self.vision.qa(current["source"], current["images"]["hero"], current["source"])
-        deterministic = {key: "PASS" for key in bb.QA_DETERMINISTIC}
+        deterministic = evidence.get("deterministic") if isinstance(evidence, dict) else None
+        visual = evidence.get("visual") if isinstance(evidence, dict) else None
+        bb.require(isinstance(deterministic, dict), "QA adapter must supply deterministic assertions")
+        bb.require(set(deterministic) == bb.QA_DETERMINISTIC,
+                   "QA deterministic assertion set mismatch")
+        bb.require(all(value == "PASS" for value in deterministic.values()),
+                   "deterministic QA failed")
+        bb.validate_vision_call(visual or {}, bb.QA_VISUAL)
 
         def record_qa(data: dict) -> None:
             entry = _find_item(data, item_id)
             entry["image_qa"] = {
                 "deterministic": deterministic,
-                "visual": evidence,
+                "visual": visual,
                 "outcome": "PASS",
             }
             bb.advance(data, item_id, "IMAGES_READY")

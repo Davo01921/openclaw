@@ -91,12 +91,16 @@ class FakeVision:
         }
 
     def qa(self, source, hero, original):
-        return {
+        visual = {
             "provider": "fake", "model": "fake-vision", "call_id": f"qa-{hero['sha256'][:8]}",
             "timestamp": self.world.clock.now(),
             "input_hashes": [source["sha256"], hero["sha256"], original["sha256"]],
             "output": {"verdict": "PASS"},
             "assertions": {key: "PASS" for key in bb.QA_VISUAL}, "overall": "PASS",
+        }
+        return {
+            "deterministic": {key: "PASS" for key in bb.QA_DETERMINISTIC},
+            "visual": visual,
         }
 
 
@@ -261,6 +265,18 @@ class FullPathTests(IntegrationTestCase):
         expected = [item["source"]["sha256"], item["images"]["hero"]["sha256"], item["source"]["sha256"]]
         self.assertEqual(item["image_qa"]["visual"]["input_hashes"], expected)
 
+    def test_qa_cannot_invent_missing_deterministic_passes(self):
+        runtime = self.make_runtime()
+        runtime.intake("batch-1", "4BT41", self.attachment("4BT41"))
+        runtime.catalogue("4BT41")
+        runtime.prepare("4BT41")
+        runtime.build_csv(self.root / "betta-inventory.csv")
+        original_qa = runtime.vision.qa
+        runtime.vision.qa = lambda *args: original_qa(*args)["visual"]
+        with self.assertRaisesRegex(bb.LedgerError, "deterministic assertions"):
+            runtime.run_image_qa("4BT41")
+        self.assertNotIn("image_qa", runtime.store.read()["items"][0])
+
 
 class UncertainWriteTests(IntegrationTestCase):
     def _drive_to_mutation(self, runtime):
@@ -361,6 +377,30 @@ class ResumeTests(IntegrationTestCase):
 
 
 class ConcurrencyTests(IntegrationTestCase):
+    def test_prepare_branches_overlap(self):
+        runtime = self.make_runtime()
+        runtime.intake("batch-1", "4BT41", self.attachment("4BT41"))
+        runtime.catalogue("4BT41")
+        resolve_started = threading.Event()
+        hero_started = threading.Event()
+        original_resolve = runtime.shopify.resolve
+        original_generate = runtime.hero_generator.generate
+
+        def resolve(tank):
+            resolve_started.set()
+            self.assertTrue(hero_started.wait(1), "hero branch did not start concurrently")
+            return original_resolve(tank)
+
+        def generate(ledger, tank):
+            hero_started.set()
+            self.assertTrue(resolve_started.wait(1), "Shopify branch did not start concurrently")
+            return original_generate(ledger, tank)
+
+        runtime.shopify.resolve = resolve
+        runtime.hero_generator.generate = generate
+        runtime.prepare("4BT41")
+        self.assertEqual(runtime.store.read()["items"][0]["state"], "PRODUCT_RESOLVED")
+
     def test_two_items_process_concurrently_on_one_ledger(self):
         self.world.add_tank("5BT51", product_seq=2)
         runtime = self.make_runtime()

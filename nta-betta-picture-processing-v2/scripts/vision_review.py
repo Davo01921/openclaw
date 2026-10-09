@@ -139,6 +139,10 @@ def run_review(files: list[Path], mode: str, agent: str, models: list[str]) -> d
                 "input_hashes": [digest(path) for path in files],
                 "usage": usage,
                 "output": output,
+                **({
+                    "assertions": output.get("assertions"),
+                    "overall": output.get("overall"),
+                } if mode == "qa" else {}),
                 "attempts": errors,
             }
         message = envelope.get("error", {}).get("message") or completed.stderr[-1000:] or "unknown provider failure"

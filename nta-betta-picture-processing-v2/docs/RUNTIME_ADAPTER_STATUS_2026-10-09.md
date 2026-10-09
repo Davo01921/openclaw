@@ -20,6 +20,16 @@ missing, and what must not be claimed.
 The helpers validate evidence and plan work. They do not call Discord, Shopify or
 the model services themselves.
 
+## 9 October runtime review corrections
+
+The adapter-driven runtime now executes Shopify resolution and hero generation
+concurrently under the bounded worker limit. It also fails closed unless the QA
+adapter supplies the complete deterministic assertion set and a schema-valid
+independent visual review; it no longer creates PASS assertions itself. The vision
+CLI exposes QA assertions and the overall verdict in the shape consumed by the
+ledger validator. Regression coverage proves branch overlap and rejection of
+missing deterministic QA evidence. The full offline suite is 83 tests.
+
 ## What is configured to execute the workflow
 
 - Installed skill name: `betta-picture-processing`.
