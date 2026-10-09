@@ -271,6 +271,22 @@ Use `scripts/betta_archive.py` (default dry-run; `--apply` to move) with subcomm
 5. An immutable `archive-manifest.json` records source/destination paths, hashes and timestamps. `status` reports progress; `resume` is idempotent and skips completed files.
 6. Never move or delete unrelated files, incomplete work, authentication data (`.betta-shopify-state/secrets`) or unresolved Shopify mutation state.
 
+### Owner-accepted noncritical discrepancies vs genuine upload failures
+
+Not every failed assertion means the Shopify upload failed. Classify before archiving:
+
+- **Genuine upload failure — always blocks.** The product identity is wrong or unresolved; the product/variant/location does not match; a protected field (description, price, cost, vendor, product type, handle, status) changed; inventory is not exactly `1`; the arrival date does not equal the physical label; the hero is not Image 1 or the original is not the byte-identical Image 2; media is missing/not READY; or no independent `FINAL_SHOPIFY_READBACK_PASS` exists. These require a fix or re-upload and must never be archived as an exception.
+- **Owner-accepted noncritical discrepancy — recordable, narrowly scoped.** A cosmetic/metadata assertion that does not change product identity, protected fields, inventory, media order/readiness or the uploaded bytes, where the fish is already successfully uploaded and the owner explicitly accepts it. Examples: image-QA identity/fin/colour criticism of an already-uploaded approved hero (2BT13, 3BT24, 3BT32), or a media alt-text label that differs from the descriptive expectation while the media IDs and order are correct (3BT31).
+
+Rules for an owner-accepted discrepancy:
+
+1. The acceptance is explicit, owner-attributed and recorded with a `source_reference` and a reason.
+2. It is scoped to the exact tank and the exact assertion(s); it never widens to other fish or other assertions.
+3. The record preserves the original failed assertion, the previous successful verification, media IDs, media order and audit evidence. It sets `shopify_mutated: false`; it never alters Shopify.
+4. The fish is recorded as `PASS_WITH_ACCEPTED_EXCEPTION`, never as a plain `VERIFIED`. The failure is preserved as a failure, not converted to a pass.
+5. Any other failing assertion for the same fish, or any genuine upload failure, still blocks the archive.
+6. Supply these records via the manifest's accepted `image_qa.exception` and/or an explicit `--exceptions` JSON (see `betta-archive-exceptions-*.json` for the shape).
+
 The final Discord/report result should include:
 
 - PASS/blocked counts;
