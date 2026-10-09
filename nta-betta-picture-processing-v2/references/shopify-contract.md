@@ -40,3 +40,9 @@ After writing, query fresh live state and compare every authorised and protected
 ## Closeout safety gates
 
 Require a fresh exact variant and location, tracked DENY inventory and ACTIVE product. Stock may be 0 or 1; zero requires `intake.new_fish_authorised=true`, a genuine `source_reference` and the exact `source_sha256`. Negative/multiple stock is a review hold, never an automatic reset. Independent readback includes source=FRESH_SHOPIFY_READ, variant_id and location_id. Record and resolve conflicting staff/photo identity before writing. Product status stays protected; never auto-archive or revive a sold fish from an old photograph.
+
+## Offline audit hardening — 2026-10-09
+
+Catalogue call input hashes must equal the current source-photo hash. Mutation and readback inventory must be an integer 1 (booleans and floating values are rejected). Every protected readback field must be present, including nullable fields. State advancement validates the complete batch before saving; duplicate product/source/call evidence cannot bypass batch checks. The mutation envelope carries exact product_id, variant_id and location_id alongside the allowed changes.
+
+These are local evidence gates. Runtime adapters remain responsible for actual fresh-read provenance, API errors, serialized writes, cross-batch duplicate detection, CSV evidence and persisted telemetry before PASS. Fixture success does not establish live acceptance or authorize deployment.

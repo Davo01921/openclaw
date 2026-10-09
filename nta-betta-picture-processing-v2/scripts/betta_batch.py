@@ -213,6 +213,8 @@ def validate_item(item: dict) -> None:
         except ValueError:
             raise LedgerError("physical photo date is not a real calendar date")
         validate_vision_call(cat.get("evidence", {}))
+        require(cat["evidence"]["input_hashes"] == [item["source"]["sha256"]],
+                "catalogue evidence must match the current source photograph")
     if item["state"] in ITEM_STATES[ITEM_STATES.index("PRODUCT_RESOLVED"):]:
         require(product_snapshot_ready(item), "product id/snapshot required")
         # PRODUCT_RESOLVED is also the join point for parallel preparation. A valid
@@ -260,7 +262,8 @@ def validate_mutation(item: dict) -> None:
     require(cat["title"] == required_title, "catalogue title violates deterministic title contract")
     require(mutation["title"] == required_title, "mutation title violates deterministic title contract")
     require(mutation["arrival_date"] == cat["photo_date"], "arrival date must equal physical photo date")
-    require(mutation["inventory"] == 1, "inventory must equal 1")
+    require(type(mutation["inventory"]) is int and mutation["inventory"] == 1,
+            "inventory must be integer 1")
     approved = [item["images"]["hero"]["sha256"], item["source"]["sha256"]]
     require(mutation["media"] == approved, "mutation media must be approved hero/source hashes in order")
 
@@ -272,12 +275,14 @@ def verify_readback(item: dict) -> None:
     require(after.get("product_id") == item["product"]["id"], "read-back product id mismatch")
     for field in ("variant_id", "location_id"):
         require(after.get(field) == item["product"][field], "read-back exact " + field + " mismatch")
+    require(PROTECTED <= set(after), "read-back missing protected fields")
     for key in PROTECTED:
         require(after.get(key) == before.get(key), f"protected field changed: {key}")
     require(after.get("title") == expected_catalogue_title(item["catalogue"]), "read-back title mismatch")
     require(after.get("title") == item["mutation"]["title"], "read-back mutation title mismatch")
     require(after.get("arrival_date") == item["mutation"]["arrival_date"], "read-back arrival date mismatch")
-    require(after.get("inventory") == 1, "read-back inventory mismatch")
+    require(type(after.get("inventory")) is int and after["inventory"] == 1,
+            "read-back inventory must be integer 1")
     require(
         after.get("media_hashes", [])[:2] == [item["images"]["hero"]["sha256"], item["source"]["sha256"]],
         "read-back media/order mismatch",
@@ -316,7 +321,7 @@ def advance(data: dict, item_id: str, target: str) -> None:
     item["state"] = target
     item["history"].append({"from": old, "to": target, "at": now()})
     try:
-        validate_item(item)
+        validate_ledger(data)
     except Exception:
         item["state"] = old
         item["history"].pop()
@@ -362,7 +367,7 @@ def main() -> int:
             validate_ledger(data)
             item = next(i for i in data["items"] if i["id"] == args.item)
             require(item["state"] == "MUTATION_PENDING", "item is not mutation-ready")
-            print(json.dumps({"batch_id": data["batch_id"], "item_id": item["id"], "product_id": item["product"]["id"], "changes": item["mutation"]}, sort_keys=True))
+            print(json.dumps({"batch_id": data["batch_id"], "item_id": item["id"], "product_id": item["product"]["id"], "variant_id": item["product"]["variant_id"], "location_id": item["product"]["location_id"], "changes": item["mutation"]}, sort_keys=True))
         elif args.cmd == "parallel-plan":
             validate_ledger(data)
             print(json.dumps(parallel_preparation_plan(data, args.workers), sort_keys=True))

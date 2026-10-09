@@ -2,6 +2,9 @@ import copy
 import hashlib
 import importlib.util
 import tempfile
+import json
+import subprocess
+import sys
 import unittest
 from pathlib import Path
 
@@ -59,6 +62,7 @@ class LedgerTests(unittest.TestCase):
         item["source"] = {"path": str(path), "sha256": bb.sha256(path)}
         item["image_qa"]["visual"]["input_hashes"] = [item["source"]["sha256"], item["images"]["hero"]["sha256"], item["source"]["sha256"]]
         item["mutation"]["media"] = [item["images"]["hero"]["sha256"], item["source"]["sha256"]]
+        item["catalogue"]["evidence"]["input_hashes"] = [item["source"]["sha256"]]
         item["catalogue"]["tank_id"] = tank
         item["catalogue"]["title"] = bb.expected_catalogue_title(item["catalogue"])
         item["mutation"]["title"] = item["catalogue"]["title"]
@@ -237,5 +241,87 @@ class LedgerTests(unittest.TestCase):
         bb.validate_item(item)
         item['archive']['source']['sha256']='0'*64
         with self.assertRaises(bb.LedgerError):bb.validate_item(item)
+
+    def verified_item(self):
+        item = copy.deepcopy(self.item)
+        item["state"] = "VERIFIED"
+        item["readback"] = dict(item["product"]["before"],
+            product_id=item["product"]["id"], variant_id=item["product"]["variant_id"],
+            location_id=item["product"]["location_id"], source="FRESH_SHOPIFY_READ",
+            title=item["mutation"]["title"], arrival_date=item["mutation"]["arrival_date"],
+            inventory=1, media_hashes=item["mutation"]["media"])
+        return item
+
+    def test_catalogue_must_review_current_source(self):
+        self.item["catalogue"]["evidence"]["input_hashes"] = ["0" * 64]
+        with self.assertRaises(bb.LedgerError): bb.validate_ledger(self.ledger)
+
+    def test_inventory_requires_integer_one(self):
+        for quantity in (True, 1.0, "1"):
+            with self.subTest(quantity=quantity):
+                item = copy.deepcopy(self.item)
+                item["mutation"]["inventory"] = quantity
+                with self.assertRaises(bb.LedgerError): bb.validate_item(item)
+                item = self.verified_item()
+                item["readback"]["inventory"] = quantity
+                with self.assertRaises(bb.LedgerError): bb.validate_item(item)
+
+    def test_missing_nullable_protected_readback_is_not_verified(self):
+        item = self.verified_item()
+        item["product"]["before"]["cost"] = None
+        item["readback"]["cost"] = None
+        bb.validate_item(item)
+        del item["readback"]["cost"]
+        with self.assertRaises(bb.LedgerError): bb.validate_item(item)
+
+    def test_advance_validates_whole_batch_and_rolls_back(self):
+        duplicate = copy.deepcopy(self.item)
+        self.retank(duplicate, "4BT42")
+        duplicate["catalogue"]["evidence"]["call_id"] = "cat-2"
+        duplicate["image_qa"]["visual"]["call_id"] = "qa-2"
+        self.ledger["items"].append(duplicate)
+        previous = copy.deepcopy(self.ledger)
+        with self.assertRaises(bb.LedgerError): bb.advance(self.ledger, "4BT41", "MUTATED")
+        self.assertEqual(self.ledger, previous)
+
+    def test_valid_advance_and_completed_resume_do_not_repeat_mutation(self):
+        bb.advance(self.ledger, "4BT41", "MUTATED")
+        self.assertEqual(self.item["state"], "MUTATED")
+        item = self.verified_item()
+        item["state"] = "ARCHIVED"
+        item["archive"] = {"verified_at": bb.now(), "source": dict(item["source"]),
+                           "hero": dict(item["images"]["hero"])}
+        self.ledger["items"] = [item]
+        self.ledger["batch_state"] = "DONE"
+        self.assertEqual(bb.execution_plan(self.ledger, 4)["waves"], [])
+        with self.assertRaises(bb.LedgerError): bb.advance(self.ledger, "4BT41", "MUTATION_PENDING")
+
+    def test_cli_invalid_batch_does_not_save_transition(self):
+        duplicate = copy.deepcopy(self.item)
+        self.retank(duplicate, "4BT42")
+        duplicate["catalogue"]["evidence"]["call_id"] = "cat-2"
+        duplicate["image_qa"]["visual"]["call_id"] = "qa-2"
+        self.ledger["items"].append(duplicate)
+        path = Path(self.tmp.name) / "ledger.json"
+        bb.save(path, self.ledger)
+        previous = path.read_bytes()
+        result = subprocess.run([sys.executable, "-B", str(SCRIPT), "advance",
+                                 str(path), "4BT41", "MUTATED"], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("duplicate Shopify product", result.stderr)
+        self.assertEqual(path.read_bytes(), previous)
+
+    def test_cli_emits_scoped_mutation_envelope_without_changing_ledger(self):
+        path = Path(self.tmp.name) / "ledger.json"
+        bb.save(path, self.ledger)
+        previous = path.read_bytes()
+        result = subprocess.run([sys.executable, "-B", str(SCRIPT), "mutation-envelope",
+                                 str(path), "4BT41"], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        envelope = json.loads(result.stdout)
+        self.assertEqual(envelope["changes"], self.item["mutation"])
+        for field in ("product_id", "variant_id", "location_id"):
+            self.assertEqual(envelope[field], self.item["product"]["id" if field == "product_id" else field])
+        self.assertEqual(path.read_bytes(), previous)
 
 if __name__ == "__main__": unittest.main()
