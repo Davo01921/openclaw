@@ -306,3 +306,37 @@ If any item fails, do not expand the test to a larger batch until the cause is d
 V2.1 is the only production processing workflow; experimental V3 is deferred. Before mutation, record a fresh exact Product/Variant/Location/tank snapshot with DENY and tracked inventory. Only ACTIVE individual products with stock 0 or 1 are eligible; zero stock requires explicit new-fish authority tied to the source reference and hash. Negative/multiple stock and inactive products hold for operator review. Photo/text conflicts must be resolved explicitly; no adjacent tank inference.
 
 Fresh independent readback must include exact variant/location and protected fields. ARCHIVED requires existing source and hero files with approved hashes and a verification timestamp; update paths when moving files. Shopify status remains protected: evidence archiving is not authority to archive a sold Shopify product. Serialize ledger writes and retain source references for cross-batch duplicate checks. See CLOSEOUT.md for one final live acceptance exercise and recovery.
+
+## 2026-10-09 offline runtime duties
+
+`scripts/betta_runtime.py` implements the deterministic duties that the closeout
+left to the live adapter. Use it where a concrete adapter exists; it performs no
+external calls itself.
+
+- Ledger writes: `LedgerStore` takes an exclusive advisory file lock around load,
+  in-memory validation and atomic save. Never edit the ledger JSON without it while
+  a run is active.
+- Intake deduplication: `IntakeRegistry` rejects a source SHA-256 already recorded
+  under a different batch/intake reference. A genuine resend must be recorded with
+  `allow_duplicate_of` pointing at the original identity.
+- Error handling: only an explicit success with no top-level or user errors is
+  `APPLIED`. Transport/server failures are `UNCERTAIN`; validation/authorisation
+  failures are `REJECTED` (item to `FIX_REQUIRED`).
+- Uncertain writes: an inconclusive mutation is held in `MUTATION_UNCERTAIN` and
+  independently read. It returns to `MUTATION_PENDING` only on a confirmed
+  `NOT_APPLIED` read with explicit operator retry authority; it reconciles to
+  `MUTATED` only on a confirmed `APPLIED` read; otherwise it stays held. Never
+  auto-retry.
+- Read-back trust: `verify_independent_readback` rejects evidence derived from the
+  writer response, a reused writer identity, or a read timestamped before the write
+  completed.
+- Inventory CSV: `validate_inventory_csv` enforces the fixed header, four fields per
+  row, one unique row per accepted tank, tank-set equality and value equality with
+  the live pre-write snapshot, so CSV values can never authorise a price or cost
+  change.
+- Telemetry: `require_telemetry_before_pass` blocks the `PASS` transition unless the
+  per-tank telemetry row already exists in the SQLite database.
+
+Runtime limitation: this repository contains no runnable Shopify/Discord adapter or
+single end-to-end driver. See docs/RUNTIME_ADAPTER_STATUS_2026-10-09.md for the exact
+missing adapters. Offline helper completion is not production acceptance.

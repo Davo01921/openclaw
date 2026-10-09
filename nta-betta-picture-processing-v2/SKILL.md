@@ -220,7 +220,9 @@ Reply in the originating Discord thread with counts, tanks/photo dates/final tit
 
 ## Runtime readiness and throughput
 
-Before a live batch, verify `adaptive-model-router` availability for general vision/review calls, the fixed Grok hero service, Shopify resolve/write/read-back operations, `scripts/betta_batch.py`, `scripts/betta_telemetry.py`, writable telemetry DB, Grok cost fallback, and dry-run mode.
+Before a live batch, verify `adaptive-model-router` availability for general vision/review calls, the fixed Grok hero service, Shopify resolve/write/read-back operations, `scripts/betta_batch.py`, `scripts/betta_runtime.py`, `scripts/betta_telemetry.py`, a concrete source/Shopify adapter, writable telemetry DB, Grok cost fallback, and dry-run mode. `scripts/betta_runtime.py` is the deterministic orchestration layer for serialized ledger writes, cross-batch intake deduplication, API-error classification, uncertain-write reconciliation, CSV validation and telemetry-before-PASS; it performs no external calls itself and requires concrete adapters to run live.
+
+The repository presently contains no concrete Shopify/Discord adapter or single end-to-end driver. If the deployed adapter cannot be located, report the missing adapter/configuration (see docs/RUNTIME_ADAPTER_STATUS_2026-10-09.md) instead of inventing a replacement. Offline helper and fixture completion is not live acceptance.
 
 Use a global maximum of four simultaneous external operations initially. Run independent work as a queue, persist each result immediately, and refill available slots. Re-run `execution-plan` after branch completion/failure so only missing work is scheduled.
 

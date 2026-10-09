@@ -73,6 +73,22 @@ Persist each successful branch immediately. Re-run `execution-plan` after comple
 - `FIX_REQUIRED` and `BLOCKED_*` are terminal for the current automated pass.
 - Reruns continue from persisted evidence and hashes rather than restarting successful stages.
 
+## Uncertain write hold
+
+`MUTATION_UNCERTAIN` is a non-terminal hold, outside the linear chain, for an
+inconclusive Shopify mutation result (transport error, timeout, server error or
+ambiguous response). It is entered from `MUTATION_PENDING` only when the attempt is
+recorded with a reason and an `UNCERTAIN` writer-result class.
+
+- `MUTATION_UNCERTAIN -> MUTATED` is allowed only when an independent read confirms
+  the intended change applied (`reconciliation.outcome == "APPLIED"`).
+- `MUTATION_UNCERTAIN -> MUTATION_PENDING` is allowed only on a confirmed
+  `NOT_APPLIED` read with `reconciliation.retry_authorised == true`.
+- Any other result stays held for operator review (`UNRESOLVED`).
+- `MUTATION_UNCERTAIN` is never scheduled by `execution-plan`; an uncertain write is
+  never automatically retried. The `write.baseline` captured before the attempt is
+  what allows a later read to distinguish applied from not-applied state.
+
 ## Mandatory image QA ledger shape
 
 Each item must include:
