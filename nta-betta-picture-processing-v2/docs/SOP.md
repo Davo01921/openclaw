@@ -64,6 +64,10 @@ For each fish:
 
 `date_entered` is not the same as `arrival_date`.
 
+### Batch lifecycle
+
+Each intake is a new batch with a generated id and its own isolated workspace (`scripts/betta_batches.py`). Use `new` to allocate, `active` to find the current one, `status <id>` for progress, `close <id>` when finished, and `register-historical <manifest>` to record an already-completed batch as immutable history. A completed batch can never be reopened or written to, and historical batches cannot block new work. Manifests, state, approvals, receipts and archives are kept per batch; never reuse a batch id or write into a finished batch's workspace.
+
 ## 5. Visual catalogue
 
 For each source image, the vision stage must determine:
