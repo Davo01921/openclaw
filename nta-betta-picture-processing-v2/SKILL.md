@@ -214,6 +214,27 @@ Archive only when every item is PASS and telemetry exists. Rename originals to `
 
 Move completed sources and inventory CSV under `Archived Bettas/YYYY-MM-DD/Betta Processing` and outputs under `Archived Bettas/YYYY-MM-DD/Betta Processed`; include the telemetry CSV export and verify hashes/tank-set equality.
 
+### Archive command
+
+Use `scripts/betta_archive.py` for a resumable, verified archive:
+
+```
+python3 scripts/betta_archive.py plan    --manifest <production-manifest.json> \
+  --verify <verify-report.json> [--verify <more.json>] --inventory-csv <csv> \
+  --archive-root "~/Documents/Archived Bettas" --state-root "<betta state root>" \
+  [--exceptions <owner-exceptions.json>] [--out plan.json]
+python3 scripts/betta_archive.py execute ... [--apply]
+python3 scripts/betta_archive.py status  --archive-root "~/Documents/Archived Bettas" [--date YYYY-MM-DD]
+python3 scripts/betta_archive.py resume  ... [--apply]
+```
+
+- Default is dry-run. Files are moved only with `--apply`.
+- Before any move it requires, for every fish, an independent `FINAL_SHOPIFY_READBACK_PASS`. A fish that lacks one, or that has a failed assertion, is `NEEDS_REVIEW` and blocks the whole archive.
+- Documented, owner-accepted exceptions (QA exceptions accepted by the owner, or an explicit `--exceptions` record) are preserved and recorded as `PASS_WITH_ACCEPTED_EXCEPTION`. A failed assertion is never converted into a plain pass.
+- Files are copied, destination SHA-256 verified against the source, and only then are the specific source files removed. Existing destinations with different content are refused, never overwritten.
+- The audit subfolder (`Archived Bettas/YYYY-MM-DD/Audit/`) preserves the production manifest, verification reports, QA evidence, receipts and owner-approved exceptions. Authentication data and unresolved Shopify mutation state are never moved or deleted.
+- An immutable `archive-manifest.json` records source/destination paths, hashes and timestamps. Resume is idempotent and skips completed files.
+
 Reply in the originating Discord thread with counts, tanks/photo dates/final titles, protected-field confirmation, inventory, arrival date, media status, storefront links, input/output tokens, Grok cost, onboarding time, retry count, genuine exceptions, and CSV attachment.
 
 **Complete when:** archive, ledger, telemetry, and live Shopify read-back agree.

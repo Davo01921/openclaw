@@ -71,6 +71,21 @@ The database is the live source of truth. CSV exports may be committed to GitHub
 
 Produces rolling efficiency summaries from telemetry, including onboarding-time distribution, retry rate, token usage, Grok spend and bottleneck-state metrics.
 
+### `scripts/betta_archive.py`
+
+Resumable, verified batch archive command (`plan` / `execute` / `status` / `resume`, default dry-run).
+
+Responsibilities:
+
+- gate the archive on independently verified Shopify completion for every fish;
+- preserve documented owner-accepted exceptions as `PASS_WITH_ACCEPTED_EXCEPTION` without converting failed assertions into passes;
+- use the actual Australia/Sydney date and produce `Archived Bettas/YYYY-MM-DD/{Betta Processing,Betta Processed,Audit}`;
+- copy, SHA-256 verify and only then remove the specific source files;
+- refuse conflicting destination overwrites and detect already-archived files (idempotent resume);
+- write an immutable `archive-manifest.json` with source/destination paths, hashes and timestamps.
+
+It performs no network, Shopify or model calls and never touches unrelated files, authentication data or unresolved mutation state.
+
 ### Shared NTA services
 
 The workflow integrates conceptually with:
@@ -413,6 +428,29 @@ GitHub contains:
 - optional CSV audit snapshots.
 
 Do not use GitHub as the live transactional database for per-fish processing.
+
+### Archive gate and layout (`scripts/betta_archive.py`)
+
+The archive is gated on independent verification, not on the processing run's own claims.
+
+- Completion source: one or more verification reports. A fish is eligible only with an independent `FINAL_SHOPIFY_READBACK_PASS`.
+- Failed assertions across all supplied reports are collected per fish. Any failure that is not covered by a documented owner-accepted exception makes the fish `NEEDS_REVIEW` and blocks the whole batch.
+- Owner-accepted exceptions come from the manifest's `image_qa.exception` (accepted) and/or an explicit `--exceptions` JSON. Eligible-but-excepted fish are recorded as `PASS_WITH_ACCEPTED_EXCEPTION`, never `VERIFIED`.
+- Files are copied first, the destination SHA-256 is compared to the source, and only after every copy in the run verifies does the run remove the specific move-role source files. Audit sources are copied only and are never removed.
+- A destination that already exists with different content aborts the run. A destination matching the recorded source hash is treated as already archived, which makes `resume` idempotent.
+- Layout:
+
+```text
+Archived Bettas/YYYY-MM-DD/
+  Betta Processing/   <Tank ID> Original <YYYY-MM-DD>.<ext> + inventory CSV
+  Betta Processed/    <Tank ID>.png
+  Audit/              production manifest, verification reports, QA evidence,
+                      receipts, owner-approved exceptions
+  archive-state.json  mutable progress for resume (state machine)
+  archive-manifest.json  immutable final manifest (source/dest/hash/timestamp)
+```
+
+`archive-state.json` is mutable and drives `status`/`resume`. `archive-manifest.json` is written once and is refused if different content already exists. Authentication data (`.betta-shopify-state/secrets`) and unresolved Shopify mutation state are outside the plan and are never moved or deleted.
 
 ## 18. CI
 

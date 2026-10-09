@@ -260,6 +260,17 @@ Archive only successful fish/batches.
 
 Store source files, outputs, CSV, ledger and telemetry export under the dated archive structure. Verify file hashes after moving.
 
+### Verified archive command
+
+Use `scripts/betta_archive.py` (default dry-run; `--apply` to move) with subcommands `plan`, `execute`, `status`, `resume`.
+
+1. `plan` reads the production/batch manifest and one or more independent verification reports, then classifies every fish. It refuses to proceed unless every fish has an independent `FINAL_SHOPIFY_READBACK_PASS`.
+2. A documented, owner-accepted exception is preserved and recorded as `PASS_WITH_ACCEPTED_EXCEPTION`; a failed assertion is never turned into a pass. An unresolved failure or a fish without a readback pass is `NEEDS_REVIEW` and blocks the archive.
+3. On `execute --apply`, each file is copied, its destination SHA-256 is verified against the source, and only then is the specific source removed. A pre-existing destination with different content is refused, never overwritten.
+4. The archive date is the actual Australia/Sydney date (`Archived Bettas/YYYY-MM-DD/`), with `Betta Processing/` for renamed originals (`<Tank ID> Original <Archive Date>.<ext>`) and the inventory CSV, `Betta Processed/` for `<Tank ID>.png` heroes, and `Audit/` for the manifest, receipts, QA evidence, verification reports and owner-approved exceptions.
+5. An immutable `archive-manifest.json` records source/destination paths, hashes and timestamps. `status` reports progress; `resume` is idempotent and skips completed files.
+6. Never move or delete unrelated files, incomplete work, authentication data (`.betta-shopify-state/secrets`) or unresolved Shopify mutation state.
+
 The final Discord/report result should include:
 
 - PASS/blocked counts;
