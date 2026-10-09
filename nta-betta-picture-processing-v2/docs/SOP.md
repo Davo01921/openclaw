@@ -111,6 +111,17 @@ After `VISUAL_ACCEPTED`, two independent branches may run in parallel:
 3. Retain source/output hashes and image-generation telemetry.
 4. Keep the complete original source photograph unchanged for Image 2.
 
+Run the batch-independent pipeline against the current batch workspace:
+
+```sh
+python3 scripts/betta_finish_heroes.py --batch-dir "<batch workspace>"
+```
+
+- Inputs default to `<batch-dir>/evidence/betta-labels-reconciled.json`; outputs go to `<batch-dir>/evidence/heroes/` and `<batch-dir>/reports/betta-hero-batch-results.json`. Nothing is hardcoded to a tank number, date, or batch size.
+- Sources are only read, never modified; each item's source hash is re-verified before use.
+- Paid generation is disabled by default. Add `--authorise-paid-generation` only with explicit owner approval; without it, an item whose clean hero is missing fails closed and no Grok/xAI request is made.
+- The xAI credential resolves from `XAI_API_KEY` or the macOS Keychain item `nta-betta-xai`; it is never stored or logged.
+
 The total number of concurrent external operations must not exceed `4`.
 
 ## 7. Resume behaviour
