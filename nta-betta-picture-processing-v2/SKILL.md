@@ -32,7 +32,7 @@ Process one Discord thread as one traceable batch. Every fish must keep a stable
 
 Read [references/state-machine.md](references/state-machine.md) before processing and [references/shopify-contract.md](references/shopify-contract.md) before any Shopify write.
 
-Use `scripts/vision_review.py` for catalogue/QA inference, `scripts/vision_batch.py` for bounded parallel review, `scripts/betta_batch.py` as the authoritative state/title/fork-join/evidence validator, and `scripts/betta_telemetry.py` for persistent per-tank timing/usage/cost records.
+Use `scripts/vision_review.py` for catalogue/QA inference, `scripts/vision_batch.py` for bounded parallel review, `scripts/betta_batch.py` as the authoritative state/title/fork-join/evidence validator, `scripts/betta_shopify_batch.py` for manifest-bound Shopify batch upload/resume/verification, and `scripts/betta_telemetry.py` for persistent per-tank timing/usage/cost records.
 
 ## Model-routing contract
 
@@ -172,7 +172,11 @@ Build a per-product change set containing only:
 
 Before mutation, `scripts/betta_batch.py` must regenerate the expected title from `tank_id`, `fish_name`, `tail_type`, and sex and reject any mismatch.
 
-Feature the hero as Image 1 and the complete uncropped original as Image 2. Preserve useful genuine extra angles. Inspect transport errors, top-level GraphQL errors, and every `userErrors` array; any material error stops the item.
+Run the manifest-driven upload through `scripts/betta_shopify_batch.py`; see [docs/SHOPIFY_BATCH_UPLOADER.md](docs/SHOPIFY_BATCH_UPLOADER.md). Dry-run is the default. Live mode additionally requires batch and per-item authority plus the exact manifest SHA-256.
+
+The uploader must attach the approved hero and complete uncropped original, wait for both media records to become `READY`, identify them independently by manifest-bound metadata, order HERO first and ORIGINAL second, then delete only the old media IDs captured at preflight. The final media set is exactly those two images. Inspect transport errors, top-level GraphQL errors, and every `userErrors` array; any material error stops the item.
+
+Every mutation intent must be journalled before dispatch. An uncertain write is reconciled against fresh Shopify state and is never automatically replayed. Inventory uses `changeFromQuantity` compare-and-set and a persisted idempotency key.
 
 **Complete when:** every submitted change is authorised and error-free.
 
@@ -187,7 +191,8 @@ Query Shopify independently and assert:
 - inventory equals `1`;
 - approved hero is Image 1;
 - complete original is Image 2 and source hash matches;
-- no unintended media loss occurred.
+- exactly two images remain in that order;
+- inventory tracking remains enabled and policy remains `DENY`.
 
 The successful `VERIFIED` transition is the end timestamp for the primary onboarding KPI.
 
@@ -260,9 +265,9 @@ Reply in the originating Discord thread with counts, tanks/photo dates/final tit
 
 ## Runtime readiness and throughput
 
-Before a live batch, verify `adaptive-model-router` availability for general vision/review calls, the fixed Grok hero service, Shopify resolve/write/read-back operations, `scripts/betta_batch.py`, `scripts/betta_runtime.py`, `scripts/betta_telemetry.py`, a concrete source/Shopify adapter, writable telemetry DB, Grok cost fallback, and dry-run mode. `scripts/betta_runtime.py` is the deterministic orchestration layer for serialized ledger writes, cross-batch intake deduplication, API-error classification, uncertain-write reconciliation, CSV validation and telemetry-before-PASS; it performs no external calls itself and requires concrete adapters to run live.
+Before a live batch, verify `adaptive-model-router` availability for general vision/review calls, the fixed Grok hero service, Shopify resolve/write/read-back operations, the existing authenticated Shopify bridge, `scripts/betta_batch.py`, `scripts/betta_runtime.py`, `scripts/betta_shopify_batch.py`, `scripts/betta_telemetry.py`, writable telemetry DB, Grok cost fallback, and dry-run mode. `scripts/betta_runtime.py` is the deterministic orchestration layer for serialized ledger writes, cross-batch intake deduplication, API-error classification, uncertain-write reconciliation, CSV validation and telemetry-before-PASS; `scripts/betta_shopify_batch.py` is the manifest-bound live Shopify writer (dry-run by default).
 
-The repository presently contains no concrete Shopify/Discord adapter or single end-to-end driver. If the deployed adapter cannot be located, report the missing adapter/configuration (see docs/RUNTIME_ADAPTER_STATUS_2026-10-09.md) instead of inventing a replacement. Offline helper and fixture completion is not live acceptance.
+The generic live adapters (`scripts/betta_shopify_batch.py`, `scripts/betta_finish_heroes.py`, the authenticated bridge) currently exist only in the local canonical checkout and are not yet committed to this repository; see docs/RUNTIME_ADAPTER_STATUS_2026-10-09.md for the boundary. Offline helper and fixture completion is not live acceptance.
 
 Use a global maximum of four simultaneous external operations initially. Run independent work as a queue, persist each result immediately, and refill available slots. Re-run `execution-plan` after branch completion/failure so only missing work is scheduled.
 
