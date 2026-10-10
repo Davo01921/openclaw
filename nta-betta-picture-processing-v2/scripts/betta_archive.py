@@ -24,6 +24,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -56,6 +57,11 @@ class ArchiveError(ValueError):
 
 def now_sydney() -> str:
     return datetime.now(SYDNEY).isoformat()
+
+
+def _safe_id(value: object) -> str:
+    text = re.sub(r"[^A-Za-z0-9._-]", "_", str(value or "batch"))
+    return text or "batch"
 
 
 def sydney_date(moment: Optional[str] = None) -> str:
@@ -266,46 +272,58 @@ def build_plan(
     decisions = classify_completion(items, reports, external_exceptions)
 
     archive_date = date or sydney_date()
-    base = Path(archive_root) / archive_date
-    processing_dir = base / "Betta Processing"
-    processed_dir = base / "Betta Processed"
-    audit_dir = base / audit_dir_name
+    safe_batch = _safe_id(manifest.get("batch_id"))
+    root_base = Path(archive_root) / archive_date
 
-    state_path = base / "archive-state.json"
+    def collect_files(base_dir: Path, prior_by_destination: dict):
+        proc = base_dir / "Betta Processing"
+        hero_dir = base_dir / "Betta Processed"
+        audit = base_dir / audit_dir_name
+        entries = []
+        for item in items:
+            tank = item.get("tank_id")
+            original = Path(item["original"]["path"])
+            extension = original.suffix
+            entries.append(_file_entry(
+                "original", tank, original,
+                proc / f"{tank} Original {archive_date}{extension}", move=True,
+                expected_source_sha=item["original"].get("sha256"),
+            ))
+            hero = Path(item["hero"]["path"])
+            entries.append(_file_entry(
+                "hero", tank, hero, hero_dir / f"{tank}.png", move=True,
+                expected_source_sha=item["hero"].get("sha256"),
+            ))
+        if inventory_csv is not None:
+            csv_path = Path(inventory_csv)
+            csv_destination = proc / csv_path.name
+            prior_csv = prior_by_destination.get(str(csv_destination), {})
+            entries.append(_file_entry(
+                "inventory_csv", None, csv_path, csv_destination, move=True,
+                expected_source_sha=prior_csv.get("source_sha256"),
+            ))
+        for source in _gather_audit_sources(manifest, manifest_path, report_paths,
+                                            exceptions_path, state_root):
+            entries.append(_file_entry("audit", None, source, audit / source.name, move=False))
+        return entries, proc, hero_dir, audit
+
+    # Batch-specific state file so multiple batches on the same date never share state.
+    state_path = root_base / f"{safe_batch}-archive-state.json"
     prior_by_destination = {}
     if state_path.is_file():
         for record in load_json(state_path).get("files", []):
             if record.get("destination"):
                 prior_by_destination[record["destination"]] = record
 
-    files = []
-    for item in items:
-        tank = item.get("tank_id")
-        original = Path(item["original"]["path"])
-        extension = original.suffix
-        files.append(_file_entry(
-            "original", tank, original,
-            processing_dir / f"{tank} Original {archive_date}{extension}", move=True,
-            expected_source_sha=item["original"].get("sha256"),
-        ))
-        hero = Path(item["hero"]["path"])
-        files.append(_file_entry(
-            "hero", tank, hero, processed_dir / f"{tank}.png", move=True,
-            expected_source_sha=item["hero"].get("sha256"),
-        ))
-    if inventory_csv is not None:
-        csv_path = Path(inventory_csv)
-        csv_destination = processing_dir / csv_path.name
-        prior_csv = prior_by_destination.get(str(csv_destination), {})
-        files.append(_file_entry(
-            "inventory_csv", None, csv_path, csv_destination, move=True,
-            expected_source_sha=prior_csv.get("source_sha256"),
-        ))
-    for source in _gather_audit_sources(manifest, manifest_path, report_paths,
-                                        exceptions_path, state_root):
-        files.append(_file_entry(
-            "audit", None, source, audit_dir / source.name, move=False,
-        ))
+    files, processing_dir, processed_dir, audit_dir = collect_files(root_base, prior_by_destination)
+
+    # If any destination would collide with another batch's files, isolate this batch
+    # under a batch-specific subdirectory rather than overwrite anything.
+    isolated = False
+    if any(entry["conflict"] for entry in files):
+        isolated = True
+        files, processing_dir, processed_dir, audit_dir = collect_files(
+            root_base / safe_batch, prior_by_destination)
 
     blockers = []
     for decision in decisions:
@@ -329,6 +347,10 @@ def build_plan(
         "generated_at": now_sydney(),
         "timezone": "Australia/Sydney",
         "archive_root": str(archive_root),
+        "isolated": isolated,
+        "state_file": str(state_path),
+        "processing_dir": str(processing_dir),
+        "processed_dir": str(processed_dir),
         "audit_dir": str(audit_dir),
         "blocked": bool(blockers),
         "blockers": blockers,
@@ -352,9 +374,12 @@ def execute_plan(plan: dict, apply: bool = False) -> dict:
             "archive plan is blocked; resolve every fish before archiving: "
             + json.dumps(plan.get("blockers"), sort_keys=True)
         )
-    base = Path(plan["archive_root"]) / plan["archive_date"]
-    state_path = base / "archive-state.json"
-    manifest_path = base / "archive-manifest.json"
+    safe_batch = _safe_id(plan.get("batch_id"))
+    if plan.get("state_file"):
+        state_path = Path(plan["state_file"])
+    else:
+        state_path = Path(plan["archive_root"]) / plan["archive_date"] / f"{safe_batch}-archive-state.json"
+    manifest_path = state_path.parent / f"{safe_batch}-archive-manifest.json"
 
     results = []
     for entry in plan["files"]:
@@ -460,22 +485,44 @@ def execute_plan(plan: dict, apply: bool = False) -> dict:
     return summary
 
 
-def report_status(archive_root: Path, date: Optional[str] = None) -> dict:
+def report_status(archive_root: Path, date: Optional[str] = None,
+                  batch_id: Optional[str] = None) -> dict:
     base = Path(archive_root) / (date or sydney_date())
-    manifest_path = base / "archive-manifest.json"
-    state_path = base / "archive-state.json"
-    if manifest_path.is_file():
-        manifest = load_json(manifest_path)
-        return {"source": "manifest", "path": str(manifest_path),
-                "batch_id": manifest.get("batch_id"), "archive_date": manifest.get("archive_date"),
-                "batch_status": manifest.get("batch_status"), "file_count": len(manifest.get("files", []))}
-    if state_path.is_file():
-        state = load_json(state_path)
-        done = sum(1 for f in state.get("files", []) if f.get("status") in ("COPIED", "ALREADY_DONE"))
-        return {"source": "state", "path": str(state_path),
-                "batch_id": state.get("batch_id"), "archive_date": state.get("archive_date"),
-                "batch_status": state.get("batch_status"), "files_done": done,
-                "file_count": len(state.get("files", []))}
+    if batch_id:
+        safe = _safe_id(batch_id)
+        candidates = [base, base / safe]
+    else:
+        candidates = [base] + sorted(p for p in base.glob("*") if p.is_dir())
+    found = []
+    for directory in candidates:
+        for pattern in ("*-archive-manifest.json", "*-archive-state.json",
+                        "archive-manifest.json", "archive-state.json"):
+            for path in sorted(directory.glob(pattern)):
+                is_manifest = "manifest" in path.name
+                data = load_json(path)
+                record = {
+                    "source": "manifest" if is_manifest else "state",
+                    "path": str(path),
+                    "batch_id": data.get("batch_id"),
+                    "archive_date": data.get("archive_date"),
+                    "batch_status": data.get("batch_status"),
+                }
+                if is_manifest:
+                    record["file_count"] = len(data.get("files", []))
+                else:
+                    record["file_count"] = len(data.get("files", []))
+                    record["files_done"] = sum(
+                        1 for f in data.get("files", []) if f.get("status") in ("COPIED", "ALREADY_DONE"))
+                found.append(record)
+    preferred = {}
+    for record in found:
+        key = record.get("batch_id")
+        existing = preferred.get(key)
+        if existing is None or (existing["source"] == "state" and record["source"] == "manifest"):
+            preferred[key] = record
+    batches = list(preferred.values())
+    if batches:
+        return {"archive_date": date or sydney_date(), "batches": batches, "count": len(batches)}
     return {"source": None, "archive_date": date or sydney_date(),
             "batch_status": "NOT_STARTED", "path": str(base)}
 
@@ -524,11 +571,12 @@ def main() -> int:
     p = sub.add_parser("status")
     p.add_argument("--archive-root", type=Path, default=DEFAULT_ARCHIVE_ROOT)
     p.add_argument("--date", default=None)
+    p.add_argument("--batch", default=None, help="Filter to a specific batch id")
 
     args = parser.parse_args()
     try:
         if args.cmd == "status":
-            print(json.dumps(report_status(args.archive_root, args.date), indent=2, sort_keys=True))
+            print(json.dumps(report_status(args.archive_root, args.date, args.batch), indent=2, sort_keys=True))
             return 0
 
         plan = _plan_from_args(args)

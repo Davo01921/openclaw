@@ -71,6 +71,10 @@ python3 scripts/betta_batches.py register-historical <approved-manifest.json>
 - Nothing about a previous batch (tank numbers, dates, image filenames) is hardcoded. A historical batch is referenced only by its own id.
 - Historical batches are read-only evidence. Do not reset, reopen, or delete them; the generic flow always starts a fresh batch.
 
+### V2.2 orchestration (prepared, disabled until activated)
+
+`scripts/betta_process.py` provides the single `process_batch` orchestrator (resumable, idempotent, crash-safe, per-fish quarantine, standing-authorisation gate). `scripts/betta_watch.py` provides automatic intake and `scripts/betta_policy.py` holds the standing Shopify authorisation bound to an exact manifest SHA-256. The existing Grok/xAI generation engine and prompts are unchanged. Automatic intake and standing Shopify writes are DISABLED by default and must not be activated without explicit owner approval.
+
 ## 2. Visual catalogue and deterministic title
 
 Request a first-pass route from `adaptive-model-router` with image/vision-inference capability and use the lowest sufficient routing class it returns. Do not choose a provider/model locally. Return structured:

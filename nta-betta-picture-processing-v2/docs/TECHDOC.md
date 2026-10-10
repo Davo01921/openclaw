@@ -104,6 +104,32 @@ Generic, isolated batch lifecycle. Allocates a unique batch id and workspace per
 - `register-historical` records an existing completed batch by reading only its own manifest `batch_id`/digest; no tank numbers, dates or filenames are hardcoded.
 - Local and deterministic; no network calls, no Shopify writes.
 
+### `scripts/betta_process.py` (V2.2 orchestration — not activated)
+
+Unified, resumable, crash-safe `process_batch` over injected adapters. Coordinates
+the existing components; performs no external calls itself and never replaces the
+Grok generator. Crash-safe state at `<batch>/state/process.json`; idempotent so a
+restart never repeats a paid generation or a Shopify mutation; per-fish quarantine;
+standing-authorisation gate bound to the manifest SHA-256. Stages: DETECTED →
+ALLOCATED → INTAKE_VERIFIED → IDENTIFIED → GENERATED → QA_VERIFIED →
+SHOPIFY_RESOLVED → MANIFEST_READY → AUTHORISED → SHOPIFY_EXECUTING → SHOPIFY_VERIFIED
+→ TELEMETRY_EXPORTED → ARCHIVING → ARCHIVED → COMPLETE (or AWAITING_AUTHORISATION /
+PARTIAL / BLOCKED).
+
+### `scripts/betta_policy.py` (standing authorisation — disabled by default)
+
+One narrowly scoped policy replaces per-batch approvals: `enabled`,
+`paid_generation_authorised`, protected fields and guarded inventory rules, and a
+list of authorisations each bound to an exact manifest SHA-256. `authorise(hash)`
+returns a receipt only for the approved bytes. Absent/disabled policy fails closed.
+
+### `scripts/betta_watch.py` (automatic intake — disabled by default)
+
+Polls the intake folder, waits for files to settle, excludes generated/transient/
+archive files and already-processed source hashes (persistent registry), and hands
+stable originals to the orchestrator. It never moves, renames or deletes anything and
+refuses to run without `--enable`.
+
 ### Shared NTA services
 
 The workflow integrates conceptually with:
