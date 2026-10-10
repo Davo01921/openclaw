@@ -1,511 +1,163 @@
-# NTA Betta Picture Processing — System Specification
+# NTA Betta Processing V2.2 — Functional Specification
 
-**Status:** Current live-test specification  
-**Version:** 2.1  
-**Date:** 2026-09-13  
-**Applies to:** `betta-picture-processing`
+Version: 2.2 · Repository: `Davo01921/openclaw-skills`
 
-## 1. Scope
+Status legend: **[I]** implemented · **[T]** implemented and tested (offline) ·
+**[G]** implemented but gated pending activation · **[D]** deferred.
 
-This specification defines the required behaviour of the NTA individual-Betta onboarding workflow from labelled source image through verified Shopify state, telemetry and archive.
+## 1. Business objective
 
-It is normative. If implementation behaviour conflicts with this document, the workflow must be treated as non-compliant until resolved.
+Convert original labelled Betta photographs into accurate, verified Shopify
+listing updates with minimal owner effort. Target experience: drop photographs,
+Fred does the rest, finished fish appear on Shopify.
 
-## 2. Core invariants
+## 2. Production scope
 
-### SPEC-ID-001 — Stable fish identity
+Individual Bettas matched to existing Shopify products; authorised title/date/media
+updates and guarded inventory. Excludes product creation, pricing/description
+edits, and non-Betta catalogue work.
 
-Every fish MUST maintain a traceable mapping:
+## 3. User requirements
 
-`source attachment → source SHA-256 → tank/date evidence → exact Shopify Product ID`
+- UR1 [G] No routine approvals/Discord/Terminal after activation.
+- UR2 [I] Owner drops originals into the intake folder.
+- UR3 [I] Uncertain fish are quarantined, never published wrongly.
+- UR4 [I] Existing Grok/xAI generation is preserved.
+- UR5 [I] Discord reports completion and genuine exceptions.
 
-No adjacent-label inference or filesystem-order inference is permitted.
+## 4. Functional requirements
 
-### SPEC-ID-002 — Existing product only
+- FR1 [T] Detect new originals, wait for settle, dedupe by SHA-256. [I]
+- FR2 [T] Allocate a unique batch id and isolated workspace.
+- FR3 [T] Identify tank/date; normalise IDs and Australian dates.
+- FR4 [T] Invoke the existing Grok generator and hero finishing.
+- FR5 [T] Independent QA; quarantine material discrepancies.
+- FR6 [T] Exact product matching (one-to-one).
+- FR7 [T] Build an immutable manifest bound to its SHA-256.
+- FR8 [G] Apply standing policy and write authorised changes.
+- FR9 [T] Independent Shopify read-back verification.
+- FR10 [T] Record telemetry during execution; export with the archive.
+- FR11 [T] Archive originals/heroes/evidence with hash verification.
+- FR12 [T] Close the batch registry; report in Discord.
+- FR13 [T] Resume/idempotency: never repeat a paid generation or Shopify mutation.
 
-The workflow MUST resolve exactly one existing Shopify product per accepted fish.
+## 5. Nonfunctional requirements
 
-The workflow MUST NOT implicitly create a product.
+- NFR1 Fail-closed on missing identity, QA failure, authority, or telemetry.
+- NFR2 Crash-safe, resumable, restart-persistent.
+- NFR3 Batch-independent; no hardcoded tank/date/filename.
+- NFR4 No duplicate inventory adjustments; concurrency-safe updates.
+- NFR5 Observable via structured telemetry/logs.
+- NFR6 Credentials never read/printed/committed.
 
-### SPEC-ID-003 — Unique product mapping
+## 6. Photograph intake requirements
 
-Within a batch, two individual fish MUST NOT resolve to the same Shopify Product ID.
+- Formats `.png .jpg .jpeg .tif .tiff .heic .webp .bmp`; top-level intake only.
+- Ignore dotfiles, temp/partial files, generated names and archive/batch folders.
+- Preserve original bytes; never move/rename/delete originals during processing.
 
-## 3. Title specification
+## 7. Identity and metadata requirements
 
-### SPEC-TITLE-001 — Exact format
+- Tank normalisation `2 BT 14`→`2BT14`; date DD/MM/YYYY (ISO accepted).
+- Year provenance: clear (card) or trusted reference; else hold.
+- Duplicate/ambiguous tank ids → quarantine all clashes.
 
-The Shopify title MUST be exactly:
+## 8. Image generation requirements
 
-`<Tank Number> - <Fish Name> <Tail Type> <Male/Female>`
+- Provider xAI, model `grok-imagine-image-2.0`, approved prompt, black background,
+  2048×2048 PNG. **[I] unchanged**.
+- Credential via `XAI_API_KEY` or Keychain `nta-betta-xai`.
+- Paid generation disabled unless explicitly authorised.
 
-### SPEC-TITLE-002 — Tank number
+## 9. Image fidelity and QA criteria
 
-The tank number MUST equal the accepted item/tank identity and MUST appear first in the final title.
+Deterministic: dimensions, filenames, label, framing, original-reference hash.
+Visual: same identity, body anatomy, scale markings, regional colour, tail/fins
+pose, complete framing, realistic texture, hero composition, label, reference
+integrity. Material changes never auto-accepted; metadata/date mismatches are not
+fidelity passes.
 
-### SPEC-TITLE-003 — Fish name
+## 10. Shopify integration requirements
 
-`Fish Name` MUST represent only supported visible colour/pattern/descriptive traits.
+- Read-only resolve; exact Product/Variant/InventoryItem/Location.
+- Mutations via the existing uploader with `--live` + exact manifest SHA-256.
+- Media: hero Image 1, untouched original Image 2; old media removed only after
+  replacements are READY and verified.
 
-It MUST NOT contain:
+## 11. Stock and inventory requirements
 
-- tank number;
-- tail type;
-- Male/Female;
-- unsupported lineage/genetics/grade claims.
+- Resolve item+location; read current; require tracked + DENY; configured
+  transition (default 0→1); compare-and-set + idempotency key; verify.
+- Unexpected values hold; never adjust twice per intake.
 
-### SPEC-TITLE-004 — Tail type
+## 12. Standing-authorisation boundaries
 
-Tail type is mandatory.
+Permitted: approved title, verified arrival date, hero+original media/order,
+guarded inventory. Protected: description, price, cost, vendor, product type,
+handle, status, IDs, metafields, tracking, DENY. Authorisation bound to the exact
+manifest SHA-256; disabled by default.
 
-It MUST be written in full, for example:
+## 13. Telemetry requirements
 
-- `Halfmoon`
-- `Halfmoon Plakat`
+Per call as it occurs: batch, tank, stage, provider/model, attempt, timestamp,
+duration, outcome, tokens (when reported), cost + source, error. No invented usage.
+Exports archived automatically.
 
-Abbreviations such as `HM` and `HMPK` MUST NOT appear in the final title.
+## 14. Archive and cleanup requirements
 
-### SPEC-TITLE-005 — Sex default
+`Archived Bettas/YYYY-MM-DD/{Betta Processing,Betta Processed,Audit}` with
+batch-specific names; collision isolation; destination SHA-256 verified before
+removing working copies; never delete unrelated files/credentials/state.
 
-Canonical sex MUST be `Male` unless Female is positively classified at confidence `>= 0.85`.
+## 15. Discord notification requirements
 
-Unknown, absent, ambiguous or low-confidence sex MUST resolve to `Male`.
+Report batch id, received/published/quarantined counts, verification results,
+generation cost, archive status, genuine errors. No routine approval requests.
 
-### SPEC-TITLE-006 — Deterministic authority
+## 16. Error and recovery requirements
 
-A model MAY classify `fish_name`, `tail_type` and sex evidence.
+Resumable state; reconcile uncertain Shopify writes by read before retry;
+per-fish quarantine; partial success reported accurately.
 
-A model MUST NOT be authoritative for the final title string.
+## 17. Security requirements
 
-Deterministic code MUST construct and validate the final title.
+No secrets in repo/manifests/logs; least-privilege standing scope; read-only
+resolve; live writes require explicit authority and digest.
 
-### SPEC-TITLE-007 — Mutation/read-back enforcement
+## 18. Performance and cost controls
 
-The deterministic expected title MUST be checked:
+Global external-op concurrency 4; telemetry informs concurrency changes;
+per-fish/per-batch generation ceilings and retry policy enforced by policy.
 
-1. before Shopify mutation; and
-2. after fresh Shopify read-back.
+## 19. Acceptance criteria
 
-Any deviation MUST fail closed.
+- [I] Fresh batch allocated from new originals; dedupe prevents reprocessing.
+- [T] Orchestrator completes intake→archive offline with mocks; resume repeats no
+  writes/generation.
+- [I] Material discrepancies quarantine; accepted exceptions recorded distinctly.
+- [I] Archive destination hashes verified; historical batches immutable.
+- [ ] A supervised live orchestrator run (pending owner-authorised activation).
 
-## 4. Date specification
+## 20. Out-of-scope capabilities
 
-### SPEC-DATE-001 — Date entered
+Product creation; price/cost/description changes; non-Betta catalogue; batch-size
+assumptions; unlimited spending. Deferred: full QA-exception auto-classification,
+multi-date archive UI, Discord slash commands.
 
-`date_entered` MUST represent the Australia/Sydney timestamp when the fish first enters the processing ledger.
+## 21. Change-control requirements
 
-It MUST remain stable for that processing record.
+Changes to prompt/model/limits require owner approval and a new policy version.
+Safeguards are not weakened to pass preflight.
 
-### SPEC-DATE-002 — Arrival date
+## 22. BAU operational responsibilities
 
-`arrival_date` MUST be derived from the physical photo/tank label and normalized to `YYYY-MM-DD`.
+Owner: drop photos; decide genuine exceptions. Fred: run automatically; report.
+Operators: emergency stop/rollback/credential checks. See SOP §19–21.
 
-### SPEC-DATE-003 — Date separation
+## Implemented vs deferred summary
 
-`date_entered`, `arrival_date` and archive date are separate concepts and MUST NOT be conflated.
-
-## 5. Visual catalogue specification
-
-### SPEC-VIS-001 — Structured output
-
-The catalogue stage MUST produce or derive structured values for:
-
-- tank ID;
-- tank confidence;
-- physical photo date;
-- date confidence;
-- one-fish visibility;
-- fish name;
-- tail type;
-- sex evidence;
-- sex confidence;
-- uncertainty reasons.
-
-### SPEC-VIS-002 — Tank/date threshold
-
-Tank/date confidence handling MUST follow:
-
-- `>= 0.90`: accept;
-- `0.70–0.89`: one focused cheap retry;
-- `< 0.70`: retry then minimal-evidence escalation;
-- unresolved: block before Shopify.
-
-### SPEC-VIS-003 — Unsupported claims
-
-The system MUST NOT claim unsupported lineage, genetics, grade, colour stability or specialist variety.
-
-## 6. Parallel preparation specification
-
-### SPEC-PAR-001 — Fork point
-
-After `VISUAL_ACCEPTED`, Shopify resolution and hero generation MUST be independently schedulable.
-
-### SPEC-PAR-002 — Shopify branch
-
-The Shopify branch MUST produce a valid exact Product ID plus a complete pre-write snapshot.
-
-### SPEC-PAR-003 — Hero branch
-
-The image branch MUST produce a valid hero asset record with file path, SHA-256 and generation evidence.
-
-### SPEC-PAR-004 — Join gate
-
-The workflow MUST NOT progress beyond the parallel preparation checkpoint until both branches are valid.
-
-### SPEC-PAR-005 — Resume semantics
-
-If one branch is valid and the other is missing/failed, rerun MUST schedule only the missing/failed branch.
-
-Valid completed work MUST NOT be repeated solely because the workflow restarts.
-
-### SPEC-PAR-006 — Concurrency ceiling
-
-Total concurrent external operations MUST NOT exceed `4` under the current configuration.
-
-## 7. Image specification
-
-### SPEC-IMG-001 — Hero dimensions
-
-The approved hero MUST be 2048 × 2048 pixels.
-
-### SPEC-IMG-002 — Hero presentation
-
-The hero SHOULD present:
-
-- one fish;
-- near-black clean background;
-- complete fin framing;
-- believable exposure/colour;
-- realistic anatomy and texture;
-- no text, labels, hands, tank borders, reflections or props.
-
-### SPEC-IMG-003 — Identity preservation
-
-The hero MUST remain recognizably the same fish based on body proportions, scale layout, markings, regional colour distribution, tail type and anatomy.
-
-### SPEC-IMG-004 — Original Image 2
-
-Shopify Image 2 MUST be the complete original source photograph.
-
-Its bytes and SHA-256 MUST match the saved source.
-
-It MUST NOT be cropped, resized, recompressed, relabelled or converted.
-
-## 8. Image QA specification
-
-### SPEC-QA-001 — Mandatory QA
-
-Image QA MUST run before Shopify media mutation.
-
-### SPEC-QA-002 — Deterministic assertions
-
-Required deterministic assertions include:
-
-- dimensions;
-- filenames;
-- label;
-- framing;
-- original-reference hash integrity.
-
-### SPEC-QA-003 — Visual assertions
-
-Required visual assertions include:
-
-- same identity;
-- body anatomy;
-- scale markings;
-- regional colour;
-- tail/fins/pose;
-- complete framing;
-- realistic texture;
-- hero composition;
-- label;
-- reference integrity.
-
-### SPEC-QA-004 — Fail closed
-
-Missing evidence, unapproved candidate version or any mandatory failed assertion MUST prevent upload.
-
-## 9. Shopify mutation specification
-
-### SPEC-SHP-001 — Authorised mutation keys
-
-Only the following product changes are authorised:
-
-- title;
-- arrival date;
-- inventory;
-- approved media/order.
-
-### SPEC-SHP-002 — Inventory
-
-Individual-Betta inventory MUST be set to exactly `1`.
-
-### SPEC-SHP-003 — Media order
-
-Image 1 MUST be the approved hero.
-
-Image 2 MUST be the unchanged original source photograph.
-
-### SPEC-SHP-004 — Protected fields
-
-The following MUST remain equal to the pre-write snapshot:
-
-- description;
-- price;
-- cost;
-- vendor;
-- product type;
-- handle;
-- status.
-
-### SPEC-SHP-005 — Error handling
-
-Transport errors, top-level GraphQL errors and material Shopify `userErrors` MUST fail the item.
-
-## 10. Fresh read-back specification
-
-### SPEC-RB-001 — Independent read-back
-
-The workflow MUST query Shopify again after mutation rather than treating mutation success as proof of final state.
-
-### SPEC-RB-002 — Required assertions
-
-Read-back MUST verify:
-
-- exact Product ID;
-- deterministic title;
-- protected fields unchanged;
-- arrival date;
-- inventory `1`;
-- hero as Image 1;
-- original source as Image 2;
-- no unintended media loss.
-
-### SPEC-RB-003 — Verification state
-
-A fish MUST NOT be treated as successfully onboarded until fresh read-back passes.
-
-## 11. Telemetry specification
-
-### SPEC-TEL-001 — Operational database
-
-Per-fish telemetry MUST be stored in:
-
-`~/Documents/Betta Processing/betta-telemetry.sqlite3`
-
-The live SQLite database is the operational source of truth.
-
-### SPEC-TEL-002 — Primary key
-
-The logical record identity MUST be `(batch_id, tank_number)`.
-
-### SPEC-TEL-003 — Required fields
-
-Each successful fish record MUST capture at minimum:
-
-- batch ID;
-- tank number;
-- date entered;
-- arrival date;
-- onboarding start;
-- Shopify verified time;
-- onboarding seconds;
-- model-call count;
-- retry count;
-- Grok-call count;
-- input tokens;
-- output tokens;
-- Grok cost;
-- cost currency/source;
-- Shopify Product ID;
-- final title.
-
-### SPEC-TEL-004 — Efficiency fields
-
-The system SHOULD capture:
-
-- archive-completed time;
-- end-to-archive seconds;
-- slowest state;
-- slowest-state seconds;
-- state durations;
-- provider/model summary;
-- unknown-cost-call count.
-
-### SPEC-TEL-005 — Token accounting
-
-Input/output token totals MUST include attributable retries and failed attempts when provider/runtime usage is reported.
-
-The system MUST NOT fabricate unreported token usage.
-
-### SPEC-TEL-006 — Grok cost
-
-Current fallback Grok cost is:
-
-`USD 0.07 per image generation/edit call`
-
-Cost priority MUST be:
-
-1. provider-reported billed cost;
-2. configured/default USD 0.07 per-call rate;
-3. unknown/null if neither is available.
-
-Unknown MUST NOT be represented as zero.
-
-### SPEC-TEL-007 — GitHub export
-
-CSV telemetry exports MAY be committed to GitHub or retained with archived batch evidence.
-
-A committed SQLite binary MUST NOT become the live transactional database.
-
-## 12. Timing and efficiency specification
-
-### SPEC-PERF-001 — Onboarding KPI
-
-Primary onboarding time MUST be measured as:
-
-`first ledger entry → successful fresh Shopify read-back`
-
-and stored as `onboarding_seconds`.
-
-### SPEC-PERF-002 — Archive timing
-
-Archive completion MUST be measured separately so archive/file housekeeping does not distort the onboarding KPI.
-
-### SPEC-PERF-003 — Bottleneck measurement
-
-The implementation SHOULD calculate state-level wall-clock durations and identify the slowest state per fish.
-
-### SPEC-PERF-004 — Rolling analysis
-
-The system SHOULD support rolling summaries including:
-
-- median onboarding time;
-- average onboarding time;
-- p90 onboarding time;
-- retry rate;
-- average tokens;
-- Grok spend;
-- slowest workflow states.
-
-## 13. CSV specification
-
-### SPEC-CSV-001 — Inventory CSV path
-
-The workflow MUST create:
-
-`/Users/davidlo/Documents/Betta Processing/betta-inventory.csv`
-
-### SPEC-CSV-002 — Headers
-
-Headers MUST be exactly:
-
-`Tank Number,Proposed Title,Cost,Retail Price`
-
-### SPEC-CSV-003 — Values
-
-The proposed title MUST be the deterministic final title.
-
-Cost and retail MUST be copied from the live Shopify pre-write snapshot.
-
-## 14. Failure specification
-
-### SPEC-FAIL-001 — Visual block
-
-Unresolved tank/date/title components MUST block before Shopify.
-
-### SPEC-FAIL-002 — Product block
-
-Missing/ambiguous Shopify identity MUST block mutation.
-
-### SPEC-FAIL-003 — QA failure
-
-Image-QA failure MUST prevent media/product mutation.
-
-### SPEC-FAIL-004 — Read-back failure
-
-Fresh read-back failure MUST result in `FIX_REQUIRED` or equivalent non-success state.
-
-### SPEC-FAIL-005 — No prose override
-
-Human/model prose MUST NOT convert a failed deterministic assertion into PASS.
-
-## 15. Archive specification
-
-### SPEC-ARC-001 — Archive gate
-
-Only successfully verified fish/batches may be archived as complete.
-
-### SPEC-ARC-002 — Evidence retention
-
-Archive evidence SHOULD include:
-
-- originals;
-- heroes;
-- inventory CSV;
-- batch ledger;
-- telemetry CSV export;
-- hashes/verification evidence.
-
-## 16. CI specification
-
-### SPEC-CI-001 — Compilation
-
-All Betta Python scripts MUST compile in CI.
-
-### SPEC-CI-002 — Unit tests
-
-Betta unit tests MUST pass before the repository version is considered ready for live testing.
-
-### SPEC-CI-003 — Required coverage areas
-
-Tests SHOULD cover:
-
-- exact title contract;
-- default-Male rule;
-- confident Female rule;
-- missing title components;
-- protected mutation boundary;
-- hash integrity;
-- duplicate Product IDs;
-- fork/join readiness;
-- missing-branch resume;
-- concurrency ceiling;
-- telemetry/timing calculations.
-
-## 17. Live-test acceptance criteria
-
-The initial one-Betta live test is accepted only when all criteria below pass:
-
-| ID | Criterion | Expected result |
-|---|---|---|
-| LT-01 | Tank identification | Correct tank |
-| LT-02 | Title | Exact deterministic format |
-| LT-03 | Sex fallback | Unknown/uncertain → Male |
-| LT-04 | Shopify product | Correct existing Product ID |
-| LT-05 | Parallel prep | Shopify/Grok independently schedulable |
-| LT-06 | Resume | Completed preparation branch not repeated |
-| LT-07 | Hero | Approved 2048×2048 hero as Image 1 |
-| LT-08 | Original | Exact unchanged source as Image 2 |
-| LT-09 | Arrival date | Matches physical label |
-| LT-10 | Inventory | Exactly 1 |
-| LT-11 | Protected fields | No unintended changes |
-| LT-12 | Read-back | Fresh verification PASS |
-| LT-13 | Tokens | Reported input/output captured |
-| LT-14 | Grok cost | Provider cost or USD 0.07 fallback captured |
-| LT-15 | Timing | `onboarding_seconds` populated |
-| LT-16 | Telemetry | One valid row for batch/tank |
-| LT-17 | Errors | No hidden/ignored material errors |
-
-A failure in any mandatory criterion stops rollout to a larger production batch until corrected.
-
-## 18. Change-control rule
-
-Any future change that alters title semantics, Shopify mutation authority, identity resolution, image fidelity rules, telemetry accounting, onboarding-time definition, concurrency or retry behaviour MUST update this specification and corresponding tests in the same change set.
-
-## 2026-10-02 closeout constraints
-
-V2.1 is the only production processing workflow; experimental V3 is deferred. Before mutation, record a fresh exact Product/Variant/Location/tank snapshot with DENY and tracked inventory. Only ACTIVE individual products with stock 0 or 1 are eligible; zero stock requires explicit new-fish authority tied to the source reference and hash. Negative/multiple stock and inactive products hold for operator review. Photo/text conflicts must be resolved explicitly; no adjacent tank inference.
-
-Fresh independent readback must include exact variant/location and protected fields. ARCHIVED requires existing source and hero files with approved hashes and a verification timestamp; update paths when moving files. Shopify status remains protected: evidence archiving is not authority to archive a sold Shopify product. Serialize ledger writes and retain source references for cross-batch duplicate checks. See CLOSEOUT.md for one final live acceptance exercise and recovery.
+Implemented + tested (offline): orchestrator, adapters/bindings, watcher, batch
+lifecycle, policy, uploader safeguards, archive batch-scoping, telemetry.
+Gated pending activation: watcher, standing Shopify authority, paid unattended
+generation. Deferred: supervised live orchestrator acceptance run and explicit
+production budget/retry ceilings.

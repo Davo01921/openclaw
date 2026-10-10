@@ -1,556 +1,202 @@
-# NTA Betta Picture Processing — Technical Design Document
+# NTA Betta Processing V2.2 — Technical Architecture
 
-**Status:** Current implementation baseline  
-**Version:** 2.1  
-**Date:** 2026-09-13  
-**Repository:** `Davo01921/openclaw-skills`  
-**Skill:** `nta-betta-picture-processing-v2` / runtime name `betta-picture-processing`
+Version: 2.2 · Repository: `Davo01921/openclaw-skills` · Skill: `nta-betta-picture-processing-v2`
+Canonical local skill: `~/openclaw-skills-v3/nta-betta-picture-processing-v2/`
 
-## 1. Technical objective
+## 1. Repository and module structure
 
-The system converts labelled Betta photographs into verified Shopify updates while separating probabilistic visual judgement from deterministic identity, title, mutation, verification, telemetry and archival controls.
-
-The design principle is:
-
-> Models observe and classify; deterministic code decides what may be written.
-
-The implementation is fail-closed and checkpointed.
-
-## 2. Primary components
-
-### `SKILL.md`
-
-Operator/runtime contract consumed by OpenClaw/Fred. Defines allowed behaviour, sequencing, title policy, Shopify mutation scope, image rules, telemetry requirements and throughput rules.
-
-### `scripts/vision_review.py`
-
-Runs auditable catalogue and image-QA inference through configured OpenClaw model providers. Records model/provider identity, call ID, hashes, structured output and usage data when available.
-
-### `scripts/vision_batch.py`
-
-Provides bounded parallel execution for visual-review work.
-
-### `scripts/grok_hero.py`
-
-Generates the catalogue hero through xAI/Grok image editing. Records source/output hashes, provider/model, usage data and Grok cost metadata.
-
-Current fallback image cost:
-
-`USD 0.07 per Grok image generation/edit call`
-
-Provider-reported cost takes priority over the fallback.
-
-### `scripts/betta_batch.py`
-
-Authoritative deterministic state, title, evidence, transition and mutation validator.
-
-Responsibilities include:
-
-- deterministic Shopify-title construction;
-- Female confidence threshold enforcement;
-- source/hero hash validation;
-- protected-field contract enforcement;
-- mutation-envelope validation;
-- fresh read-back validation;
-- duplicate Product ID protection;
-- fork/join preparation planning;
-- bounded execution planning;
-- checkpoint-safe resume behaviour.
-
-### `scripts/betta_telemetry.py`
-
-Persistent per-Betta operational telemetry store using SQLite.
-
-Default database:
-
-`~/Documents/Betta Processing/betta-telemetry.sqlite3`
-
-The database is the live source of truth. CSV exports may be committed to GitHub/archive for audit/history; the SQLite binary should not be treated as a Git-based operational database.
-
-### `scripts/betta_metrics.py`
-
-Produces rolling efficiency summaries from telemetry, including onboarding-time distribution, retry rate, token usage, Grok spend and bottleneck-state metrics.
-
-### `scripts/betta_archive.py`
-
-Resumable, verified batch archive command (`plan` / `execute` / `status` / `resume`, default dry-run).
-
-Responsibilities:
-
-- gate the archive on independently verified Shopify completion for every fish;
-- preserve documented owner-accepted exceptions as `PASS_WITH_ACCEPTED_EXCEPTION` without converting failed assertions into passes;
-- use the actual Australia/Sydney date and produce `Archived Bettas/YYYY-MM-DD/{Betta Processing,Betta Processed,Audit}`;
-- copy, SHA-256 verify and only then remove the specific source files;
-- refuse conflicting destination overwrites and detect already-archived files (idempotent resume);
-- write an immutable `archive-manifest.json` with source/destination paths, hashes and timestamps.
-
-It performs no network, Shopify or model calls and never touches unrelated files, authentication data or unresolved mutation state.
-
-### `scripts/betta_shopify_batch.py`
-
-Manifest-bound, hash-locked Shopify batch writer. Dry-run by default; live writes require `--live`, batch-level and per-item `write_authorised`, and `--confirm-manifest-sha256`. Uses the existing authenticated bridge. Persistent per-batch/per-manifest state, immutable events, staged-media READY/order/delete gates, protected-field readback, inventory compare-and-set + idempotency key, uncertain-write reconciliation (never automatic replay), completion receipts and duplicate rejection. Secrets stay outside the repository; live credentials live in the bridge environment file and the macOS Keychain.
-
-### `scripts/betta_finish_heroes.py`
-
-Batch-independent hero pipeline over a batch workspace. Resolves `<batch-dir>/evidence/betta-labels-reconciled.json`, writes heroes and results under the same workspace, re-verifies each source hash, reads sources without modifying them, and disables paid Grok/xAI generation unless `--authorise-paid-generation` is supplied. The xAI credential resolves from `XAI_API_KEY` or macOS Keychain (`nta-betta-xai`) via `grok_hero.py`.
-
-### `scripts/betta_batches.py`
-
-Generic, isolated batch lifecycle. Allocates a unique batch id and workspace per intake so historical batches are immutable and can never block or contaminate new work. Commands: `new`, `list`, `active`, `status`, `close`, `register-historical`.
-
-- Workspace layout: `batches/<batch_id>/{intake,evidence,manifest,state,reports,receipts,archive}` under `~/Documents/Betta Processing/batches` (configurable).
-- Registry (`registry.json`) is append-only and guarded by an advisory lock; ids are never reused.
-- `close` makes a batch terminal; `assert_batch_writable` refuses writes to a `COMPLETE`/`ABANDONED` batch.
-- `register-historical` records an existing completed batch by reading only its own manifest `batch_id`/digest; no tank numbers, dates or filenames are hardcoded.
-- Local and deterministic; no network calls, no Shopify writes.
-
-### `scripts/betta_process.py` (V2.2 orchestration — not activated)
-
-Unified, resumable, crash-safe `process_batch` over injected adapters. Coordinates
-the existing components; performs no external calls itself and never replaces the
-Grok generator. Crash-safe state at `<batch>/state/process.json`; idempotent so a
-restart never repeats a paid generation or a Shopify mutation; per-fish quarantine;
-standing-authorisation gate bound to the manifest SHA-256. Stages: DETECTED →
-ALLOCATED → INTAKE_VERIFIED → IDENTIFIED → GENERATED → QA_VERIFIED →
-SHOPIFY_RESOLVED → MANIFEST_READY → AUTHORISED → SHOPIFY_EXECUTING → SHOPIFY_VERIFIED
-→ TELEMETRY_EXPORTED → ARCHIVING → ARCHIVED → COMPLETE (or AWAITING_AUTHORISATION /
-PARTIAL / BLOCKED).
-
-### `scripts/betta_policy.py` (standing authorisation — disabled by default)
-
-One narrowly scoped policy replaces per-batch approvals: `enabled`,
-`paid_generation_authorised`, protected fields and guarded inventory rules, and a
-list of authorisations each bound to an exact manifest SHA-256. `authorise(hash)`
-returns a receipt only for the approved bytes. Absent/disabled policy fails closed.
-
-### `scripts/betta_watch.py` (automatic intake — disabled by default)
-
-Polls the intake folder, waits for files to settle, excludes generated/transient/
-archive files and already-processed source hashes (persistent registry), and hands
-stable originals to the orchestrator. It never moves, renames or deletes anything and
-refuses to run without `--enable`.
-
-### `scripts/betta_adapters.py`
-
-Real batch-scoped adapters wiring `betta_process` to the existing components
-(`betta_watch`, `vision_review`, `grok_hero`, `render_betta_label`,
-`betta_shopify_batch`, `betta_archive`, `betta_telemetry`). Every external step is
-an injectable runner so the wiring is testable offline. Live Shopify writes and
-paid generation are refused unless explicitly enabled; a dry-run execute returns
-`AWAITING_LIVE`. Per-call telemetry is recorded live and fails closed. See
-docs/V2.2_LIVE_INTEGRATION_2026-10-10.md.
-
-### `scripts/betta_bindings.py`
-
-Binds the concrete runners the adapters expect to the existing components:
-read-only Shopify resolve (`node scripts/shopify_live.mjs resolve`), the existing
-`betta_shopify_batch.py` uploader (dry-run unless `live=True` **and** an exact
-`--confirm-manifest-sha256`), and `betta_archive.py`. Live writes are impossible
-without the explicit live flag plus the matching manifest digest. No credential
-value is read or stored here.
-
-### Shared NTA services
-
-The workflow integrates conceptually with:
-
-- `nta-product-resolver` for product identity resolution;
-- `nta-shopify-write-verifier` for mutation/read-back safety;
-- `nta-automation-orchestrator` for higher-level routing.
-
-## 3. Data flow
-
-```text
-Discord / local source photograph
-        |
-        v
-Source save + SHA-256 + date_entered
-        |
-        v
-Vision catalogue
-        |
-        v
-Deterministic title assembly
-        |
-        v
-VISUAL_ACCEPTED
-        |
-        +--------------------+
-        |                    |
-        v                    v
-Shopify resolve        Grok hero generation
-+ pre-write snapshot   + generation telemetry
-        |                    |
-        +---------+----------+
-                  |
-                  v
-              JOIN GATE
-                  |
-                  v
-CSV + image QA
-                  |
-                  v
-Authorised Shopify mutation
-                  |
-                  v
-Fresh independent read-back
-                  |
-                  v
-Telemetry write
-                  |
-                  v
-PASS / archive / report
+```
+nta-betta-picture-processing-v2/
+  SKILL.md                      runtime contract
+  docs/                         SOP, TECHDOC, SPECDOC, integration/audit records
+  references/                   state machine, shopify contract, image standard
+  scripts/
+    betta_process.py            unified orchestrator (process_batch)
+    betta_adapters.py           real batch-scoped adapters (injectable runners)
+    betta_bindings.py           Shopify bridge/uploader/archive runner bindings
+    betta_watch.py              automatic intake watcher (disabled by default)
+    betta_batches.py            generic batch lifecycle + registry
+    betta_policy.py             standing Shopify authorisation (disabled by default)
+    betta_shopify_batch.py      manifest-bound Shopify writer (dry-run default)
+    betta_archive.py            batch-scoped verified archiver
+    betta_telemetry.py          telemetry SQLite + call recording/export
+    betta_metrics.py            rolling efficiency metrics
+    grok_hero.py                existing Grok/xAI generator (unchanged)
+    betta_finish_heroes.py      batch-independent hero pipeline
+    render_betta_label.py       deterministic label rendering
+    label_identity.py           deterministic tank/date/price normalisation
+    vision_review.py            catalogue/QA inference
+    vision_batch.py             bounded parallel vision
+    shopify_live.mjs            read-only resolve + preflight bridge client
+  tests/                        offline unit/integration/regression tests
 ```
 
-## 4. Identity model
-
-Every fish must preserve this chain:
-
-`source attachment → source SHA-256 → tank ID/date evidence → Shopify Product ID`
-
-The Product ID becomes the primary Shopify identity once resolved.
-
-The system must not:
-
-- infer identity from adjacent labels;
-- switch products because an old title/handle looks stale;
-- resolve more than one fish to the same Product ID within a batch;
-- create a missing product implicitly.
-
-## 5. Deterministic title engine
-
-Required output:
-
-`<Tank Number> - <Fish Name> <Tail Type> <Male/Female>`
-
-The catalogue model supplies components, not the final authoritative title.
-
-`betta_batch.py` reconstructs the expected title from:
-
-- `tank_id`;
-- `fish_name`;
-- `tail_type`;
-- canonical sex.
-
-### Canonical sex
-
-`Female` is permitted only when:
-
-- returned sex is Female; and
-- `sex_confidence >= 0.85`.
-
-All other outcomes become `Male`.
-
-The validator rejects titles where:
-
-- tank differs from item ID;
-- fish name is missing;
-- tail type is missing;
-- fish name/tail type contains sex;
-- fish name duplicates tail type;
-- final title differs from deterministic reconstruction.
-
-This validation occurs before mutation and again during fresh read-back.
-
-## 6. State model
-
-Core item states currently include:
-
-- `DISCOVERED`
-- `SAVED`
-- `VISUAL_PENDING`
-- `VISUAL_ACCEPTED`
-- `PRODUCT_RESOLVED`
-- `CSV_READY`
-- `IMAGE_CANDIDATE_READY`
-- `IMAGE_QA_PENDING`
-- `IMAGES_READY`
-- `MUTATION_PENDING`
-- `MUTATED`
-- `VERIFIED`
-- `PASS`
-- `ARCHIVED`
-
-Terminal/error states include:
-
-- `BLOCKED_VISUAL`
-- `BLOCKED_PRODUCT`
-- `FIX_REQUIRED`
-
-`betta_batch.py` remains the authoritative transition gate.
-
-## 7. Parallel preparation design
-
-`VISUAL_ACCEPTED` acts as a fork checkpoint.
-
-Two operations can proceed independently:
-
-### Shopify branch
-
-Produces a valid product record containing:
-
-- exact Product ID;
-- complete protected-field pre-write snapshot;
-- media/order/inventory/arrival-date snapshot.
-
-### Hero branch
-
-Produces a valid hero record containing:
-
-- file path;
-- SHA-256;
-- renderer/model evidence;
-- generation telemetry.
-
-### Join condition
-
-The workflow may progress past preparation only when both branches are valid.
-
-The join is deterministic. Completion of one branch does not imply completion of the other.
-
-## 8. Checkpoint/resume semantics
-
-On rerun, the execution planner inspects persisted evidence.
-
-If Shopify evidence exists and is valid:
-
-- do not rerun Shopify resolution.
-
-If hero evidence exists and is valid:
-
-- do not regenerate the hero.
-
-If only one branch is missing:
-
-- schedule only the missing branch.
-
-Passed QA/mutation/read-back stages must likewise be reused where safe rather than recomputed simply because the process was restarted.
-
-This is both a throughput and cost-control requirement.
-
-## 9. Concurrency
-
-Default maximum external-operation concurrency is `4`.
-
-The execution planner must enforce the ceiling across parallel preparation and other stage work. The design prioritises bounded stage-level concurrency rather than processing a large number of fish as independent end-to-end pipelines.
-
-The concurrency limit should not be raised until production telemetry demonstrates that the external providers, Shopify, local runtime and retry rate can support it safely.
-
-## 10. Image generation contract
-
-Hero target:
-
-- 2048 × 2048;
-- premium catalogue presentation;
-- near-black clean background;
-- one fish;
-- complete fin framing;
-- realistic anatomy/texture;
-- faithful identity/markings/colour distribution;
-- no labels/text/props in the hero image.
-
-Image 2 must be the original source bytes, unchanged.
-
-No crop, resize, recompression, label replacement or conversion is permitted for Image 2.
-
-## 11. Image QA contract
-
-QA contains deterministic and visual evidence.
-
-Deterministic checks include dimensions, filenames, label/framing rules and exact source/reference integrity.
-
-Visual assertions include identity, anatomy, markings, colour distribution, fins/tail, framing, texture and composition.
-
-The source/hero/original input hashes used during QA are persisted. Missing evidence is a failure.
-
-## 12. Shopify mutation boundary
-
-Authorised keys only:
-
-- `title`;
-- `arrival_date`;
-- `inventory`;
-- `media`.
-
-Protected keys include:
-
-- description;
-- price;
-- cost;
-- vendor;
-- product type;
-- handle;
-- status.
-
-Mutation validation requires:
-
-- title equals deterministic title;
-- arrival date equals accepted physical photo date;
-- inventory equals `1`;
-- media hashes equal approved hero then source hash.
-
-Fresh read-back independently verifies all changed and protected fields.
-
-## 13. Telemetry model
-
-One logical telemetry row is stored per `(batch_id, tank_number)`.
-
-Current fields include:
-
-- `batch_id`
-- `tank_number`
-- `date_entered`
-- `arrival_date`
-- `onboarding_started_at`
-- `shopify_verified_at`
-- `onboarding_seconds`
-- `archive_completed_at`
-- `end_to_archive_seconds`
-- `model_calls`
-- `retry_count`
-- `grok_calls`
-- `grok_cost_unknown_calls`
-- `slowest_state`
-- `slowest_state_seconds`
-- `state_durations_json`
-- `tokens_input`
-- `tokens_output`
-- `grokai_cost`
-- `grokai_cost_currency`
-- `grokai_cost_source`
-- `provider`
-- `model`
-- `product_id`
-- `title`
-- `updated_at`
-
-Schema migration logic adds newer columns to an existing local database without requiring a destructive rebuild.
-
-## 14. Cost accounting
-
-### Grok
-
-Priority:
-
-1. provider-reported billed cost;
-2. configured/default per-image fallback;
-3. unknown/null if neither is available.
-
-Current fallback rate: `USD 0.07` per Grok image call.
-
-Unknown cost must not be represented as `$0`.
-
-### Tokens
-
-For text/vision calls, sum input/output tokens across attributable calls and retries when provider/runtime usage exists.
-
-Do not fabricate token values when usage is unreported.
-
-## 15. Timing model
-
-Primary KPI:
-
-`onboarding_seconds = first ledger-entry timestamp → VERIFIED transition`
-
-This measures first intake to successful fresh Shopify verification.
-
-Secondary timing:
-
-`end_to_archive_seconds = first ledger entry → ARCHIVED transition`
-
-State-duration metrics identify the slowest state and quantify where wall-clock time accumulates.
-
-## 16. Metrics layer
-
-Rolling metrics should be inspected after real production samples, especially after approximately 20–30 Bettas.
-
-Useful indicators include:
-
-- median onboarding time;
-- mean onboarding time;
-- p90 onboarding time;
-- fastest/slowest onboarding;
-- retry rate;
-- mean model-call count;
-- mean input/output tokens;
-- Grok calls/cost;
-- top time-consuming states.
-
-Optimisation decisions should be based on these measures rather than assumptions.
-
-## 17. Persistence and archive
-
-Operational state resides locally in the batch ledger, source/output files and SQLite telemetry database.
-
-GitHub contains:
-
-- skill contracts;
-- deterministic scripts;
-- tests;
-- CI;
-- documentation;
-- optional CSV audit snapshots.
-
-Do not use GitHub as the live transactional database for per-fish processing.
-
-### Archive gate and layout (`scripts/betta_archive.py`)
-
-The archive is gated on independent verification, not on the processing run's own claims.
-
-- Completion source: one or more verification reports. A fish is eligible only with an independent `FINAL_SHOPIFY_READBACK_PASS`.
-- Failed assertions across all supplied reports are collected per fish. Any failure that is not covered by a documented owner-accepted exception makes the fish `NEEDS_REVIEW` and blocks the whole batch.
-- Owner-accepted exceptions come from the manifest's `image_qa.exception` (accepted) and/or an explicit `--exceptions` JSON. Eligible-but-excepted fish are recorded as `PASS_WITH_ACCEPTED_EXCEPTION`, never `VERIFIED`.
-- Files are copied first, the destination SHA-256 is compared to the source, and only after every copy in the run verifies does the run remove the specific move-role source files. Audit sources are copied only and are never removed.
-- A destination that already exists with different content aborts the run. A destination matching the recorded source hash is treated as already archived, which makes `resume` idempotent.
-- Layout:
-
-```text
-Archived Bettas/YYYY-MM-DD/
-  Betta Processing/   <Tank ID> Original <YYYY-MM-DD>.<ext> + inventory CSV
-  Betta Processed/    <Tank ID>.png
-  Audit/              production manifest, verification reports, QA evidence,
-                      receipts, owner-approved exceptions
-  archive-state.json  mutable progress for resume (state machine)
-  archive-manifest.json  immutable final manifest (source/dest/hash/timestamp)
+## 2. System architecture
+
+```
+intake folder --(watcher)--> batch workspace --(orchestrator)--> existing components
+   betta_watch.py            betta_batches.py    betta_process.py
+                                                  |-- betta_adapters.py (runners)
+                                                  |     |-- vision_review (identify/qa)
+                                                  |     |-- grok_hero + render_betta_label
+                                                  |     |-- shopify_live / betta_shopify_batch
+                                                  |     |-- betta_archive
+                                                  |     '-- betta_telemetry
+                                                  '-- betta_policy.py (authorisation)
 ```
 
-`archive-state.json` is mutable and drives `status`/`resume`. `archive-manifest.json` is written once and is refused if different content already exists. Authentication data (`.betta-shopify-state/secrets`) and unresolved Shopify mutation state are outside the plan and are never moved or deleted.
+Deterministic code owns state, identity, hashes, titles, transitions, inventory
+guards and verification; models only observe/classify.
 
-## 18. CI
+## 3. Unified orchestrator
 
-GitHub Actions workflow:
+`betta_process.BatchProcessor.process_batch(batch_dir, batch_id, adapters, policy)`.
+Crash-safe state at `<batch>/state/process.json` (fcntl-locked, atomic writes).
+Idempotent: completed stages and per-fish successes are skipped, so a restart never
+repeats a paid generation or a Shopify mutation. Per-fish quarantine. The standing
+policy authorisation is bound to the manifest SHA-256. Performs no external calls
+itself.
 
-`.github/workflows/betta-ci.yml`
+## 4. Automatic intake watcher
 
-Current CI performs:
+`betta_watch.scan` lists top-level files, excludes transient/generated/archive
+paths, requires the file mtime to be older than `settle_seconds`, and skips hashes
+in the persistent `ProcessedRegistry`. Never moves/renames/deletes. CLI refuses to
+run without `--enable`.
 
-1. Python compilation for Betta scripts.
-2. `unittest` discovery for `nta-betta-picture-processing-v2/tests/test_*.py`.
+## 5. Batch state machine
 
-Tests cover title invariants, Female threshold/default-Male behaviour, protected-field safety, hash integrity, duplicate Shopify Product IDs, concurrency, fork/join readiness, checkpoint resume behaviour and telemetry calculations.
+Item/process stages: DETECTED → ALLOCATED → INTAKE_VERIFIED → IDENTIFIED →
+GENERATED → QA_VERIFIED → SHOPIFY_RESOLVED → MANIFEST_READY → AUTHORISED →
+SHOPIFY_EXECUTING → SHOPIFY_VERIFIED → TELEMETRY_EXPORTED → ARCHIVING → ARCHIVED →
+COMPLETE, with terminal AWAITING_AUTHORISATION / AWAITING_LIVE / PARTIAL / BLOCKED.
+Per-fish: PENDING, VERIFIED, PASS_WITH_ACCEPTED_EXCEPTION, QUARANTINED, FAILED.
 
-A code change is not considered ready for live testing unless Betta CI succeeds.
+## 6. Data structures and manifests
 
-## 19. Runtime readiness
+Batch: `batches/<batch_id>/{batch.json,intake,evidence,manifest,state,reports,receipts,archive}`.
+Registry: `batches/registry.json` (append-only). Uploader manifest schema
+`nta-betta-shopify-batch-v1`. Archive manifest
+`nta-betta-archive-manifest-v1` (source/destination paths, hashes, timestamps).
+Policy `nta-betta-automation-policy-v1`. Telemetry `betta_processing_telemetry` +
+`betta_call_telemetry`.
 
-Before processing live Shopify data, verify:
+## 7. Identity and label processing
 
-- local repository/skill copy is current;
-- OpenClaw sees `betta-picture-processing`;
-- configured vision provider is working;
-- Grok/xAI API access is working;
-- Shopify resolution/write/read-back operations are available;
-- telemetry database path is writable;
-- validator and scripts compile;
-- no test failure is outstanding.
+`label_identity.normalize_tank/normalize_date/normalize_price`, and
+`resolve_photo_date` with explicit year provenance (clear/ambiguous/missing), never
+filename or filesystem-date inference.
 
-## 20. Known implementation boundary
+## 8. Existing Grok/xAI integration
 
-GitHub CI validates the repository implementation, but it does not prove that David's local OpenClaw runtime has pulled the latest commit or that every live external credential/provider is healthy.
+`grok_hero.py` (provider xAI, model `grok-imagine-image-2.0`, approved prompt,
+black background, 2048×2048). Credential from `XAI_API_KEY` env or macOS Keychain
+item `nta-betta-xai`. **Unchanged in V2.2** except the Keychain credential fallback.
 
-Therefore the first production validation remains a one-Betta live test with full evidence capture before scaling to a larger batch.
+## 9. Image finishing and QA
 
-## 2026-10-02 closeout constraints
+`render_betta_label.render` draws the deterministic label. `vision_review.py
+--mode qa` returns assertions; failures quarantine unless a bound owner exception.
 
-V2.1 is the only production processing workflow; experimental V3 is deferred. Before mutation, record a fresh exact Product/Variant/Location/tank snapshot with DENY and tracked inventory. Only ACTIVE individual products with stock 0 or 1 are eligible; zero stock requires explicit new-fish authority tied to the source reference and hash. Negative/multiple stock and inactive products hold for operator review. Photo/text conflicts must be resolved explicitly; no adjacent tank inference.
+## 10. Shopify Admin API integration
 
-Fresh independent readback must include exact variant/location and protected fields. ARCHIVED requires existing source and hero files with approved hashes and a verification timestamp; update paths when moving files. Shopify status remains protected: evidence archiving is not authority to archive a sold Shopify product. Serialize ledger writes and retain source references for cross-batch duplicate checks. See CLOSEOUT.md for one final live acceptance exercise and recovery.
+Read-only resolve via `shopify_live.mjs resolve <tank>` (client-credentials OAuth
+from the bridge env file). Mutations only via `betta_shopify_batch.py` against the
+authenticated session bridge. API version default `2026-07`.
+
+## 11. Authorisation and policy enforcement
+
+`betta_policy.StandingPolicy`: `enabled`, `paid_generation_authorised`, protected
+fields, inventory rule, and `authorisations` each bound to a manifest SHA-256.
+`authorise(hash)` returns a receipt only for the exact approved bytes. Absent or
+disabled fails closed.
+
+## 12. Inventory compare-and-set and idempotency
+
+Uploader uses `changeFromQuantity` compare-and-set plus a persisted UUID
+idempotency key; resolve/read the exact inventory item and location; verify final
+quantity. Unexpected values hold. No duplicate adjustment for the same intake.
+
+## 13. Telemetry database and exports
+
+`~/Documents/Betta Processing/betta-telemetry.sqlite3`. `record_call` appends per
+call (fail-closed). `export_calls` → `<batch>/reports/betta-call-telemetry.csv`.
+`batch_call_summary` reports calls/failures/known cost/unknown-cost calls. The
+archive gathers the CSV.
+
+## 14. Batch-scoped archival
+
+`betta_archive.py` layout `Archived Bettas/YYYY-MM-DD/{Betta Processing,Betta
+Processed,Audit}` with batch-specific `archive-state/manifest` names; a collision
+isolates the batch under its id instead of overwriting.
+
+## 15. Archive SHA-256 verification
+
+Every destination is copied, hashed and compared to the source before the specific
+source is removed; the immutable manifest records both. `status` lists per-batch
+records; resume is idempotent.
+
+## 16. OpenClaw and Discord integration
+
+Fred agent loads skill `betta-picture-processing` (delegator to the canonical dir).
+Discord reports batch outcomes; the obsolete V3 canary channel prompt is closed.
+
+## 17. Credential management
+
+Shopify: bridge env file (client id/secret/store). xAI: env or Keychain
+`nta-betta-xai`. No credential value is read, printed, logged or committed by the
+Betta tooling.
+
+## 18. Paid generation budgets
+
+Fallback USD 0.07/image when provider cost is unreported. Per-fish and per-batch
+ceilings and retry policy must be set in the standing policy before paid
+unattended execution; unknown cost is never treated as zero.
+
+## 19. Logging and observability
+
+Structured telemetry per call/stage; process state and immutable event records;
+archive manifests; `betta_metrics.py` rolling summaries.
+
+## 20. Restart persistence
+
+State under the batch workspace; the processed-source registry prevents duplicate
+intake after restart; completed work is not repeated.
+
+## 21. Failure recovery
+
+Resume from the last validated checkpoint; reconcile uncertain Shopify results by
+read before retry; quarantine individual failures without blocking safe fish.
+
+## 22. Quarantine handling
+
+Uncertain identity or material QA discrepancy quarantines the fish with retained
+evidence; excluded from publication.
+
+## 23. Production configuration
+
+- Intake `~/Documents/Betta Processing/`; archive `~/Documents/Archived Bettas/`.
+- Policy `~/Documents/Betta Processing/automation-policy.json`.
+- Watcher via launchd (`com.nta.betta-watch`), enabled only after approval.
+
+## 24. Deployment and rollback
+
+Release merges to `main`; canonical checkout fast-forwards. Rollback: `git revert`
+the release commit; disable the watcher (`launchctl unload`), disable the policy
+(`set-enabled false`); archive files are additive and never modified.
+
+## 25. Automated tests and CI
+
+`.github/workflows/betta-ci.yml` compiles scripts and runs
+`unittest discover -s nta-betta-picture-processing-v2/tests`. Offline unit,
+integration and regression tests cover orchestrator, adapters, bindings, policy,
+watcher, archive, telemetry, lifecycle and the historical QA analysis.
+
+## 26. Known limitations
+
+- Live orchestrator adapter runners for the Shopify bridge resolve/uploader are
+  bound but a supervised live orchestrator run has not yet been performed.
+- Production paid-generation budget/retry ceilings are not yet set (see §18).
+- Vision identification of previously unseen label formats depends on the live
+  model; ambiguous cases quarantine.
+- The watcher and standing authority remain disabled until activation gates pass.
