@@ -68,6 +68,10 @@ For each fish:
 
 Each intake is a new batch with a generated id and its own isolated workspace (`scripts/betta_batches.py`). Use `new` to allocate, `active` to find the current one, `status <id>` for progress, `close <id>` when finished, and `register-historical <manifest>` to record an already-completed batch as immutable history. A completed batch can never be reopened or written to, and historical batches cannot block new work. Manifests, state, approvals, receipts and archives are kept per batch; never reuse a batch id or write into a finished batch's workspace.
 
+### V2.2 orchestration (prepared, not activated)
+
+`scripts/betta_process.py` coordinates the whole lifecycle behind one `process_batch` entry point; `scripts/betta_watch.py` performs automatic intake; `scripts/betta_policy.py` holds the single standing Shopify authorisation bound to an exact manifest SHA-256. All three are disabled by default and require explicit owner activation. The existing Grok generator is unchanged. Automatic intake and standing Shopify authority must not be enabled until the activation checklist is approved.
+
 ## 5. Visual catalogue
 
 For each source image, the vision stage must determine:

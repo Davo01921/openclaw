@@ -148,14 +148,23 @@ class PlanTests(ArchiveTestCase):
         self.assertTrue(plan["blocked"])
         self.assertTrue(any("missing" in b["reason"] for b in plan["blockers"]))
 
-    def test_conflicting_destination_blocks(self):
+    def test_conflicting_destination_isolates_batch(self):
         self.add_item("1BT11")
         self.write_inputs()
         destination = self.archive_root / "2026-10-10" / "Betta Processed" / "1BT11.png"
         write(destination, b"different-existing-hero")
         plan = self.plan()
-        self.assertTrue(plan["blocked"])
-        self.assertTrue(any("conflict" in b["reason"] for b in plan["blockers"]))
+        # A collision is isolated under the batch id rather than blocking or overwriting.
+        self.assertFalse(plan["blocked"])
+        self.assertTrue(plan["isolated"])
+        hero = [f for f in plan["files"] if f["role"] == "hero"][0]
+        self.assertIn("test-batch", hero["destination"])
+        self.assertFalse(hero["conflict"])
+        self.assertEqual(readback_existing(destination), b"different-existing-hero")
+
+
+def readback_existing(path: Path) -> bytes:
+    return path.read_bytes()
 
 
 class ExecuteTests(ArchiveTestCase):
@@ -182,7 +191,7 @@ class ExecuteTests(ArchiveTestCase):
         self.assertFalse(hero.exists())
         self.assertEqual(ar.sha256_file(dest_original), sha(b"orig-1BT11"))
         self.assertEqual(ar.sha256_file(dest_hero), sha(b"hero-1BT11"))
-        manifest_path = self.archive_root / "2026-10-10" / "archive-manifest.json"
+        manifest_path = self.archive_root / "2026-10-10" / "test-batch-archive-manifest.json"
         self.assertTrue(manifest_path.is_file())
         manifest = json.loads(manifest_path.read_text())
         self.assertEqual(manifest["schema"], ar.MANIFEST_SCHEMA)
@@ -235,8 +244,9 @@ class ExecuteTests(ArchiveTestCase):
         plan = self.plan()
         ar.execute_plan(plan, apply=True)
         status = ar.report_status(self.archive_root, "2026-10-10")
-        self.assertEqual(status["source"], "manifest")
-        self.assertEqual(status["batch_status"], "COMPLETE")
+        self.assertEqual(status["count"], 1)
+        self.assertEqual(status["batches"][0]["source"], "manifest")
+        self.assertEqual(status["batches"][0]["batch_status"], "COMPLETE")
 
     def test_blocked_plan_refuses_execute(self):
         self.add_item("1BT11", failed=["media_identity"])
