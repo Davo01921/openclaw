@@ -149,9 +149,25 @@ Betta tooling.
 
 ## 18. Paid generation budgets
 
-Fallback USD 0.07/image when provider cost is unreported. Per-fish and per-batch
-ceilings and retry policy must be set in the standing policy before paid
-unattended execution; unknown cost is never treated as zero.
+Enforced by `scripts/betta_budget.py` (`GenerationBudget`) against a crash-safe,
+fcntl-locked ledger (`<batch>/state/gen-budget.json`). Approved limits (in
+`betta_policy.default_policy()["generation_budget"]` and the standing policy):
+`per_fish_usd 0.14`, `per_batch_usd 2.80`, `max_attempts_per_fish 2`,
+`max_retries_per_fish 1`, `max_fish_per_batch 20`, `fallback_cost_usd 0.07`.
+
+- Cost is reserved before each paid request (conservative fallback when unknown);
+  concurrent reservations are serialized so limits cannot be bypassed.
+- Retries count toward the same budget; exhausted attempts or budget exceed →
+  the fish is quarantined, not processed.
+- Interrupted reservations remain reserved (conservative) until reconciled;
+  `release` is only for provably uncharged requests.
+- Unknown settled cost is charged at the reserved amount, never zero; missing cost
+  with no fallback fails closed.
+- Re-running cannot duplicate paid generation: an existing hero is reused (no
+  reserve), and the processed-source registry prevents duplicate intake.
+
+`USD 0.07` is a planning estimate, not a guaranteed provider price; if current
+pricing cannot be established with confidence, generation fails closed.
 
 ## 19. Logging and observability
 

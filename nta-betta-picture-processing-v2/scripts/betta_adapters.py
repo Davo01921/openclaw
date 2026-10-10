@@ -66,7 +66,8 @@ class Adapters:
     def __init__(self, *, batch_id: str, batch_dir: Path, intake_dir: Path,
                  telemetry_db: Path, policy, live_shopify: bool = False,
                  live_generation: bool = False, owner_exceptions: Optional[dict] = None,
-                 runners: Optional[dict] = None, processed_registry: Optional[Path] = None):
+                 runners: Optional[dict] = None, processed_registry: Optional[Path] = None,
+                 budget=None):
         self.batch_id = batch_id
         self.batch_dir = Path(batch_dir)
         self.intake_dir = Path(intake_dir)
@@ -77,6 +78,7 @@ class Adapters:
         self.owner_exceptions = owner_exceptions or {}
         self.runners = runners or {}
         self.registry = watch_mod.ProcessedRegistry(processed_registry) if processed_registry else None
+        self.budget = budget
 
     # -- telemetry (fail closed) ------------------------------------------- #
     def _record(self, stage: str, outcome: str, *, tank: Optional[str] = None,
@@ -177,14 +179,53 @@ class Adapters:
         hero_dir = Path(batch_dir) / "evidence" / "heroes"
         hero_dir.mkdir(parents=True, exist_ok=True)
         clean = hero_dir / f"{entry['tank_id']}-clean.png"
+        if clean.is_file():
+            return {"hero_path": str(clean), "hero_sha256": sha256_file(clean)}  # idempotent
+        tank = entry["tank_id"]
         source = entry["source_path"]
         runner = self.runners.get("generate") or _subprocess_runner
-        started = time.monotonic()
-        runner([sys.executable, str(_SCRIPT_DIR / "grok_hero.py"), "--source", source,
-                "--output", str(clean)])
-        self._record("generate", "OK", tank=entry["tank_id"], started=started,
-                     cost=None, cost_source="pending_finish")
-        return {"hero_path": str(clean), "hero_sha256": sha256_file(clean)}
+        if self.budget is not None:
+            self.budget.register_fish(tank)
+        max_attempts = self.budget.limits["max_attempts_per_fish"] if self.budget else 1
+        last_error = None
+        for _ in range(max_attempts):
+            if self.budget is not None:
+                ok, reason = self.budget.can_attempt(tank)
+                if not ok:
+                    raise AdapterError(f"generation blocked: {reason}")
+                reservation = self.budget.reserve(tank)  # conservative fallback cost
+            started = time.monotonic()
+            try:
+                output = runner([sys.executable, str(_SCRIPT_DIR / "grok_hero.py"),
+                                 "--source", source, "--output", str(clean)])
+            except Exception as exc:  # charge the attempt conservatively, then retry
+                if self.budget is not None:
+                    self.budget.settle(reservation, None, reported=False)
+                self._record("generate", "ERROR", tank=tank, started=started, error=str(exc))
+                last_error = exc
+                continue
+            cost, source_label = self._parse_grok_cost(output)
+            if not clean.is_file():
+                if self.budget is not None:
+                    self.budget.settle(reservation, None, reported=False)
+                self._record("generate", "ERROR", tank=tank, started=started, error="no output file")
+                last_error = AdapterError("generator produced no hero")
+                continue
+            if self.budget is not None:
+                self.budget.settle(reservation, cost, reported=cost is not None)
+            self._record("generate", "OK", tank=tank, started=started, cost=cost, cost_source=source_label)
+            return {"hero_path": str(clean), "hero_sha256": sha256_file(clean)}
+        raise AdapterError(f"generation failed within budget for {tank}: {last_error}")
+
+    @staticmethod
+    def _parse_grok_cost(output) -> tuple:
+        try:
+            record = json.loads(output) if isinstance(output, str) and output.strip().startswith("{") else {}
+        except (ValueError, TypeError):
+            record = {}
+        cost = record.get("grokai_cost") if isinstance(record, dict) else None
+        return (float(cost) if isinstance(cost, (int, float)) else None,
+                (record.get("grokai_cost_source") if isinstance(record, dict) else None) or "unavailable")
 
     def finish(self, entry, batch_dir):
         runner = self.runners.get("render")

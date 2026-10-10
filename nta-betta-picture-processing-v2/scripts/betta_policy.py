@@ -65,6 +65,14 @@ def default_policy() -> dict:
             "allowed_from": [0],
             "target": 1,
         },
+        "generation_budget": {
+            "per_fish_usd": 0.14,
+            "per_batch_usd": 2.80,
+            "max_attempts_per_fish": 2,
+            "max_retries_per_fish": 1,
+            "max_fish_per_batch": 20,
+            "fallback_cost_usd": 0.07,
+        },
         "authorisations": [],
     }
 
@@ -95,6 +103,9 @@ class StandingPolicy:
 
     def inventory_rule(self) -> dict:
         return dict(self.data.get("inventory") or {})
+
+    def generation_budget(self) -> dict:
+        return dict(self.data.get("generation_budget") or {})
 
     def authorise(self, manifest_sha256: str | None) -> dict | None:
         """Return the authorisation receipt bound to this exact manifest, or None."""
