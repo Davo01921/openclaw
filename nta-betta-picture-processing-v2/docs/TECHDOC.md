@@ -140,6 +140,15 @@ paid generation are refused unless explicitly enabled; a dry-run execute returns
 `AWAITING_LIVE`. Per-call telemetry is recorded live and fails closed. See
 docs/V2.2_LIVE_INTEGRATION_2026-10-10.md.
 
+### `scripts/betta_bindings.py`
+
+Binds the concrete runners the adapters expect to the existing components:
+read-only Shopify resolve (`node scripts/shopify_live.mjs resolve`), the existing
+`betta_shopify_batch.py` uploader (dry-run unless `live=True` **and** an exact
+`--confirm-manifest-sha256`), and `betta_archive.py`. Live writes are impossible
+without the explicit live flag plus the matching manifest digest. No credential
+value is read or stored here.
+
 ### Shared NTA services
 
 The workflow integrates conceptually with:
