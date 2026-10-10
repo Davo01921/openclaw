@@ -130,6 +130,16 @@ archive files and already-processed source hashes (persistent registry), and han
 stable originals to the orchestrator. It never moves, renames or deletes anything and
 refuses to run without `--enable`.
 
+### `scripts/betta_adapters.py`
+
+Real batch-scoped adapters wiring `betta_process` to the existing components
+(`betta_watch`, `vision_review`, `grok_hero`, `render_betta_label`,
+`betta_shopify_batch`, `betta_archive`, `betta_telemetry`). Every external step is
+an injectable runner so the wiring is testable offline. Live Shopify writes and
+paid generation are refused unless explicitly enabled; a dry-run execute returns
+`AWAITING_LIVE`. Per-call telemetry is recorded live and fails closed. See
+docs/V2.2_LIVE_INTEGRATION_2026-10-10.md.
+
 ### Shared NTA services
 
 The workflow integrates conceptually with:

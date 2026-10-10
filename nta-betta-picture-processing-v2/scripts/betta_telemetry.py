@@ -380,6 +380,97 @@ def export_csv(con: sqlite3.Connection, output: Path) -> int:
     return len(rows)
 
 
+CALL_SCHEMA = """
+CREATE TABLE IF NOT EXISTS betta_call_telemetry (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    batch_id TEXT NOT NULL,
+    tank_number TEXT,
+    stage TEXT NOT NULL,
+    provider TEXT,
+    model TEXT,
+    attempt INTEGER NOT NULL DEFAULT 1,
+    started_at TEXT,
+    timestamp TEXT NOT NULL,
+    duration_seconds REAL,
+    outcome TEXT NOT NULL,
+    tokens_input INTEGER,
+    tokens_output INTEGER,
+    cost REAL,
+    cost_currency TEXT NOT NULL DEFAULT 'USD',
+    cost_source TEXT,
+    error TEXT,
+    detail_json TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_betta_call_batch ON betta_call_telemetry(batch_id, tank_number);
+"""
+
+CALL_FIELDS = [
+    "id", "batch_id", "tank_number", "stage", "provider", "model", "attempt",
+    "started_at", "timestamp", "duration_seconds", "outcome", "tokens_input",
+    "tokens_output", "cost", "cost_currency", "cost_source", "error", "detail_json",
+]
+
+
+def ensure_call_schema(con: sqlite3.Connection) -> None:
+    con.executescript(CALL_SCHEMA)
+    con.commit()
+
+
+def record_call(con: sqlite3.Connection, record: dict) -> int:
+    """Append one call record as it occurs. Never invents usage or cost."""
+    ensure_call_schema(con)
+    values = {key: record.get(key) for key in CALL_FIELDS if key != "id"}
+    if not values.get("outcome"):
+        raise ValueError("call telemetry requires an outcome")
+    if not values.get("timestamp"):
+        values["timestamp"] = sydney_now()
+    if not values.get("cost_currency"):
+        values["cost_currency"] = "USD"
+    if values.get("attempt") is None:
+        values["attempt"] = 1
+    if values.get("tokens_input") is not None:
+        values["tokens_input"] = max(0, int(values["tokens_input"]))
+    if values.get("tokens_output") is not None:
+        values["tokens_output"] = max(0, int(values["tokens_output"]))
+    columns = [key for key in CALL_FIELDS if key != "id"]
+    placeholders = ",".join("?" for _ in columns)
+    con.execute(
+        f"INSERT INTO betta_call_telemetry ({','.join(columns)}) VALUES ({placeholders})",
+        tuple(values[column] for column in columns),
+    )
+    con.commit()
+    return con.execute("SELECT last_insert_rowid()").fetchone()[0]
+
+
+def export_calls(con: sqlite3.Connection, batch_id: str, output: Path) -> int:
+    ensure_call_schema(con)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    rows = con.execute(
+        "SELECT " + ",".join(CALL_FIELDS) + " FROM betta_call_telemetry WHERE batch_id=? ORDER BY id",
+        (batch_id,),
+    ).fetchall()
+    with output.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.writer(handle)
+        writer.writerow(CALL_FIELDS)
+        writer.writerows(rows)
+    return len(rows)
+
+
+def batch_call_summary(con: sqlite3.Connection, batch_id: str) -> dict:
+    ensure_call_schema(con)
+    rows = con.execute(
+        "SELECT outcome, cost, cost_source FROM betta_call_telemetry WHERE batch_id=?", (batch_id,)
+    ).fetchall()
+    known = [float(cost) for _, cost, _ in rows if cost is not None]
+    return {
+        "batch_id": batch_id,
+        "calls": len(rows),
+        "failures": sum(1 for outcome, _, _ in rows if outcome not in ("OK", "SUCCESS")),
+        "known_cost": round(sum(known), 6) if known else None,
+        "unknown_cost_calls": sum(1 for _, cost, _ in rows if cost is None),
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--db", type=Path, default=DEFAULT_DB)
@@ -394,6 +485,13 @@ def main() -> int:
     p.add_argument("--grok-record", action="append", type=Path, default=[])
 
     p = sub.add_parser("export")
+    p.add_argument("--csv", type=Path, required=True)
+
+    p = sub.add_parser("record-call")
+    p.add_argument("--json", required=True, help="One JSON call record (outcome required)")
+
+    p = sub.add_parser("export-calls")
+    p.add_argument("--batch", required=True)
     p.add_argument("--csv", type=Path, required=True)
 
     p = sub.add_parser("show")
@@ -412,6 +510,13 @@ def main() -> int:
             print(json.dumps(record, sort_keys=True))
         elif args.cmd == "export":
             print(json.dumps({"rows": export_csv(con, args.csv), "csv": str(args.csv)}))
+        elif args.cmd == "record-call":
+            row_id = record_call(con, json.loads(args.json))
+            print(json.dumps({"row_id": row_id}, sort_keys=True))
+        elif args.cmd == "export-calls":
+            rows = export_calls(con, args.batch, args.csv)
+            print(json.dumps({"rows": rows, "csv": str(args.csv),
+                              "summary": batch_call_summary(con, args.batch)}, sort_keys=True))
         else:
             sql = "SELECT " + ",".join(FIELDS) + " FROM betta_processing_telemetry"
             params: tuple[str, ...] = ()

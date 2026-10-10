@@ -278,13 +278,20 @@ class BatchProcessor:
                     if outcome.get("status") == "VERIFIED":
                         entry["shopify_receipt"] = outcome.get("receipt")
                         d.setdefault("executed", []).append(key)
+                    elif outcome.get("status") == "AWAITING_LIVE":
+                        # Dry-run: pause without quarantine and without claiming success.
+                        d["awaiting_live"] = True
+                        break
                     else:
                         entry["status"] = FISH_QUARANTINED
                         entry["notes"].append("shopify execute not verified")
-                _reach(d, "SHOPIFY_VERIFIED")
+                if not d.get("awaiting_live"):
+                    _reach(d, "SHOPIFY_VERIFIED")
             self.state.update(execute)
 
         data = self.state.load()
+        if data.get("awaiting_live"):
+            return self._finish(data, "AWAITING_LIVE")
         if not self._stage_done(data, "TELEMETRY_EXPORTED"):
             self.state.update(lambda d: (self._call("telemetry", state=d, batch_dir=self.batch_dir),
                                          _reach(d, "TELEMETRY_EXPORTED")))
