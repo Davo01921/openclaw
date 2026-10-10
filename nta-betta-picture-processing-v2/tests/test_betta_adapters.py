@@ -20,6 +20,7 @@ ad = _load("betta_adapters_a", "betta_adapters.py")
 policy_mod = _load("betta_policy_a", "betta_policy.py")
 bl = _load("betta_batches_a", "betta_batches.py")
 telemetry_mod = _load("betta_telemetry_a", "betta_telemetry.py")
+bud = _load("betta_budget_a", "betta_budget.py")
 
 
 class IntegratedAdapterTests(unittest.TestCase):
@@ -67,11 +68,16 @@ class IntegratedAdapterTests(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    def adapters(self, *, live_shopify=False, live_generation=False, exceptions=None):
+    def adapters(self, *, live_shopify=False, live_generation=False, exceptions=None, budget=None):
         return ad.make_adapters(
             batch_id=self.batch_id, batch_dir=self.batch_dir, intake_dir=self.intake,
             telemetry_db=self.telemetry_db, policy=None, live_shopify=live_shopify,
-            live_generation=live_generation, owner_exceptions=exceptions, runners=self.runners)
+            live_generation=live_generation, owner_exceptions=exceptions, runners=self.runners,
+            budget=budget)
+
+    def budget(self, **limits):
+        return bud.GenerationBudget(self.batch_dir / "state" / "gen-budget.json",
+                                    batch_id=self.batch_id, limits=limits or None)
 
     def policy(self, manifest_sha=None, enabled=True, paid=True):
         data = policy_mod.default_policy()
@@ -133,6 +139,34 @@ class IntegratedAdapterTests(unittest.TestCase):
         state = json.loads((self.batch_dir / "state" / "process.json").read_text())
         entry = next(e for e in state["fish"].values() if e.get("tank_id") == "2BT12")
         self.assertEqual(entry["status"], bp.FISH_PASS_EXCEPTION)
+
+    def test_generation_retries_once_within_budget(self):
+        attempts = {"n": 0}
+
+        def flaky(argv):
+            attempts["n"] += 1
+            if attempts["n"] == 1:
+                raise RuntimeError("simulated 429")
+            out = Path(argv[argv.index("--output") + 1])
+            out.write_bytes(b"clean")
+
+        self.runners["generate"] = flaky
+        b = self.budget()
+        summary = self.drive(self.adapters(live_generation=True, budget=b), self.policy())
+        self.assertEqual(attempts["n"], 2)  # one initial + one retry
+        self.assertEqual(b.summary()["fish"]["2BT12"]["attempts"], 2)
+        # budget still within per-fish cap (2 x 0.07 = 0.14)
+        self.assertLessEqual(b.summary()["fish"]["2BT12"]["spent"], 0.14 + 1e-9)
+
+    def test_generation_blocked_when_attempts_exhausted_quarantines(self):
+        def always_fail(argv):
+            raise RuntimeError("simulated provider failure")
+
+        self.runners["generate"] = always_fail
+        b = self.budget(max_attempts_per_fish=1)  # only one attempt allowed
+        summary = self.drive(self.adapters(live_generation=True, budget=b), self.policy())
+        self.assertEqual(summary["quarantined"], 1)
+        self.assertEqual(summary["published"], 0)
 
     def test_telemetry_recorded_during_run_and_exported(self):
         first = self.drive(self.adapters(live_generation=True), self.policy())

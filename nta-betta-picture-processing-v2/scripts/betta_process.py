@@ -205,11 +205,16 @@ class BatchProcessor:
                         continue
                     if key in d.get("generated", []):
                         continue  # idempotent: never regenerate an existing hero
-                    hero = self._call("generate", entry=entry, batch_dir=self.batch_dir)
-                    entry["hero_path"] = hero.get("hero_path")
-                    entry["hero_sha256"] = hero.get("hero_sha256")
-                    self._call("finish", entry=entry, batch_dir=self.batch_dir)
-                    d.setdefault("generated", []).append(key)
+                    try:
+                        hero = self._call("generate", entry=entry, batch_dir=self.batch_dir)
+                        entry["hero_path"] = hero.get("hero_path")
+                        entry["hero_sha256"] = hero.get("hero_sha256")
+                        self._call("finish", entry=entry, batch_dir=self.batch_dir)
+                        d.setdefault("generated", []).append(key)
+                    except Exception as exc:
+                        # budget exceeded / interrupted / generator failure: quarantine, continue.
+                        entry["status"] = FISH_QUARANTINED
+                        entry["notes"].append(f"generation failed: {exc}")
                 _reach(d, "GENERATED")
             self.state.update(generate)
 
