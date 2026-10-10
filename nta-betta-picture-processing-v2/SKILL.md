@@ -73,7 +73,7 @@ python3 scripts/betta_batches.py register-historical <approved-manifest.json>
 
 ### V2.2 orchestration (prepared, disabled until activated)
 
-`scripts/betta_process.py` provides the single `process_batch` orchestrator (resumable, idempotent, crash-safe, per-fish quarantine, standing-authorisation gate). `scripts/betta_watch.py` provides automatic intake and `scripts/betta_policy.py` holds the standing Shopify authorisation bound to an exact manifest SHA-256. The existing Grok/xAI generation engine and prompts are unchanged. Automatic intake and standing Shopify writes are DISABLED by default and must not be activated without explicit owner approval.
+`scripts/betta_process.py` provides the single `process_batch` orchestrator (resumable, idempotent, crash-safe, per-fish quarantine, standing-authorisation gate). `scripts/betta_adapters.py` wires it to the existing components (generation, hero finishing, QA, Shopify uploader, archive, telemetry) with batch-scoped, injectable runners. `scripts/betta_watch.py` provides automatic intake and `scripts/betta_policy.py` holds the standing Shopify authorisation bound to an exact manifest SHA-256. The existing Grok/xAI generation engine and prompts are unchanged. Live Shopify writes and paid generation are refused unless explicitly enabled; automatic intake and standing Shopify writes are DISABLED by default. See docs/V2.2_LIVE_INTEGRATION_2026-10-10.md.
 
 ## 2. Visual catalogue and deterministic title
 

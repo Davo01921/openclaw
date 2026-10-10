@@ -70,7 +70,7 @@ Each intake is a new batch with a generated id and its own isolated workspace (`
 
 ### V2.2 orchestration (prepared, not activated)
 
-`scripts/betta_process.py` coordinates the whole lifecycle behind one `process_batch` entry point; `scripts/betta_watch.py` performs automatic intake; `scripts/betta_policy.py` holds the single standing Shopify authorisation bound to an exact manifest SHA-256. All three are disabled by default and require explicit owner activation. The existing Grok generator is unchanged. Automatic intake and standing Shopify authority must not be enabled until the activation checklist is approved.
+`scripts/betta_process.py` coordinates the whole lifecycle behind one `process_batch` entry point; `scripts/betta_adapters.py` wires it to the existing generation, QA, Shopify uploader, archive and telemetry components; `scripts/betta_watch.py` performs automatic intake; `scripts/betta_policy.py` holds the single standing Shopify authorisation bound to an exact manifest SHA-256. All are disabled by default and require explicit owner activation. The existing Grok generator is unchanged. Automatic intake and standing Shopify authority must not be enabled until the activation checklist is approved. See docs/V2.2_LIVE_INTEGRATION_2026-10-10.md.
 
 ## 5. Visual catalogue
 
