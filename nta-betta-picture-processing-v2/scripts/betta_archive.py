@@ -226,8 +226,12 @@ def _gather_audit_sources(
     report_paths: list,
     exceptions_path: Optional[Path],
     state_root: Optional[Path],
+    audit_paths: Optional[list] = None,
 ) -> list:
-    sources = [manifest_path] + [Path(path) for path in report_paths]
+    sources = (
+        [manifest_path] + [Path(path) for path in report_paths] +
+        [Path(path) for path in (audit_paths or [])]
+    )
     if exceptions_path is not None:
         sources.append(Path(exceptions_path))
     for item in manifest.get("items", []):
@@ -260,6 +264,7 @@ def build_plan(
     exceptions_path: Optional[Path] = None,
     state_root: Optional[Path] = None,
     audit_dir_name: str = "Audit",
+    audit_paths: Optional[list] = None,
 ) -> dict:
     manifest_path = Path(manifest_path)
     manifest = load_json(manifest_path)
@@ -302,9 +307,24 @@ def build_plan(
                 "inventory_csv", None, csv_path, csv_destination, move=True,
                 expected_source_sha=prior_csv.get("source_sha256"),
             ))
-        for source in _gather_audit_sources(manifest, manifest_path, report_paths,
-                                            exceptions_path, state_root):
-            entries.append(_file_entry("audit", None, source, audit / source.name, move=False))
+        audit_sources = _gather_audit_sources(
+            manifest, manifest_path, report_paths, exceptions_path,
+            state_root, audit_paths,
+        )
+        used_audit_names: dict[str, Path] = {}
+        for source in audit_sources:
+            name = source.name
+            previous = used_audit_names.get(name)
+            if previous is not None and previous != source:
+                digest = (
+                    sha256_file(source)[:12] if source.is_file()
+                    else hashlib.sha256(str(source).encode("utf-8")).hexdigest()[:12]
+                )
+                name = f"{digest}-{name}"
+            used_audit_names[name] = source
+            entries.append(_file_entry(
+                "audit", None, source, audit / name, move=False,
+            ))
         return entries, proc, hero_dir, audit
 
     # Batch-specific state file so multiple batches on the same date never share state.
@@ -357,6 +377,10 @@ def build_plan(
         "fish": decisions,
         "files": files,
         "verification_reports": [{"path": str(path), "sha256": sha256_file(Path(path))} for path in report_paths],
+        "audit_inputs": [
+            {"path": str(path), "sha256": sha256_file(Path(path))}
+            for path in (audit_paths or []) if Path(path).is_file()
+        ],
         "counts": {
             "verified": sum(1 for d in decisions if d["state"] == VERIFIED),
             "pass_with_accepted_exception": sum(1 for d in decisions if d["state"] == PASS_WITH_EXCEPTION),
@@ -472,6 +496,7 @@ def execute_plan(plan: dict, apply: bool = False) -> dict:
                 for record in results
             ],
             "verification_reports": plan.get("verification_reports", []),
+            "audit_inputs": plan.get("audit_inputs", []),
         }
         if manifest_path.is_file():
             # Immutable: a resumed run reuses the already-written manifest.
@@ -543,6 +568,7 @@ def _plan_from_args(args) -> dict:
         exceptions_path=args.exceptions,
         state_root=args.state_root,
         audit_dir_name=args.audit_dir_name,
+        audit_paths=args.audit_path or [],
     )
 
 
@@ -562,6 +588,8 @@ def main() -> int:
         p.add_argument("--state-root", type=Path, default=None,
                        help="Shopify bridge state root for receipt preservation")
         p.add_argument("--audit-dir-name", default="Audit")
+        p.add_argument("--audit-path", type=Path, action="append", default=[],
+                       help="Additional evidence file copied and SHA-256 verified (repeatable)")
         p.add_argument("--out", type=Path, default=None, help="Write the plan JSON to this path")
 
     p = sub.add_parser("plan"); add_common(p)

@@ -1,77 +1,64 @@
-# NTA Betta Processing V2.2 — Production Handover Record
+# NTA Betta Processing V2.2 — BAU handover
 
-Date: 2026-10-10 · Version: 2.2 · Repository: https://github.com/Davo01921/openclaw-skills
+Date: 2026-10-11 (Australia/Sydney)
+Canonical runtime: `~/openclaw-skills-v3/nta-betta-picture-processing-v2/`
+Repository: https://github.com/Davo01921/openclaw-skills
 
-## Status
+**BAU is NOT ACTIVATED. Critical gates failed; authority, paid generation and dispatcher remain disabled. The watcher is not installed or loaded.**
 
-**PRODUCTION RELEASE BLOCKED — ACTION REQUIRED.**
-Code and documentation are released to `main` and the canonical local skill is
-synchronised, but unattended production is **NOT ACTIVATED**: the watcher and the
-standing Shopify authorisation remain disabled, and the production paid-generation
-budget/retry ceilings have not been set.
+David’s standing approval is accepted. Existing successful E2Es are sufficient; no additional paid/live test or routine owner approval is required. Activation work made zero paid calls, zero Shopify mutations and zero Discord sends. Existing Grok generation code/prompts remain unchanged.
 
-## Record
+## Completed repairs
 
-| Item | Value |
-|---|---|
-| Production version | 2.2 |
-| Release date | 2026-10-10 |
-| Release PR | see PR opened from `codex/betta-v2.2-production-release-20261010` |
-| Pre-release main | `6aead9c` |
-| Runtime location | `~/openclaw-skills-v3/nta-betta-picture-processing-v2/` |
-| Watcher status | **DISABLED** (not loaded under launchd) |
-| Standing-policy status | **DISABLED** (`automation-policy.json` absent) |
-| Paid-generation budget | **NOT SET** (see blocker) |
-| Shopify connection | read-only resolve verified OK; live writes gated |
-| Discord notification | skill entry present; routine reporting not yet exercised live |
-| Archive root | `~/Documents/Archived Bettas/` |
-| Intake | `~/Documents/Betta Processing/` |
-| Telemetry DB | `~/Documents/Betta Processing/betta-telemetry.sqlite3` |
+- Added exact persisted-manifest authorization with immutable receipts, strict inventory scope and mandatory budget caps.
+- Added dispatcher-owned source selection, history deduplication, batch limits, durable notification intent, and read-only status/smoke.
+- Repaired configured uploader/bridge/archiver wiring, full protected snapshots and SHA-verified generic audit inputs.
+- Added strict production adapters, complete QA assertions, catalogue/title preservation, canonical uploader manifests, budget reservations and uncertainty replay refusal.
+- Added actual verification timestamps, inert completed-batch restart, per-fish quarantine and terminal archive receipt gate.
+- Prepared disabled policy/runtime configuration and launchd candidate using the existing image-capable virtual environment.
 
-## Activation gates (all required)
+## Validation
 
-1. Set per-fish and per-batch generation ceilings and the retry policy in
-   `automation-policy.json` (owner decision). **Outstanding.**
-2. Perform one supervised live run **through the unified orchestrator** (not manual
-   script coordination) and pass independent Shopify verification. **Outstanding.**
-3. Prove idempotency by a resume re-run (no duplicate Shopify writes/stock).
-4. Confirm archive completion + destination SHA-256 for that run.
-5. `betta_policy.py grant <manifest-sha256> --receipt …` then `set-enabled true`
-   (and `set-paid-generation true` only if approved for unattended use).
-6. Configure and enable the watcher under launchd (`com.nta.betta-watch`).
-7. Configure automatic Discord reporting; verify restart persistence.
+266 offline tests passed. Independent safety review completed and identified the blockers below. Fresh read-only checks verified Nano Tanks Australia Shopify identity, the authenticated offline-session bridge, #betta-processing, telemetry integrity/writability, Keychain retrieval without exposure, configured vision capabilities, and deterministic 2048×2048 rendering.
 
-## Emergency stop
+Grok SHA-256: `5732aa9803f860eca361c26e34348220ba6fb510969eb81187e2b62550b2878e`
 
-```sh
-launchctl unload ~/Library/LaunchAgents/com.nta.betta-watch.plist
-python3 scripts/betta_policy.py set-enabled false
-python3 scripts/betta_policy.py set-paid-generation false
-```
+## Blocking gates and exact next actions
 
-Then inspect `<batch>/state/process.json`; reconcile any uncertain Shopify result
-by an independent read before any retry. Do not delete evidence.
+### 1. paid-cost-ceiling
 
-## Rollback
+grok_hero.normalized_usage({}) supplies USD 0.07 from nta_default_0.07; strict adapter settles fallback as reported actual.
 
-`git revert <release-merge-commit>` on `main`, fast-forward the canonical checkout,
-and keep the watcher/policy disabled. Archive output is additive; nothing is
-overwritten or deleted by the release.
+Preserve Grok generation; require provider-reported cost or independently verified fixed-price upper bound for this exact model/quality before dispatch. Treat default/configured costs as estimates, not reported actual. Fail closed when no provable ceiling is available.
 
-## Recovery
+### 2. final-telemetry-archive
 
-Resumable from the batch checkpoint; the processed-source registry prevents
-duplicate intake; quarantined fish retain evidence.
+Telemetry and process snapshot are archived before archive receipt, ARCHIVED/COMPLETE and dispatcher outcome are persisted; archive completion timing remains absent.
 
-## Known limitations
+Add finalization evidence after verified archive; persist archive timing and terminal process/dispatcher receipts, and SHA-verify final telemetry and outcome in the audit archive. Verify original intake-folder cleanup only against the archived source digest.
 
-- No supervised live orchestrator run has been performed yet.
-- Production paid-generation ceilings/retry policy are undefined.
-- Vision identification of unseen label formats depends on the live model;
-  ambiguous cases quarantine.
+### 3. uncertain-reconciliation
 
-## Classification
+PENDING_RECONCILIATION and unsettled generation are turned into terminal quarantined/ABANDONED batches; replay is refused but a reconciliation-only continuation cannot be scheduled.
 
-**PRODUCTION RELEASE BLOCKED — ACTION REQUIRED** (activation gates 1, 2 and 6
-outstanding). The system is not live and must not be described as BAU until these
-gates pass with evidence.
+Keep uncertainty in a distinct recoverable checkpoint. Permit read-only reconciliation without replay, only advance after proven outcome; preserve reservations and mutation idempotency journals.
+
+### 4. vision-route-attestation
+
+Strict evidence checker accepts execution_attested:false override and a naive 1970 timestamp.
+
+Reject overrides and unknown/unattested provider/model in BAU. Require route-bound actual execution and timezone-aware timestamp bounded to the selected source/batch. Retain all call usage/retry evidence.
+
+### 5. archive-readback-binding
+
+Later archive report collection checks tank and PASS status without rebinding manifest/batch/command/timestamp or persisted report SHA.
+
+Persist the verification report digest with the execute receipt. At archive, validate those exact bytes, exact batch/manifest identity, verify command and readback receipt before accepting PASS.
+
+## Activation sequence after repair
+
+Re-run the offline integration and independent review. Only when all critical gates pass: enable the scoped automatic policy and paid generation within USD 0.14/fish, USD 2.80/batch, 2 attempts/fish and 20 fish/batch; install/bootstrap the prepared watcher; verify launchd context, restart persistence and read-only smoke without processing any live batch.
+
+Restart persistence remains unverified because activation stopped before installing launchd. Historical batches and photographs were not changed.
+
+Evidence: `BAU_READINESS_REPAIR_2026-10-11.json`. Candidate watcher: `com.nta.betta-watch.plist` (prepared only).

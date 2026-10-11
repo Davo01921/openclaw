@@ -1,6 +1,7 @@
 """Offline tests for the Shopify bridge/uploader bindings."""
 
 import importlib.util
+import hashlib
 import json
 import tempfile
 import unittest
@@ -46,17 +47,47 @@ class BindingTests(unittest.TestCase):
         self.assertEqual(calls, [])
 
     def test_execute_live_requires_matching_digest(self):
-        execute = bnd.shopify_execute_runner(live=True, confirm_manifest_sha256="deadbeef",
-                                             runner=lambda argv: json.dumps({"status": "VERIFIED", "receipt": "r"}))
-        with self.assertRaises(bnd.BindingError):
-            execute({"tank_id": "2BT12"}, Path("/tmp/m.json"), "different")
-        result = execute({"tank_id": "2BT12"}, Path("/tmp/m.json"), "deadbeef")
-        self.assertEqual(result["status"], "VERIFIED")
+        with tempfile.TemporaryDirectory() as tmp:
+            manifest = Path(tmp) / "m.json"
+            manifest.write_bytes(b'{"persisted":true}\n')
+            digest = hashlib.sha256(manifest.read_bytes()).hexdigest()
+
+            def runner(argv):
+                command = argv[2]
+                if command == "status":
+                    return json.dumps({"manifest_sha256": digest, "items": [{
+                        "tank_id": "2BT12", "stage": "NEW", "status": "PENDING",
+                    }]})
+                return json.dumps({"manifest_sha256": digest, "report_path": f"/{command}.json",
+                                   "items": [{"tank_id": "2BT12",
+                                              "status": bnd.READBACK_PASS,
+                                              "receipt": "r"}]})
+
+            execute = bnd.shopify_execute_runner(live=True, runner=runner)
+            with self.assertRaises(bnd.BindingError):
+                execute({"tank_id": "2BT12"}, manifest, "different")
+            result = execute({"tank_id": "2BT12"}, manifest, digest)
+            self.assertEqual(result["status"], "VERIFIED")
 
     def test_execute_live_non_verified_is_failure(self):
-        execute = bnd.shopify_execute_runner(live=True, confirm_manifest_sha256="x",
-                                             runner=lambda argv: json.dumps({"status": "PENDING"}))
-        self.assertEqual(execute({"tank_id": "2BT12"}, Path("/tmp/m.json"), "x")["status"], "FAILED")
+        with tempfile.TemporaryDirectory() as tmp:
+            manifest = Path(tmp) / "m.json"
+            manifest.write_bytes(b'{"persisted":true}\n')
+            digest = hashlib.sha256(manifest.read_bytes()).hexdigest()
+
+            def runner(argv):
+                command = argv[2]
+                if command == "status":
+                    return {"manifest_sha256": digest, "items": [{
+                        "tank_id": "2BT12", "stage": "NEW", "status": "PENDING",
+                    }]}
+                return {"manifest_sha256": digest, "items": [{
+                    "tank_id": "2BT12", "status": "BLOCKED",
+                }]}
+
+            execute = bnd.shopify_execute_runner(live=True, runner=runner)
+            self.assertEqual(execute({"tank_id": "2BT12"}, manifest, digest)["status"],
+                             "FAILED")
 
     def test_bind_runners_shape(self):
         with tempfile.TemporaryDirectory() as tmp:

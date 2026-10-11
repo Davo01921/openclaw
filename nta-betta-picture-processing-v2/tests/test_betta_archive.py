@@ -89,6 +89,22 @@ class ArchiveTestCase(unittest.TestCase):
 
 
 class PlanTests(ArchiveTestCase):
+    def test_generic_audit_input_is_hash_locked_without_json_parsing(self):
+        self.add_item("1BT11")
+        self.write_inputs()
+        telemetry = self.active / "betta-call-telemetry.csv"
+        telemetry.write_text("stage,outcome\ncatalogue,OK\n", encoding="utf-8")
+        plan = self.plan(audit_paths=[telemetry])
+        self.assertFalse(plan["blocked"])
+        self.assertEqual(plan["audit_inputs"], [{
+            "path": str(telemetry), "sha256": ar.sha256_file(telemetry),
+        }])
+        audit = [
+            entry for entry in plan["files"]
+            if entry["role"] == "audit" and entry["source"] == str(telemetry)
+        ]
+        self.assertEqual(len(audit), 1)
+
     def test_plan_builds_destinations_and_date(self):
         self.add_item("1BT11")
         self.write_inputs()
@@ -168,6 +184,22 @@ def readback_existing(path: Path) -> bytes:
 
 
 class ExecuteTests(ArchiveTestCase):
+    def test_execute_sha_verifies_generic_audit_input(self):
+        self.add_item("1BT11")
+        self.write_inputs()
+        authority = self.active / "authority.json"
+        authority.write_text('{"authorised":true}\n', encoding="utf-8")
+        plan = self.plan(audit_paths=[authority])
+        result = ar.execute_plan(plan, apply=True)
+        record = next(
+            entry for entry in result["results"]
+            if entry["source"] == str(authority)
+        )
+        self.assertEqual(record["source_sha256"], record["destination_sha256"])
+        self.assertTrue(Path(record["destination"]).is_file())
+        manifest = json.loads(Path(result["manifest"]).read_text(encoding="utf-8"))
+        self.assertEqual(manifest["audit_inputs"][0]["sha256"], ar.sha256_file(authority))
+
     def test_dry_run_does_not_move(self):
         self.add_item("1BT11")
         self.write_inputs()

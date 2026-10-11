@@ -68,11 +68,12 @@ class BudgetTests(unittest.TestCase):
     def test_provider_cost_above_estimate_counts_actual(self):
         b = self.budget(); b.register_fish("2BT12")
         rid = b.reserve("2BT12")  # reserves 0.07
-        charged = b.settle(rid, 0.20)  # provider above estimate
-        self.assertEqual(charged, 0.20)
-        self.assertEqual(b.summary()["batch_spent"], 0.20)
         with self.assertRaises(bud.BudgetError):
-            b.reserve("2BT12")  # 0.20 + 0.07 > 0.14 per-fish
+            b.settle(rid, 0.20)  # billed evidence persists before fail-closed error
+        self.assertEqual(b.summary()["batch_spent"], 0.20)
+        self.assertTrue(b.summary()["blocked"])
+        with self.assertRaises(bud.BudgetError):
+            b.reserve("2BT12")  # blocked after provider exceeded reservation/cap
 
     def test_concurrent_reservations_cannot_bypass_batch_cap(self):
         b = self.budget(per_batch_usd=0.14)

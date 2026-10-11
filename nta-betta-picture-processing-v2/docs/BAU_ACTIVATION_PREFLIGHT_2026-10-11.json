@@ -1,0 +1,47 @@
+{
+  "date_sydney": "2026-10-11",
+  "status": "BLOCKED_FAIL_CLOSED",
+  "canonical_commit": "d84552b393f21deca3089c0e94a763c357960053",
+  "policy": {
+    "file_exists": false,
+    "enabled": false,
+    "paid_generation_authorised": false,
+    "generation_budget": {
+      "per_fish_usd": 0.14,
+      "per_batch_usd": 2.8,
+      "max_attempts_per_fish": 2,
+      "max_retries_per_fish": 1,
+      "max_fish_per_batch": 20,
+      "fallback_cost_usd": 0.07
+    }
+  },
+  "launchd": {
+    "label": "com.nta.betta-watch",
+    "loaded": false,
+    "plist_exists": false
+  },
+  "offline_smoke": {
+    "new_manifest_with_enabled_standing_policy": "DENIED_REQUIRES_MANUAL_GRANT",
+    "pregranted_exact_hash": "ACCEPTED",
+    "changed_hash": "DENIED",
+    "built_hash_matches_persisted_bytes": false
+  },
+  "telemetry_read_only": {
+    "exists": true,
+    "write_probe": "NOT_RUN_AFTER_CRITICAL_GATE_FAILURE",
+    "integrity_check": "ok",
+    "tables": [
+      "betta_processing_telemetry",
+      "betta_call_telemetry",
+      "sqlite_sequence"
+    ]
+  },
+  "keychain_xai_item_present_metadata_only": true,
+  "generation_engine_sha256": "5732aa9803f860eca361c26e34348220ba6fb510969eb81187e2b62550b2878e",
+  "shopify_live_identity": "NOT_REVALIDATED_AFTER_CRITICAL_GATE_FAILURE",
+  "archive_and_discord_runtime": "NOT_VALIDATED_AFTER_CRITICAL_GATE_FAILURE",
+  "paid_generation_calls": 0,
+  "shopify_mutations": 0,
+  "activation_changes": 0,
+  "accepted_e2es": "ACCEPTED_NO_NEW_LIVE_BATCH_REQUIRED"
+}

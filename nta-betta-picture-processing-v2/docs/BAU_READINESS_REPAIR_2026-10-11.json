@@ -1,0 +1,77 @@
+{
+  "schema": "nta-betta-bau-readiness-v1",
+  "date": "2026-10-11",
+  "outcome": "BLOCKED_FAIL_CLOSED",
+  "activated": false,
+  "approval": "Standing BAU approval accepted; prior successful E2Es sufficient; no further live test requested.",
+  "caps": {
+    "per_fish_usd": 0.14,
+    "per_batch_usd": 2.8,
+    "max_attempts_per_fish": 2,
+    "max_fish_per_batch": 20
+  },
+  "checks": {
+    "offline_tests_passed": 266,
+    "independent_safety_review": "completed; five blockers found",
+    "shopify_identity": {
+      "id": "gid://shopify/Shop/60857712849",
+      "name": "Nano Tanks Australia",
+      "domain": "nano-tanks-australia-aquarium-shop.myshopify.com",
+      "currency": "AUD"
+    },
+    "bridge_readonly_preflight": "PASS; verified persisted offline session; token refreshed without Shopify mutations",
+    "telemetry_integrity": "ok",
+    "telemetry_write_probe": "transaction opened and rolled back; no rows changed",
+    "keychain": "credential retrieval succeeded; value not exposed",
+    "discord": "read-only channel-info confirmed 1542019252683546645, betta-processing",
+    "renderer": "existing virtual environment Pillow 12.3.0; synthetic render 2048x2048",
+    "vision_route": "OpenAI -> Qwen Token Plan -> Qwen API; all three live catalogue entries support image input",
+    "grok_sha256": "5732aa9803f860eca361c26e34348220ba6fb510969eb81187e2b62550b2878e",
+    "stable_new_photos": 0,
+    "restart_persistence": "not attempted; critical safety gate failed before launchd installation"
+  },
+  "production_state": {
+    "policy_enabled": false,
+    "automatic_authority": false,
+    "paid_generation": false,
+    "dispatcher_enabled": false,
+    "watcher_installed": false,
+    "runtime_config": "/Users/davidlo/Documents/Betta Processing/bau-config.json",
+    "candidate_plist": "com.nta.betta-watch.plist; prepared only, not installed"
+  },
+  "paid_calls": 0,
+  "shopify_mutations": 0,
+  "discord_sends": 0,
+  "blockers": [
+    {
+      "gate": "paid-cost-ceiling",
+      "status": "BLOCKED",
+      "evidence": "grok_hero.normalized_usage({}) supplies USD 0.07 from nta_default_0.07; strict adapter settles fallback as reported actual.",
+      "next_action": "Preserve Grok generation; require provider-reported cost or independently verified fixed-price upper bound for this exact model/quality before dispatch. Treat default/configured costs as estimates, not reported actual. Fail closed when no provable ceiling is available."
+    },
+    {
+      "gate": "final-telemetry-archive",
+      "status": "BLOCKED",
+      "evidence": "Telemetry and process snapshot are archived before archive receipt, ARCHIVED/COMPLETE and dispatcher outcome are persisted; archive completion timing remains absent.",
+      "next_action": "Add finalization evidence after verified archive; persist archive timing and terminal process/dispatcher receipts, and SHA-verify final telemetry and outcome in the audit archive. Verify original intake-folder cleanup only against the archived source digest."
+    },
+    {
+      "gate": "uncertain-reconciliation",
+      "status": "BLOCKED",
+      "evidence": "PENDING_RECONCILIATION and unsettled generation are turned into terminal quarantined/ABANDONED batches; replay is refused but a reconciliation-only continuation cannot be scheduled.",
+      "next_action": "Keep uncertainty in a distinct recoverable checkpoint. Permit read-only reconciliation without replay, only advance after proven outcome; preserve reservations and mutation idempotency journals."
+    },
+    {
+      "gate": "vision-route-attestation",
+      "status": "BLOCKED",
+      "evidence": "Strict evidence checker accepts execution_attested:false override and a naive 1970 timestamp.",
+      "next_action": "Reject overrides and unknown/unattested provider/model in BAU. Require route-bound actual execution and timezone-aware timestamp bounded to the selected source/batch. Retain all call usage/retry evidence."
+    },
+    {
+      "gate": "archive-readback-binding",
+      "status": "BLOCKED",
+      "evidence": "Later archive report collection checks tank and PASS status without rebinding manifest/batch/command/timestamp or persisted report SHA.",
+      "next_action": "Persist the verification report digest with the execute receipt. At archive, validate those exact bytes, exact batch/manifest identity, verify command and readback receipt before accepting PASS."
+    }
+  ]
+}

@@ -102,13 +102,15 @@ def normalized_usage(envelope: dict) -> dict:
 
 
 def run_review(files: list[Path], mode: str, agent: str, models: list[str]) -> dict:
+    from betta_vision_route import resolve_route, attest
+    route = resolve_route(agent) if not models else None
     prompt = CATALOGUE_PROMPT if mode == "catalogue" else QA_PROMPT
     errors = []
     child_env = os.environ.copy()
     preferred = ["/opt/homebrew/opt/node/bin", "/opt/homebrew/bin"]
     child_env["PATH"] = os.pathsep.join(preferred + child_env.get("PATH", "").split(os.pathsep))
     for model in (models or [None]):
-        cmd = ["openclaw", "infer", "model", "run", "--agent", agent]
+        cmd = [os.getenv("BETTA_OPENCLAW", "/opt/homebrew/bin/openclaw"), "infer", "model", "run", "--agent", agent]
         if model:
             cmd.extend(["--model", model])
         cmd.extend(["--prompt", prompt, "--json"])
@@ -136,6 +138,7 @@ def run_review(files: list[Path], mode: str, agent: str, models: list[str]) -> d
                 "model": resolved_model,
                 "call_id": str(uuid.uuid4()),
                 "timestamp": datetime.now(timezone.utc).isoformat(),
+                "routing": attest(route, provider, resolved_model) if route else {"execution_attested": False, "override": True},
                 "input_hashes": [digest(path) for path in files],
                 "usage": usage,
                 "output": output,

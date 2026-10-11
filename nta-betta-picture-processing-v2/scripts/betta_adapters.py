@@ -313,6 +313,12 @@ class Adapters:
 
 
 def make_adapters(**kwargs) -> dict:
+    if kwargs.get("selected_sources") is not None:
+        # Imported lazily to avoid a module cycle: the strict BAU adapter extends
+        # this legacy/supervised bundle but is selected only for a dispatcher-owned
+        # immutable source set.
+        from betta_bau_adapters import make_strict_adapters
+        return make_strict_adapters(**kwargs)
     bundle = Adapters(**kwargs)
     return {name: getattr(bundle, name) for name in
             ("intake", "identify", "generate", "finish", "qa", "resolve",

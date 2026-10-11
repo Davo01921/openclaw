@@ -39,12 +39,12 @@ async function client() {
     return envelope.data;
   };
 }
-const RESOLVE=`query BettaResolve($query:String!){products(first:10,query:$query){nodes{
+const RESOLVE=`query BettaResolve($query:String!){products(first:10,query:$query){pageInfo{hasNextPage} nodes{
  id title descriptionHtml handle status vendor productType
- media(first:50){nodes{id alt mediaContentType status ... on MediaImage{image{url width height}}}}
- variants(first:10){nodes{id title price inventoryPolicy inventoryQuantity inventoryItem{
-  id tracked unitCost{amount currencyCode} inventoryLevels(first:20){nodes{
-   id location{id name} quantities(names:["available"]){name quantity}}}}}}
+ media(first:50){pageInfo{hasNextPage} nodes{id alt mediaContentType status ... on MediaImage{image{url width height}}}}
+ variants(first:10){pageInfo{hasNextPage} nodes{id title price inventoryPolicy inventoryQuantity inventoryItem{
+  id tracked unitCost{amount currencyCode} inventoryLevels(first:20){pageInfo{hasNextPage} nodes{
+   id location{id name} quantities(names:["available","on_hand","committed"]){name quantity}}}}}}
  arrival:metafield(namespace:"custom",key:"arrival_date"){id value type}}}}`;
 function exactTank(product,tank) {
   const escaped=tank.replace(/[.*+?^{}()|[\]\\]/g,'\\$&');
@@ -53,13 +53,14 @@ function exactTank(product,tank) {
 }
 function snapshot(product,tank) {
   if(product.status!=='ACTIVE') fail('Resolved Betta product is not ACTIVE');
-  if(product.variants.nodes.length!==1) fail('Resolved product must have exactly one variant');
+  if(product.variants.pageInfo?.hasNextPage!==false || product.variants.nodes.length!==1) fail('Resolved product must have exactly one variant');
   const variant=product.variants.nodes[0], levels=variant.inventoryItem?.inventoryLevels?.nodes||[];
-  if(levels.length!==1) fail('Resolved variant must have exactly one inventory location');
+  if(variant.inventoryItem.inventoryLevels.pageInfo?.hasNextPage!==false || levels.length!==1) fail('Resolved variant must have exactly one inventory location');
   const level=levels[0], available=level.quantities?.find(x=>x.name==='available')?.quantity;
+  if(product.media.pageInfo?.hasNextPage!==false) fail('Resolved media truncated');
   if(!Number.isInteger(available)) fail('Resolved inventory quantity unavailable');
   return {id:product.id,variant_id:variant.id,inventory_item_id:variant.inventoryItem.id,
-    location_id:level.location.id,source:'FRESH_SHOPIFY_READ',tank_id:tank,
+    raw_product:product,location:level.location,location_id:level.location.id,source:'FRESH_SHOPIFY_READ',tank_id:tank,
     fetched_at:new Date().toISOString(),fetch_id:crypto.randomUUID(),before:{
       title:product.title,description:product.descriptionHtml,price:variant.price,
       cost:variant.inventoryItem.unitCost?.amount??null,vendor:product.vendor,
@@ -73,12 +74,15 @@ async function main(){
   if(!['preflight','resolve'].includes(command)) fail('usage: shopify_live.mjs preflight|resolve [TANK]');
   const gql=await client();
   if(command==='preflight'){
-    await gql('query BettaPreflight{shop{name}}');
-    console.log(JSON.stringify({ok:true,api_version:API_VERSION,capabilities:['authenticate','fresh_resolve']}));
+    const data=await gql('query BettaPreflight{shop{id name myshopifyDomain currencyCode}}');
+    const expected=process.env.BETTA_EXPECTED_SHOP || process.env.SHOPIFY_STORE;
+    if(!expected || data.shop?.myshopifyDomain!==expected) fail('Shopify shop identity mismatch');
+    console.log(JSON.stringify({ok:true,shop:data.shop,api_version:API_VERSION,capabilities:['authenticate','fresh_resolve']}));
     return;
   }
   if(!/^\d+BT\d+$/.test(tank||'')) fail('canonical tank ID required');
   const data=await gql(RESOLVE,{query:tank});
+  if(data.products?.pageInfo?.hasNextPage!==false) fail('Product resolution truncated');
   const matches=(data.products?.nodes||[]).filter(p=>exactTank(p,tank));
   if(matches.length!==1) fail(`Expected exactly one product for ${tank}; found ${matches.length}`);
   console.log(JSON.stringify({ok:true,status:'RESOLVED',snapshot:snapshot(matches[0],tank)}));

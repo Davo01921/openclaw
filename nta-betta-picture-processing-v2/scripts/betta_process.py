@@ -151,6 +151,9 @@ class BatchProcessor:
     # -- pipeline ---------------------------------------------------------- #
     def run(self) -> dict:
         data = self.state.load()
+        if data.get("status") in ("COMPLETE", "PARTIAL"):
+            return self._summary(data)
+        automatic = getattr(self.policy, "data", {}).get("automatic_batch_authorisation") is True
         if not self._stage_done(data, "INTAKE_VERIFIED"):
             detection = self._call("intake", batch_dir=self.batch_dir, state=data)
             self.state.update(lambda d: (d.setdefault("intake", detection), _reach(d, "INTAKE_VERIFIED")))
@@ -162,7 +165,10 @@ class BatchProcessor:
             def identify(d: dict) -> None:
                 fish = {}
                 for index, record in enumerate(detection.get("fish", [])):
-                    decision = self._call("identify", record=record, batch_dir=self.batch_dir)
+                    try:
+                        decision = self._call("identify", record=record, batch_dir=self.batch_dir)
+                    except Exception as exc:
+                        decision = {"uncertain": True, "error": str(exc)}
                     key = record.get("path") or f"fish-{index}"
                     entry = {
                         "source_path": record.get("path"),
@@ -172,6 +178,12 @@ class BatchProcessor:
                         "status": "PENDING",
                         "notes": [],
                     }
+                    for field in ("catalogue", "catalogue_path", "catalogue_sha256", "approved_title", "title",
+                                  "catalogue_evidence_path", "catalogue_evidence_sha256",
+                                  "fish_name", "tail_type", "sex", "date_entered", "source_reference"):
+                        if field in decision:
+                            entry[field] = decision[field]
+                    entry.setdefault("date_entered", detection.get("date_entered") or self.clock())
                     if not decision.get("tank_id") or decision.get("uncertain") is not False:
                         entry["status"] = FISH_QUARANTINED
                         entry["notes"].append("identification uncertain")
@@ -225,10 +237,13 @@ class BatchProcessor:
                 for entry in d["fish"].values():
                     if entry["status"] != "PENDING":
                         continue
-                    result = self._call("qa", entry=entry, batch_dir=self.batch_dir)
+                    try:
+                        result = self._call("qa", entry=entry, batch_dir=self.batch_dir)
+                    except Exception as exc:
+                        result = {"outcome": "FAIL", "failed_assertions": [str(exc)]}
                     if result.get("outcome") == "PASS":
                         entry["status"] = FISH_PASS
-                    elif result.get("accepted_exception"):
+                    elif result.get("accepted_exception") and not automatic:
                         entry["status"] = FISH_PASS_EXCEPTION
                         entry["accepted_exception"] = result["accepted_exception"]
                     else:
@@ -244,7 +259,10 @@ class BatchProcessor:
                 for entry in d["fish"].values():
                     if entry["status"] not in (FISH_PASS, FISH_PASS_EXCEPTION):
                         continue
-                    resolved = self._call("resolve", entry=entry, batch_dir=self.batch_dir)
+                    try:
+                        resolved = self._call("resolve", entry=entry, batch_dir=self.batch_dir)
+                    except Exception as exc:
+                        resolved = {"status": "FAILED", "reason": str(exc)}
                     if resolved.get("status") != "RESOLVED":
                         entry["status"] = FISH_QUARANTINED
                         entry["notes"].append("shopify resolution not unique")
@@ -255,19 +273,38 @@ class BatchProcessor:
 
         # Immutable manifest + standing authorisation bound to its hash.
         data = self.state.load()
+        if automatic and not any(e["status"] == FISH_PASS for e in data["fish"].values()):
+            self._call("telemetry", state=data, batch_dir=self.batch_dir)
+            return self._finish(data, "PARTIAL")
         if not self._stage_done(data, "MANIFEST_READY"):
             def manifest(d: dict) -> None:
                 built = self._call("build_manifest", state=d, batch_dir=self.batch_dir)
                 d["manifest"] = built["manifest"]
                 d["manifest_sha256"] = built["manifest_sha256"]
+                if built.get("manifest_path"):
+                    d["manifest_path"] = str(built["manifest_path"])
                 _reach(d, "MANIFEST_READY")
             self.state.update(manifest)
 
         data = self.state.load()
-        receipt = self.policy.authorise(data.get("manifest_sha256"))
+        if automatic and not any(e["status"] == FISH_PASS for e in data["fish"].values()):
+            self._call("telemetry", state=data, batch_dir=self.batch_dir)
+            return self._finish(data, "PARTIAL")
+        if self._stage_done(data, "SHOPIFY_VERIFIED"):
+            receipt = data.get("authorisation")
+        elif automatic:
+            manifest_path = data.get("manifest_path") or data.get("manifest", {}).get("path")
+            if not manifest_path:
+                raise ProcessError("persisted production manifest path is required")
+            receipt = self.policy.authorise_manifest(
+                Path(manifest_path), self.batch_dir / "state" / "authority.json",
+                expected_sha256=data.get("manifest_sha256"))
+        else:
+            receipt = self.policy.authorise(data.get("manifest_sha256"))
         if receipt is None:
             return self._finish(data, "AWAITING_AUTHORISATION")
-        self.state.update(lambda d: d.update({"authorisation": receipt}) or _reach(d, "AUTHORISED"))
+        if not self._stage_done(data, "AUTHORISED"):
+            self.state.update(lambda d: d.update({"authorisation": receipt}) or _reach(d, "AUTHORISED"))
 
         # Execute (idempotent per fish) then independently verify.
         data = self.state.load()
@@ -305,7 +342,11 @@ class BatchProcessor:
         if not self._stage_done(data, "ARCHIVED"):
             def archive(d: dict) -> None:
                 _reach(d, "ARCHIVING")
-                self._call("archive", state=d, batch_dir=self.batch_dir)
+                outcome = self._call("archive", state=d, batch_dir=self.batch_dir)
+                if automatic and (not isinstance(outcome, dict) or outcome.get("status") != "ARCHIVED"
+                                  or outcome.get("batch_status") != "COMPLETE"):
+                    raise ProcessError("archive did not provide a verified COMPLETE receipt")
+                d["archive_receipt"] = outcome
                 _reach(d, "ARCHIVED")
             self.state.update(archive)
 
@@ -321,11 +362,14 @@ class BatchProcessor:
 
     def _finish(self, data: dict, status: str) -> dict:
         final = self.state.update(lambda d: d.update({"status": status}))
+        return self._summary(final)
+
+    def _summary(self, final: dict) -> dict:
         summary = {
             "batch_id": self.state.batch_id,
             "stage": final["stage"],
-            "status": status,
-            "published": sum(1 for e in final["fish"].values() if e["status"] in (FISH_PASS, FISH_PASS_EXCEPTION)),
+            "status": final["status"],
+            "published": len(final.get("executed", [])),
             "quarantined": sum(1 for e in final["fish"].values() if e["status"] == FISH_QUARANTINED),
             "manifest_sha256": final.get("manifest_sha256"),
         }
