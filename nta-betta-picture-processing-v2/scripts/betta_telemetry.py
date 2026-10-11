@@ -368,11 +368,15 @@ def build_from_ledger(ledger: dict, item_id: str, grok_records: list[dict]) -> d
     }
 
 
-def export_csv(con: sqlite3.Connection, output: Path) -> int:
+def export_csv(con: sqlite3.Connection, output: Path, batch_id: str | None = None) -> int:
     output.parent.mkdir(parents=True, exist_ok=True)
-    rows = con.execute(
-        "SELECT " + ",".join(FIELDS) + " FROM betta_processing_telemetry ORDER BY date_entered, tank_number"
-    ).fetchall()
+    sql = "SELECT " + ",".join(FIELDS) + " FROM betta_processing_telemetry"
+    parameters: tuple = ()
+    if batch_id is not None:
+        sql += " WHERE batch_id=?"
+        parameters = (batch_id,)
+    sql += " ORDER BY date_entered, tank_number"
+    rows = con.execute(sql, parameters).fetchall()
     with output.open("w", encoding="utf-8", newline="") as fh:
         writer = csv.writer(fh)
         writer.writerow(FIELDS)

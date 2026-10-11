@@ -33,13 +33,39 @@ class BindingBauTests(unittest.TestCase):
         )
         self.digest = hashlib.sha256(self.manifest.read_bytes()).hexdigest()
 
+    def write_verify_report(self, path, *, status=None, created_at="2026-10-11T00:00:00+00:00"):
+        path = Path(path)
+        path.write_text(json.dumps({
+            "command": "verify", "batch_id": "bau-bindings",
+            "manifest_sha256": self.digest, "created_at": created_at,
+            "items": [{"tank_id": TANK, "status": status or bnd.READBACK_PASS,
+                       "assertions": {"protected": {"status": "PASS"}}}],
+        }), encoding="utf-8")
+        return path
+
     def tearDown(self):
         self.tmp.cleanup()
 
     def test_resolve_preserves_full_raw_snapshot_and_fetch_evidence(self):
         raw = {
             "id": "gid://shopify/Product/1",
-            "variants": {"pageInfo": {"hasNextPage": False}, "nodes": []},
+            "variants": {"pageInfo": {"hasNextPage": False}, "nodes": [{
+                "id": "gid://shopify/ProductVariant/2",
+                "inventoryItem": {
+                    "id": "gid://shopify/InventoryItem/3",
+                    "inventoryLevels": {
+                        "pageInfo": {"hasNextPage": False},
+                        "nodes": [{
+                            "location": {"id": "gid://shopify/Location/4", "name": "NTA"},
+                            "quantities": [
+                                {"name": "available", "quantity": 1},
+                                {"name": "on_hand", "quantity": 1},
+                                {"name": "committed", "quantity": 0},
+                            ],
+                        }],
+                    },
+                },
+            }]},
             "media": {"pageInfo": {"hasNextPage": False}, "nodes": []},
         }
         snapshot = {
@@ -51,6 +77,7 @@ class BindingBauTests(unittest.TestCase):
             "tank_id": TANK,
             "fetched_at": "2026-10-11T00:00:00.000Z",
             "query": TANK,
+            "location": {"id": "gid://shopify/Location/4", "name": "NTA"},
             "before": {"inventory": 1, "on_hand": 1, "committed": 0},
             "raw_product": raw,
         }
@@ -100,9 +127,10 @@ class BindingBauTests(unittest.TestCase):
                                "receipt": {"status": bnd.READBACK_PASS}}],
                 }
             if command == "verify":
+                report_path = self.write_verify_report(self.root / "execute-verify.json")
                 return {
                     "manifest_sha256": self.digest,
-                    "report_path": "/tmp/verify.json",
+                    "report_path": str(report_path),
                     "items": [{"tank_id": TANK, "status": bnd.READBACK_PASS,
                                "assertions": {"protected": {"status": "PASS"}}}],
                 }
@@ -115,7 +143,14 @@ class BindingBauTests(unittest.TestCase):
         execute_argv = calls[1][1]
         digest_at = execute_argv.index("--confirm-manifest-sha256") + 1
         self.assertEqual(execute_argv[digest_at], self.digest)
-        self.assertEqual(result["receipt"]["verify_report_path"], "/tmp/verify.json")
+        self.assertEqual(
+            result["receipt"]["verify_report_path"],
+            str((self.root / "execute-verify.json").resolve()),
+        )
+        self.assertEqual(
+            result["receipt"]["verify_report_sha256"],
+            hashlib.sha256((self.root / "execute-verify.json").read_bytes()).hexdigest(),
+        )
 
     def test_execute_never_promotes_root_status_without_item_readback_pass(self):
         def runner(argv):
@@ -151,20 +186,53 @@ class BindingBauTests(unittest.TestCase):
                     "report_path": "/tmp/resume-reconcile.json",
                     "items": [{"tank_id": TANK, "status": "UNCERTAIN_REQUIRES_DECISION"}],
                 }
-            raise AssertionError("an uncertain mutation must not be replayed or verified")
+            if command == "verify":
+                return {
+                    "manifest_sha256": self.digest,
+                    "report_path": "/tmp/reconcile-verify.json",
+                    "items": [{"tank_id": TANK,
+                               "status": "FINAL_SHOPIFY_READBACK_FAIL"}],
+                }
+            raise AssertionError("an uncertain mutation must not be replayed")
 
         result = bnd.shopify_execute_runner(live=True, runner=runner)(
             {"tank_id": TANK}, self.manifest, self.digest,
         )
         self.assertEqual(result["status"], "PENDING_RECONCILIATION")
-        self.assertEqual(calls, ["status", "resume"])
+        self.assertEqual(calls, ["status", "resume", "verify"])
+
+    def test_reconcile_runner_never_enables_a_shopify_write(self):
+        calls = []
+
+        def runner(argv):
+            command = argv[2]
+            calls.append(list(argv))
+            if command == "status":
+                return {"manifest_sha256": self.digest, "items": [{
+                    "tank_id": TANK, "stage": "DETAILS_UPDATED",
+                    "pending_operation": "betta_batch_set_inventory",
+                }]}
+            if command == "resume":
+                self.assertNotIn("--live", argv)
+                self.assertNotIn("--confirm-manifest-sha256", argv)
+                return {"manifest_sha256": self.digest, "items": [{
+                    "tank_id": TANK, "status": "UNCERTAIN_REQUIRES_DECISION",
+                }]}
+            if command == "verify":
+                self.assertNotIn("--live", argv)
+                return {"manifest_sha256": self.digest, "items": [{
+                    "tank_id": TANK, "status": "FINAL_SHOPIFY_READBACK_FAIL",
+                }]}
+            raise AssertionError(command)
+
+        reconcile = bnd.shopify_reconcile_runner(runner=runner)
+        result = reconcile({"tank_id": TANK}, self.manifest, self.digest)
+        self.assertEqual(result["status"], "PENDING_RECONCILIATION")
+        self.assertEqual([argv[2] for argv in calls], ["status", "resume", "verify"])
 
     def test_archive_passes_real_args_and_validates_actual_result(self):
-        verify = self.root / "verify.json"
-        verify.write_text(json.dumps({
-            "command": "verify",
-            "items": [{"tank_id": TANK, "status": bnd.READBACK_PASS}],
-        }), encoding="utf-8")
+        verify = self.write_verify_report(self.root / "verify.json")
+        verify_digest = hashlib.sha256(verify.read_bytes()).hexdigest()
         inventory = self.batch / "reports" / "betta-inventory.csv"
         inventory.parent.mkdir(parents=True)
         inventory.write_text("Tank\n2BT12\n", encoding="utf-8")
@@ -178,6 +246,8 @@ class BindingBauTests(unittest.TestCase):
         authority.write_text('{"receipt":"bau"}\n', encoding="utf-8")
         budget = self.batch / "state" / "gen-budget.json"
         budget.write_text('{"spent":0.07}\n', encoding="utf-8")
+        process = self.batch / "state" / "process.json"
+        process.write_text('{"stage":"ARCHIVING"}\n', encoding="utf-8")
         archive_manifest = self.root / "archive-manifest.json"
         archive_manifest.write_text("{}", encoding="utf-8")
         archive_digest = hashlib.sha256(archive_manifest.read_bytes()).hexdigest()
@@ -185,10 +255,13 @@ class BindingBauTests(unittest.TestCase):
 
         def runner(argv):
             calls.append(argv)
+            audit_sources = [
+                Path(argv[index + 1]).resolve()
+                for index, value in enumerate(argv) if value == "--audit-path"
+            ]
             sources = [
                 verify.resolve(), self.manifest.resolve(), inventory.resolve(),
-                telemetry.resolve(), catalogue.resolve(), authority.resolve(),
-                budget.resolve(),
+                *audit_sources,
             ]
             return {
                 "mode": "execute", "batch_status": "COMPLETE",
@@ -204,7 +277,13 @@ class BindingBauTests(unittest.TestCase):
             "batch_id": "bau-bindings",
             "fish": {TANK: {
                 "tank_id": TANK, "status": "VERIFIED",
-                "shopify_receipt": {"verify_report_path": str(verify)},
+                "shopify_receipt": {
+                    "tank_id": TANK, "batch_id": "bau-bindings",
+                    "manifest_sha256": self.digest,
+                    "verify_report_path": str(verify),
+                    "verify_report_sha256": verify_digest,
+                    "verify_report_created_at": "2026-10-11T00:00:00+00:00",
+                },
             }},
         }
         result = bnd.archive_runner(
@@ -220,19 +299,63 @@ class BindingBauTests(unittest.TestCase):
             Path(argv[index + 1]) for index, value in enumerate(argv)
             if value == "--audit-path"
         ]
-        self.assertEqual(
-            set(audit_values), {
-                telemetry.resolve(), catalogue.resolve(), authority.resolve(),
-                budget.resolve(),
-            },
-        )
+        self.assertTrue({
+            telemetry.resolve(), catalogue.resolve(), authority.resolve(),
+            budget.resolve(),
+            (self.batch / "state" / "archive-process-snapshot.json").resolve(),
+            (self.batch / "state" / "archive-audit-inputs.json").resolve(),
+        } <= set(audit_values))
         self.assertIn("--inventory-csv", argv)
         self.assertIn("--state-root", argv)
         self.assertIn("--apply", argv)
 
+    def test_archive_rejects_replaced_verify_report(self):
+        verify = self.write_verify_report(self.root / "verify.json")
+        receipt = {
+            "tank_id": TANK, "batch_id": "bau-bindings",
+            "manifest_sha256": self.digest,
+            "verify_report_path": str(verify),
+            "verify_report_sha256": hashlib.sha256(verify.read_bytes()).hexdigest(),
+            "verify_report_created_at": "2026-10-11T00:00:00+00:00",
+        }
+        verify.write_text('{}\n', encoding="utf-8")
+        state = {"fish": {TANK: {
+            "tank_id": TANK, "status": "VERIFIED", "shopify_receipt": receipt,
+        }}}
+        with self.assertRaisesRegex(bnd.BindingError, "replaced"):
+            bnd.archive_runner(
+                archive_root=self.root / "Archived", live=True,
+                runner=lambda _argv: self.fail("archiver must not run"),
+            )(state, self.batch)
+
+    def test_frozen_audit_selection_reuses_snapshot_on_resume(self):
+        reports = self.batch / "reports"
+        reports.mkdir()
+        telemetry = reports / "betta-call-telemetry.csv"
+        telemetry.write_text("stage,outcome\nqa,OK\n", encoding="utf-8")
+        state_dir = self.batch / "state"
+        state_dir.mkdir()
+        process = state_dir / "process.json"
+        process.write_text('{"stage":"ARCHIVING","revision":1}\n', encoding="utf-8")
+        first = bnd._batch_audit_paths(
+            {}, self.batch, [], None, batch_id="bau-bindings",
+        )
+        snapshot = state_dir / "archive-process-snapshot.json"
+        snapshot_bytes = snapshot.read_bytes()
+        process.write_text('{"stage":"ARCHIVED","revision":2}\n', encoding="utf-8")
+        (reports / "archive-later.json").write_text('{}\n', encoding="utf-8")
+        second = bnd._batch_audit_paths(
+            {}, self.batch, [], None, batch_id="bau-bindings",
+        )
+        self.assertEqual(first, second)
+        self.assertEqual(snapshot.read_bytes(), snapshot_bytes)
+        self.assertNotIn((reports / "archive-later.json").resolve(), second)
+
     def test_live_bindings_expose_preflight(self):
         runners = bnd.bind_runners(archive_root=self.root, live=True)
-        self.assertEqual(set(runners), {"resolve", "preflight", "execute", "archive"})
+        self.assertEqual(
+            set(runners), {"resolve", "preflight", "execute", "reconcile", "archive"},
+        )
 
     def test_configured_runtime_paths_are_forwarded_to_real_runners(self):
         python = self.root / "configured-python"
@@ -266,7 +389,9 @@ class BindingBauTests(unittest.TestCase):
         self.assertEqual(argv[argv.index("--node") + 1], str(node))
         self.assertEqual(argv[argv.index("--bridge") + 1], str(bridge.resolve()))
         self.assertEqual(argv[argv.index("--env-file") + 1], str(env_file.resolve()))
-        self.assertEqual(set(runners), {"resolve", "preflight", "execute", "archive"})
+        self.assertEqual(
+            set(runners), {"resolve", "preflight", "execute", "reconcile", "archive"},
+        )
 
         resolve_calls = []
         resolver = bnd.shopify_resolve_runner(
@@ -277,7 +402,26 @@ class BindingBauTests(unittest.TestCase):
                     "variant_id": "gid://shopify/ProductVariant/2",
                     "inventory_item_id": "gid://shopify/InventoryItem/3",
                     "location_id": "gid://shopify/Location/4",
-                    "before": {},
+                    "source": "FRESH_SHOPIFY_READ", "tank_id": TANK,
+                    "query": TANK, "fetched_at": "2026-10-11T00:00:00Z",
+                    "location": {"id": "gid://shopify/Location/4", "name": "NTA"},
+                    "before": {"inventory": 1, "on_hand": 1, "committed": 0},
+                    "raw_product": {
+                        "id": "gid://shopify/Product/1",
+                        "media": {"pageInfo": {"hasNextPage": False}, "nodes": []},
+                        "variants": {"pageInfo": {"hasNextPage": False}, "nodes": [{
+                            "id": "gid://shopify/ProductVariant/2",
+                            "inventoryItem": {
+                                "id": "gid://shopify/InventoryItem/3",
+                                "inventoryLevels": {
+                                    "pageInfo": {"hasNextPage": False},
+                                    "nodes": [{"location": {
+                                        "id": "gid://shopify/Location/4", "name": "NTA",
+                                    }}],
+                                },
+                            },
+                        }]},
+                    },
                 },
             },
         )

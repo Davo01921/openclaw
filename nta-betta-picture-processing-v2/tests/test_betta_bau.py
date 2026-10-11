@@ -308,6 +308,138 @@ class DispatcherTests(unittest.TestCase):
         self.assertEqual(result["status"], "BLOCKED")
         self.assertEqual(called, [])
 
+    def test_reconciliation_pending_keeps_batch_active_and_notifies_once(self):
+        self.add_source("uncertain.png", b"uncertain-fish")
+        calls = {"process": 0, "message": 0}
+
+        def process(_batch_dir, batch_id, **_kwargs):
+            calls["process"] += 1
+            return {"batch_id": batch_id, "stage": "SHOPIFY_EXECUTING",
+                    "status": "RECONCILIATION_PENDING", "published": 0,
+                    "quarantined": 0}
+
+        def message(_argv):
+            calls["message"] += 1
+            return "{}"
+
+        first = bau.run_once(self.config, deps=self.deps(process, command=message))
+        second = bau.run_once(self.config, deps=self.deps(process, command=message))
+        self.assertEqual(first["status"], "RECONCILIATION_PENDING")
+        self.assertEqual(second["status"], "RECONCILIATION_PENDING")
+        self.assertEqual(calls, {"process": 2, "message": 1})
+        registry = json.loads((self.batches / "registry.json").read_text())
+        owned = [row for row in registry["batches"] if row["label"] == "BAU automatic intake"]
+        self.assertEqual(owned[0]["status"], bau.betta_batches.ACTIVE)
+        outcome = json.loads((Path(owned[0]["path"]) / "state" / "bau-outcome.json").read_text())
+        self.assertTrue(outcome["resumable"])
+
+    def test_finalization_pending_retries_without_closing_process_batch(self):
+        self.add_source("finalize.png", b"finalize-fish")
+        calls = {"process": 0, "finalize": 0, "message": 0}
+
+        def process(batch_dir, batch_id, **_kwargs):
+            calls["process"] += 1
+            state = {
+                "status": "COMPLETE", "stage": "ARCHIVED", "fish": {},
+                "archive_receipt": {"status": "ARCHIVED", "batch_status": "COMPLETE"},
+            }
+            (Path(batch_dir) / "state" / "process.json").write_text(json.dumps(state))
+            return {"batch_id": batch_id, "stage": "COMPLETE", "status": "COMPLETE",
+                    "published": 1, "quarantined": 0}
+
+        def finalize(_config, batch_dir, _summary):
+            calls["finalize"] += 1
+            if calls["finalize"] == 1:
+                raise RuntimeError("snapshot interrupted")
+            audit = self.archive / "Audit" / "final-audit.json"
+            audit.parent.mkdir(parents=True, exist_ok=True)
+            audit.write_text('{"audit":true}\n')
+            receipt_data = {"status": "FINALIZED", "files": [{
+                "destination": str(audit.resolve()),
+                "sha256": hashlib.sha256(audit.read_bytes()).hexdigest(),
+            }]}
+            receipt_bytes = (json.dumps(receipt_data, sort_keys=True) + "\n").encode()
+            receipt = Path(batch_dir) / "state" / "completion-receipt.json"
+            receipt.write_bytes(receipt_bytes)
+            archived_receipt = self.archive / "Audit" / "completion-receipt.json"
+            archived_receipt.write_bytes(receipt_bytes)
+            return {"status": "FINALIZED", "receipt_path": str(receipt.resolve()),
+                    "receipt_sha256": hashlib.sha256(receipt.read_bytes()).hexdigest(),
+                    "archive_receipt_path": str(archived_receipt.resolve()),
+                    "archive_completed_at": "2026-10-11T00:00:00+00:00"}
+
+        def message(_argv):
+            calls["message"] += 1
+            return "{}"
+
+        dependencies = self.deps(process, command=message)
+        dependencies["finalize"] = finalize
+        first = bau.run_once(self.config, deps=dependencies)
+        self.assertEqual(first["status"], "FINALIZATION_PENDING")
+        second = bau.run_once(self.config, deps=dependencies)
+        self.assertEqual(second["status"], "COMPLETE")
+        self.assertEqual(second["finalization"]["status"], "FINALIZED")
+        self.assertEqual(calls, {"process": 2, "finalize": 2, "message": 2})
+        registry = json.loads((self.batches / "registry.json").read_text())
+        owned = [row for row in registry["batches"] if row["label"] == "BAU automatic intake"]
+        self.assertEqual(owned[0]["status"], bau.betta_batches.COMPLETE)
+
+    def test_real_finalizer_receipt_passes_dispatcher_archive_verification(self):
+        batch_id = "betta-finalizer-integration"
+        batch_dir = self.batches / batch_id
+        for name in ("state", "manifest", "reports"):
+            (batch_dir / name).mkdir(parents=True, exist_ok=True)
+        source = self.add_source("real-finalize.png", b"original")
+        source_sha = hashlib.sha256(source.read_bytes()).hexdigest()
+        manifest = batch_dir / "manifest" / "shopify-production.json"
+        manifest.write_text('{"items":[]}\n')
+        manifest_sha = hashlib.sha256(manifest.read_bytes()).hexdigest()
+        archived_dir = self.archive / "2026-10-11" / batch_id
+        archived_dir.mkdir(parents=True)
+        archived_manifest_copy = archived_dir / manifest.name
+        archived_manifest_copy.write_bytes(manifest.read_bytes())
+        archived_original = archived_dir / source.name
+        archived_original.write_bytes(source.read_bytes())
+        archive_manifest = archived_dir / "archive-manifest.json"
+        archive_data = {
+            "batch_id": batch_id, "batch_status": "COMPLETE",
+            "created_at": "2026-10-11T01:02:03+00:00",
+            "files": [
+                {"role": "manifest", "source_path": str(manifest),
+                 "source_sha256": manifest_sha,
+                 "destination_path": str(archived_manifest_copy),
+                 "destination_sha256": manifest_sha},
+                {"role": "original", "source_path": str(source),
+                 "source_sha256": source_sha,
+                 "destination_path": str(archived_original),
+                 "destination_sha256": source_sha},
+            ],
+        }
+        archive_manifest.write_text(json.dumps(archive_data, sort_keys=True))
+        archive_sha = hashlib.sha256(archive_manifest.read_bytes()).hexdigest()
+        process = {
+            "batch_id": batch_id, "status": "COMPLETE", "stage": "ARCHIVED",
+            "fish": {}, "executed": [], "manifest_path": str(manifest),
+            "manifest_sha256": manifest_sha,
+            "archive_receipt": {"status": "ARCHIVED", "batch_status": "COMPLETE",
+                                "manifest": str(archive_manifest),
+                                "manifest_sha256": archive_sha},
+        }
+        (batch_dir / "state" / "process.json").write_text(json.dumps(process))
+        (batch_dir / "state" / "sources.json").write_text(json.dumps({
+            "schema": bau.SOURCES_SCHEMA, "dispatcher_owned": True,
+            "batch_id": batch_id, "selected_sources": [{
+                "path": str(source), "sha256": source_sha, "size": source.stat().st_size,
+            }],
+        }))
+        summary = {"batch_id": batch_id, "status": "COMPLETE", "stage": "ARCHIVED",
+                   "published": 0, "quarantined": 0}
+        result = bau._finalize_if_required(
+            self.config, {"batch_id": batch_id, "path": str(batch_dir)}, summary, deps={})
+        self.assertEqual(result["status"], "COMPLETE")
+        self.assertEqual(result["finalization"]["status"], "FINALIZED")
+        self.assertFalse(source.exists())
+
 
 if __name__ == "__main__":
     unittest.main()

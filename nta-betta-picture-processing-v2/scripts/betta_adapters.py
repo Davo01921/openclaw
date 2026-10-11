@@ -41,6 +41,16 @@ class AdapterError(RuntimeError):
     pass
 
 
+class ReconciliationPending(AdapterError):
+    """An external request may have applied and must never be replayed."""
+
+    reconciliation_pending = True
+
+    def __init__(self, kind: str, message: str):
+        super().__init__(message)
+        self.kind = kind
+
+
 def iso_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 

@@ -47,6 +47,7 @@ FISH_PASS = "VERIFIED"
 FISH_PASS_EXCEPTION = "PASS_WITH_ACCEPTED_EXCEPTION"
 FISH_QUARANTINED = "QUARANTINED"
 FISH_FAILED = "FAILED"
+FISH_RECONCILIATION_PENDING = "RECONCILIATION_PENDING"
 
 
 class ProcessError(ValueError):
@@ -148,6 +149,34 @@ class BatchProcessor:
             raise ProcessError(f"missing adapter: {name}")
         return adapter(**kwargs)
 
+    @staticmethod
+    def _is_reconciliation_pending(exc: Exception) -> bool:
+        return getattr(exc, "reconciliation_pending", False) is True
+
+    @staticmethod
+    def _mark_pending(entry: dict, kind: str, reason: str) -> None:
+        entry.setdefault("pending_from_status", entry.get("status", "PENDING"))
+        entry["status"] = FISH_RECONCILIATION_PENDING
+        entry["pending_kind"] = kind
+        entry["pending_reason"] = reason
+        note = f"{kind} reconciliation pending: {reason}"
+        if note not in entry.setdefault("notes", []):
+            entry["notes"].append(note)
+
+    @staticmethod
+    def _clear_pending(entry: dict, default: str) -> None:
+        previous = entry.pop("pending_from_status", None)
+        entry.pop("pending_kind", None)
+        entry.pop("pending_reason", None)
+        entry["status"] = previous if previous not in (None, FISH_RECONCILIATION_PENDING) else default
+
+    @staticmethod
+    def _shopify_candidates(data: dict) -> list[dict]:
+        return [entry for entry in data.get("fish", {}).values()
+                if entry.get("status") in (FISH_PASS, FISH_PASS_EXCEPTION)
+                or (entry.get("status") == FISH_RECONCILIATION_PENDING
+                    and entry.get("pending_kind") == "shopify")]
+
     # -- pipeline ---------------------------------------------------------- #
     def run(self) -> dict:
         data = self.state.load()
@@ -207,13 +236,18 @@ class BatchProcessor:
 
         # Paid generation, gated by the standing policy.
         data = self.state.load()
-        eligible = {k: v for k, v in data["fish"].items() if v["status"] == "PENDING"}
+        eligible = {k: v for k, v in data["fish"].items()
+                    if v["status"] == "PENDING"
+                    or (v["status"] == FISH_RECONCILIATION_PENDING
+                        and v.get("pending_kind") == "generation")}
         if eligible and not self.policy.paid_generation_authorised():
             return self._finish(data, "AWAITING_AUTHORISATION")
         if not self._stage_done(data, "GENERATED"):
             def generate(d: dict) -> None:
                 for key, entry in d["fish"].items():
-                    if entry["status"] != "PENDING":
+                    is_recovery = (entry["status"] == FISH_RECONCILIATION_PENDING
+                                   and entry.get("pending_kind") == "generation")
+                    if entry["status"] != "PENDING" and not is_recovery:
                         continue
                     if key in d.get("generated", []):
                         continue  # idempotent: never regenerate an existing hero
@@ -223,12 +257,25 @@ class BatchProcessor:
                         entry["hero_sha256"] = hero.get("hero_sha256")
                         self._call("finish", entry=entry, batch_dir=self.batch_dir)
                         d.setdefault("generated", []).append(key)
+                        if is_recovery:
+                            self._clear_pending(entry, "PENDING")
                     except Exception as exc:
-                        # budget exceeded / interrupted / generator failure: quarantine, continue.
+                        if self._is_reconciliation_pending(exc):
+                            self._mark_pending(entry, "generation", str(exc))
+                            break
                         entry["status"] = FISH_QUARANTINED
                         entry["notes"].append(f"generation failed: {exc}")
-                _reach(d, "GENERATED")
+                if not any(e.get("status") == FISH_RECONCILIATION_PENDING
+                           and e.get("pending_kind") == "generation"
+                           for e in d["fish"].values()):
+                    _reach(d, "GENERATED")
             self.state.update(generate)
+
+        data = self.state.load()
+        if any(e.get("status") == FISH_RECONCILIATION_PENDING
+               and e.get("pending_kind") == "generation"
+               for e in data["fish"].values()):
+            return self._finish(data, "RECONCILIATION_PENDING")
 
         # Independent QA with quarantine (never auto-accept material discrepancies).
         data = self.state.load()
@@ -273,7 +320,7 @@ class BatchProcessor:
 
         # Immutable manifest + standing authorisation bound to its hash.
         data = self.state.load()
-        if automatic and not any(e["status"] == FISH_PASS for e in data["fish"].values()):
+        if automatic and not self._shopify_candidates(data):
             self._call("telemetry", state=data, batch_dir=self.batch_dir)
             return self._finish(data, "PARTIAL")
         if not self._stage_done(data, "MANIFEST_READY"):
@@ -287,7 +334,7 @@ class BatchProcessor:
             self.state.update(manifest)
 
         data = self.state.load()
-        if automatic and not any(e["status"] == FISH_PASS for e in data["fish"].values()):
+        if automatic and not self._shopify_candidates(data):
             self._call("telemetry", state=data, batch_dir=self.batch_dir)
             return self._finish(data, "PARTIAL")
         if self._stage_done(data, "SHOPIFY_VERIFIED"):
@@ -312,28 +359,54 @@ class BatchProcessor:
             def execute(d: dict) -> None:
                 _reach(d, "SHOPIFY_EXECUTING")
                 for key, entry in d["fish"].items():
-                    if entry["status"] not in (FISH_PASS, FISH_PASS_EXCEPTION):
+                    is_recovery = (entry.get("status") == FISH_RECONCILIATION_PENDING
+                                   and entry.get("pending_kind") == "shopify")
+                    if entry["status"] not in (FISH_PASS, FISH_PASS_EXCEPTION) and not is_recovery:
                         continue
                     if key in d.get("executed", []):
                         continue  # idempotent: never repeat a Shopify mutation
-                    outcome = self._call("execute", entry=entry, state=d, batch_dir=self.batch_dir)
-                    if outcome.get("status") == "VERIFIED":
+                    try:
+                        adapter = "reconcile" if is_recovery else "execute"
+                        outcome = self._call(adapter, entry=entry, state=d, batch_dir=self.batch_dir)
+                    except Exception as exc:
+                        if is_recovery or self._is_reconciliation_pending(exc):
+                            self._mark_pending(entry, "shopify", str(exc))
+                            break
+                        entry["status"] = FISH_QUARANTINED
+                        entry["notes"].append(f"shopify execute failed: {exc}")
+                        continue
+                    outcome_status = str(outcome.get("status", "")).upper()
+                    if outcome_status in ("VERIFIED", "READ_ONLY_VERIFIED"):
                         entry["shopify_receipt"] = outcome.get("receipt")
                         d.setdefault("executed", []).append(key)
-                    elif outcome.get("status") == "AWAITING_LIVE":
+                        if is_recovery:
+                            self._clear_pending(entry, FISH_PASS)
+                    elif outcome_status == "AWAITING_LIVE":
                         # Dry-run: pause without quarantine and without claiming success.
                         d["awaiting_live"] = True
+                        break
+                    elif outcome_status in ("PENDING_RECONCILIATION", "RECONCILIATION_PENDING",
+                                            "UNCERTAIN", "READ_ONLY_FAILED"):
+                        self._mark_pending(
+                            entry, "shopify", str(outcome.get("reason") or outcome_status))
                         break
                     else:
                         entry["status"] = FISH_QUARANTINED
                         entry["notes"].append("shopify execute not verified")
-                if not d.get("awaiting_live"):
+                if (not d.get("awaiting_live")
+                        and not any(e.get("status") == FISH_RECONCILIATION_PENDING
+                                    and e.get("pending_kind") == "shopify"
+                                    for e in d["fish"].values())):
                     _reach(d, "SHOPIFY_VERIFIED")
             self.state.update(execute)
 
         data = self.state.load()
         if data.get("awaiting_live"):
             return self._finish(data, "AWAITING_LIVE")
+        if any(e.get("status") == FISH_RECONCILIATION_PENDING
+               and e.get("pending_kind") == "shopify"
+               for e in data["fish"].values()):
+            return self._finish(data, "RECONCILIATION_PENDING")
         if not self._stage_done(data, "TELEMETRY_EXPORTED"):
             self.state.update(lambda d: (self._call("telemetry", state=d, batch_dir=self.batch_dir),
                                          _reach(d, "TELEMETRY_EXPORTED")))

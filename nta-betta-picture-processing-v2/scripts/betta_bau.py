@@ -312,7 +312,12 @@ def _resumable(entry: dict) -> bool:
     batch_dir = Path(entry["path"])
     outcome_path = batch_dir / "state" / "bau-outcome.json"
     if outcome_path.is_file():
-        return False
+        try:
+            outcome = _read_json(outcome_path)
+        except (OSError, ValueError, DispatcherError):
+            return False
+        if outcome.get("resumable") is not True:
+            return False
     state_path = batch_dir / "state" / "process.json"
     if not state_path.is_file():
         return True
@@ -320,9 +325,17 @@ def _resumable(entry: dict) -> bool:
         state = _read_json(state_path)
     except (OSError, ValueError, DispatcherError):
         return False
-    # Resume only a positively ACTIVE checkpoint.  Unknown/new failure labels
-    # are never interpreted as permission to retry.
-    return state.get("status") == "ACTIVE"
+    status = state.get("status")
+    if status in ("ACTIVE", "RECONCILIATION_PENDING", "FINALIZATION_PENDING"):
+        return True
+    # A process can reach its inert terminal checkpoint immediately before the
+    # final audit snapshot.  Only a positive archive receipt makes that state
+    # eligible for finalization-only recovery.
+    receipt = state.get("archive_receipt")
+    return (status in ("COMPLETE", "PARTIAL") and state.get("stage") == "ARCHIVED"
+            and isinstance(receipt, dict)
+            and receipt.get("status") == "ARCHIVED"
+            and receipt.get("batch_status") == "COMPLETE")
 
 
 def _persist_sources(entry: dict, sources: list[dict]) -> dict:
@@ -396,6 +409,93 @@ def _wire_and_process(config: dict, policy, entry: dict, *, deps: dict) -> dict:
     })
     processor = deps.get("process_batch", betta_process.process_batch)
     return processor(batch_dir, entry["batch_id"], adapters=adapters, policy=policy)
+
+
+def _positive_archive_receipt(batch_dir: Path) -> bool:
+    path = Path(batch_dir) / "state" / "process.json"
+    if not path.is_file():
+        return False
+    try:
+        state = _read_json(path)
+    except (OSError, ValueError, DispatcherError):
+        return False
+    receipt = state.get("archive_receipt")
+    return (state.get("status") in ("COMPLETE", "PARTIAL")
+            and state.get("stage") == "ARCHIVED"
+            and isinstance(receipt, dict) and receipt.get("status") == "ARCHIVED"
+            and receipt.get("batch_status") == "COMPLETE")
+
+
+def _verify_finalization(result: object, batch_dir: Path, config: dict) -> dict:
+    if not isinstance(result, dict) or result.get("status") != "FINALIZED":
+        raise DispatcherError("finalizer did not return FINALIZED")
+    for field in ("receipt_path", "archive_receipt_path", "receipt_sha256",
+                  "archive_completed_at"):
+        if not isinstance(result.get(field), str) or not result[field]:
+            raise DispatcherError(f"finalizer omitted {field}")
+    receipt_path = Path(result["receipt_path"])
+    if (not receipt_path.is_absolute() or receipt_path.is_symlink() or not receipt_path.is_file()
+            or os.path.commonpath((str(receipt_path.resolve()), str(Path(batch_dir).resolve())))
+            != str(Path(batch_dir).resolve())):
+        raise DispatcherError("finalization receipt is outside the batch or missing")
+    digest = hashlib.sha256(receipt_path.read_bytes()).hexdigest()
+    if digest != result["receipt_sha256"] or not HASH_RE.fullmatch(digest):
+        raise DispatcherError("finalization receipt SHA-256 mismatch")
+    archive_receipt = Path(result["archive_receipt_path"])
+    archive_root = Path(config["paths"]["archive"]).resolve()
+    if (not archive_receipt.is_absolute() or archive_receipt.is_symlink()
+            or not archive_receipt.is_file()
+            or os.path.commonpath((str(archive_receipt.resolve()), str(archive_root)))
+            != str(archive_root)):
+        raise DispatcherError("archived finalization receipt is outside the archive or missing")
+    if archive_receipt.read_bytes() != receipt_path.read_bytes():
+        raise DispatcherError("local and archived finalization receipts differ")
+    receipt = _read_json(receipt_path)
+    records = receipt.get("files")
+    if not isinstance(records, list) or not records:
+        raise DispatcherError("finalization receipt has no archived audit files")
+    for record in records:
+        if not isinstance(record, dict):
+            raise DispatcherError("finalization receipt file record is invalid")
+        destination = Path(str(record.get("destination", "")))
+        expected = record.get("sha256")
+        if (not destination.is_absolute() or destination.is_symlink() or not destination.is_file()
+                or os.path.commonpath((str(destination.resolve()), str(archive_root)))
+                != str(archive_root)
+                or not isinstance(expected, str) or not HASH_RE.fullmatch(expected)
+                or hashlib.sha256(destination.read_bytes()).hexdigest() != expected):
+            raise DispatcherError("archived final audit file failed hash verification")
+    return result
+
+
+def _finalize_if_required(config: dict, entry: dict, summary: dict, *, deps: dict) -> dict:
+    """Apply the final immutable audit gate after process/archive completion."""
+    if summary.get("status") not in ("COMPLETE", "PARTIAL"):
+        return summary
+    # Injected legacy process fixtures intentionally bypass production
+    # finalization unless they explicitly inject a finalizer too.
+    required = "make_adapters" not in deps or "finalize" in deps
+    if not required:
+        return summary
+    pending = dict(summary)
+    if not _positive_archive_receipt(Path(entry["path"])):
+        pending.update({"status": "FINALIZATION_PENDING",
+                        "reason": "verified archive receipt is not available"})
+        return pending
+    try:
+        finalizer = deps.get("finalize")
+        if finalizer is None:
+            from betta_bau_finalize import finalize as finalizer
+        result = _verify_finalization(
+            finalizer(config, Path(entry["path"]), summary), Path(entry["path"]), config)
+    except Exception as exc:
+        pending.update({"status": "FINALIZATION_PENDING",
+                        "reason": "final audit snapshot is pending",
+                        "error_type": type(exc).__name__})
+        return pending
+    completed = dict(summary)
+    completed["finalization"] = result
+    return completed
 
 
 def _actionable_status(summary: dict) -> str:
@@ -556,6 +656,8 @@ def run_once(config: dict, *, deps: Optional[dict] = None) -> dict:
         raise DispatcherError("; ".join(blockers))
     if config.get("enabled") is not True:
         return {"status": "DISABLED", "reason": "configuration disabled"}
+    if config.get("activation_hold") is True:
+        return {"status": "ACTIVATION_HOLD", "reason": "non-mutating activation checks in progress"}
     policy = deps.get("policy") or betta_policy.StandingPolicy.load(
         Path(config["paths"]["policy"]))
     if not policy.enabled():
@@ -616,13 +718,21 @@ def run_once(config: dict, *, deps: Optional[dict] = None) -> dict:
                        "status": "BLOCKED", "published": 0, "quarantined": 0,
                        "error_type": type(exc).__name__}
 
+        summary = _finalize_if_required(config, entry, summary, deps=deps)
+
         actionable = _actionable_status(summary)
+        recoverable = summary.get("status") in {
+            "RECONCILIATION_PENDING", "FINALIZATION_PENDING",
+        }
         outcome = {"schema": OUTCOME_SCHEMA, "recorded_at": _utc_now(),
-                   "actionable_status": actionable, "summary": summary}
+                   "actionable_status": actionable, "resumable": recoverable,
+                   "summary": summary}
         _atomic_write(Path(entry["path"]) / "state" / "bau-outcome.json", outcome)
-        closer = deps.get("close_batch", betta_batches.close_batch)
-        close_status = betta_batches.COMPLETE if actionable == "COMPLETE" else betta_batches.ABANDONED
-        closer(Path(config["paths"]["batches"]), entry["batch_id"], close_status)
+        if not recoverable:
+            closer = deps.get("close_batch", betta_batches.close_batch)
+            close_status = (betta_batches.COMPLETE if actionable == "COMPLETE"
+                            else betta_batches.ABANDONED)
+            closer(Path(config["paths"]["batches"]), entry["batch_id"], close_status)
 
         notification = notify_discord(
             config, Path(entry["path"]), summary,

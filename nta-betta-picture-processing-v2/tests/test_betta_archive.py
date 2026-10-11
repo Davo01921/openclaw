@@ -89,6 +89,20 @@ class ArchiveTestCase(unittest.TestCase):
 
 
 class PlanTests(ArchiveTestCase):
+    def test_configured_uploader_receipt_directory_is_archived(self):
+        self.add_item("1BT11")
+        self.write_inputs()
+        state_root = self.active / "shopify-state"
+        receipt = state_root / "receipts" / "1BT11-final.json"
+        receipt.parent.mkdir(parents=True)
+        receipt.write_text('{"status":"FINAL_SHOPIFY_READBACK_PASS"}\n', encoding="utf-8")
+        plan = self.plan(state_root=state_root)
+        matches = [
+            entry for entry in plan["files"]
+            if entry["role"] == "audit" and entry["source"] == str(receipt)
+        ]
+        self.assertEqual(len(matches), 1)
+
     def test_generic_audit_input_is_hash_locked_without_json_parsing(self):
         self.add_item("1BT11")
         self.write_inputs()

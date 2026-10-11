@@ -19,7 +19,7 @@ import re
 import shutil
 import sys
 import time
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Mapping, Optional
 
@@ -58,10 +58,11 @@ def _json_bytes(value: Any) -> bytes:
 
 def _write_immutable_json(path: Path, value: dict) -> Path:
     """Create exact evidence once; refuse drift on resume."""
-    path = Path(path).resolve()
+    path = Path(path).expanduser().absolute()
     expected = _json_bytes(value)
-    if path.exists():
-        if not path.is_file() or path.read_bytes() != expected:
+    if path.exists() or path.is_symlink():
+        if (path.is_symlink() or not path.is_file() or
+                path.stat().st_mode & 0o222 or path.read_bytes() != expected):
             raise StrictAdapterError(f"immutable evidence differs: {path.name}")
         return path
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -74,27 +75,38 @@ def _write_immutable_json(path: Path, value: dict) -> Path:
     return path
 
 
-def _iso_timestamp(value: Any, label: str) -> str:
+def _iso_timestamp(value: Any, label: str) -> datetime:
     if not isinstance(value, str) or not value:
         raise StrictAdapterError(f"{label} timestamp missing")
     try:
-        datetime.fromisoformat(value.replace("Z", "+00:00"))
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError as exc:
         raise StrictAdapterError(f"{label} timestamp invalid") from exc
-    return value
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise StrictAdapterError(f"{label} timestamp must include a timezone")
+    return parsed
 
 
 def _attested_call(evidence: Mapping[str, Any], source_hashes: list[str], label: str,
-                   *, call_id_required: bool = True) -> None:
+                   *, not_before: datetime, call_id_required: bool = True) -> None:
     for field in ("provider", "model"):
         if not isinstance(evidence.get(field), str) or not evidence[field].strip():
             raise StrictAdapterError(f"{label} {field} attestation missing")
     if call_id_required and (not isinstance(evidence.get("call_id"), str)
                              or not evidence["call_id"].strip()):
         raise StrictAdapterError(f"{label} call_id attestation missing")
-    _iso_timestamp(evidence.get("timestamp"), label)
+    timestamp = _iso_timestamp(evidence.get("timestamp"), label)
+    if timestamp < not_before:
+        raise StrictAdapterError(f"{label} predates the immutable batch selection")
+    if timestamp > datetime.now(timezone.utc) + timedelta(minutes=5):
+        raise StrictAdapterError(f"{label} timestamp is implausibly in the future")
     if evidence.get("input_hashes") != source_hashes:
         raise StrictAdapterError(f"{label} input hashes do not bind the selected evidence")
+    try:
+        from betta_vision_route import validate_attestation
+        validate_attestation(evidence.get("routing"), evidence.get("provider"), evidence.get("model"))
+    except (ImportError, ValueError) as exc:
+        raise StrictAdapterError(f"{label} route attestation invalid: {exc}") from exc
 
 
 def _confidence(output: Mapping[str, Any], field: str) -> float:
@@ -133,6 +145,68 @@ class StrictBAUAdapters(base.Adapters):
         maximum = min(20, int(self.budget.limits.get("max_fish_per_batch", 0)))
         if maximum <= 0 or len(selected_sources) > maximum:
             raise StrictAdapterError(f"selected batch exceeds the production maximum of {maximum}")
+        self.selection_timestamp = self._selection_timestamp()
+        # Permit small clock skew, while allowing a persisted receipt to remain
+        # valid for an arbitrarily long crash/resume interval.
+        self.evidence_not_before = self.selection_timestamp - timedelta(minutes=5)
+
+    def _selection_timestamp(self) -> datetime:
+        path = self.batch_dir / "state" / "sources.json"
+        try:
+            metadata = path.stat()
+            selection = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            raise StrictAdapterError("immutable dispatcher source selection is unavailable") from exc
+        if metadata.st_mode & 0o222:
+            raise StrictAdapterError("dispatcher source selection must be read-only")
+        expected = sorted(
+            (value.get("path"), value.get("sha256"), value.get("size"))
+            for value in self.selected_sources
+        )
+        persisted = selection.get("selected_sources")
+        actual = sorted(
+            (value.get("path"), value.get("sha256"), value.get("size"))
+            for value in persisted
+        ) if isinstance(persisted, list) and all(isinstance(value, dict) for value in persisted) else []
+        if (selection.get("dispatcher_owned") is not True or
+                selection.get("batch_id") != self.batch_id or actual != expected):
+            raise StrictAdapterError("dispatcher source selection does not match this batch")
+        return _iso_timestamp(selection.get("selected_at"), "source selection")
+
+    def _validate_receipt_identity(self, evidence: Mapping[str, Any], *, source: Path,
+                                   source_sha256: str, tank: Optional[str] = None,
+                                   hero: Optional[Path] = None,
+                                   hero_sha256: Optional[str] = None) -> None:
+        expected_source = {"path": str(source.resolve()), "sha256": source_sha256}
+        if evidence.get("batch_id") != self.batch_id or evidence.get("source_identity") != expected_source:
+            raise StrictAdapterError("call receipt does not bind this batch/source identity")
+        if tank is not None and evidence.get("tank_id") != tank:
+            raise StrictAdapterError("call receipt does not bind the expected tank")
+        if hero is not None:
+            expected_hero = {"path": str(hero.resolve()), "sha256": hero_sha256}
+            if evidence.get("hero_identity") != expected_hero:
+                raise StrictAdapterError("QA receipt does not bind the expected hero identity")
+
+    def _record_vision_evidence(self, stage: str, tank: str, evidence: Mapping[str, Any],
+                                started: float) -> None:
+        for index, attempt in enumerate(evidence.get("attempts") or [], 1):
+            if not isinstance(attempt, Mapping):
+                continue
+            usage = attempt.get("usage") if isinstance(attempt.get("usage"), Mapping) else {}
+            self._record(
+                stage, "ERROR", tank=tank, provider=attempt.get("provider"),
+                model=attempt.get("model"), tokens_input=usage.get("tokens_input"),
+                tokens_output=usage.get("tokens_output"), error=str(attempt.get("error") or "provider attempt failed"),
+                detail={"attempt": index, "final_call_id": evidence.get("call_id")},
+            )
+        usage = evidence.get("usage") if isinstance(evidence.get("usage"), Mapping) else {}
+        self._record(
+            stage, "OK", tank=tank, started=started,
+            provider=evidence.get("provider"), model=evidence.get("model"),
+            tokens_input=usage.get("tokens_input"), tokens_output=usage.get("tokens_output"),
+            detail={"attempt": len(evidence.get("attempts") or []) + 1,
+                    "call_id": evidence.get("call_id")},
+        )
 
     # -- immutable intake ------------------------------------------------- #
     def intake(self, batch_dir, state):
@@ -178,7 +252,8 @@ class StrictBAUAdapters(base.Adapters):
         runner = self.runners.get("catalogue")
         started = time.monotonic()
         receipt_path = Path(batch_dir) / "evidence" / "catalogue" / f"{record['sha256']}.json"
-        if receipt_path.is_file():
+        reused = receipt_path.is_file()
+        if reused:
             evidence = json.loads(receipt_path.read_text())
         elif runner is None:
             raw = base._subprocess_runner([
@@ -190,7 +265,12 @@ class StrictBAUAdapters(base.Adapters):
             evidence = runner([source])
         if not isinstance(evidence, dict):
             raise StrictAdapterError("catalogue returned non-object evidence")
-        _attested_call(evidence, [record["sha256"]], "catalogue")
+        _attested_call(evidence, [record["sha256"]], "catalogue",
+                       not_before=self.evidence_not_before)
+        if reused:
+            self._validate_receipt_identity(
+                evidence, source=source, source_sha256=record["sha256"],
+            )
         output = evidence.get("output")
         if not isinstance(output, dict):
             raise StrictAdapterError("catalogue output object missing")
@@ -219,6 +299,8 @@ class StrictBAUAdapters(base.Adapters):
             raise StrictAdapterError("fish_name contains a deterministic title component")
         title = batch_mod.expected_catalogue_title({**output, "tank_id": tank})
         receipt = {
+            "batch_id": self.batch_id,
+            "source_identity": {"path": str(source.resolve()), "sha256": record["sha256"]},
             "provider": evidence["provider"], "model": evidence["model"],
             "call_id": evidence["call_id"], "timestamp": evidence["timestamp"],
             "input_hashes": [record["sha256"]], "output": {
@@ -227,15 +309,13 @@ class StrictBAUAdapters(base.Adapters):
                 "title": title,
             },
             "routing": evidence.get("routing"), "usage": evidence.get("usage"),
+            "attempts": evidence.get("attempts") or [],
         }
         receipt_path = (Path(batch_dir) / "evidence" / "catalogue" /
                         f"{record['sha256']}.json")
         _write_immutable_json(receipt_path, receipt)
-        self._record("identify", "OK", tank=tank, started=started,
-                     provider=evidence["provider"], model=evidence["model"],
-                     tokens_input=(evidence.get("usage") or {}).get("tokens_input"),
-                     tokens_output=(evidence.get("usage") or {}).get("tokens_output"),
-                     detail={"call_id": evidence["call_id"], "receipt": str(receipt_path)})
+        if not reused:
+            self._record_vision_evidence("identify", tank, evidence, started)
         return {
             "tank_id": tank, "photo_date": photo_date, "fish_name": fish_name,
             "tail_type": tail_type, "sex": sex, "title": title,
@@ -283,64 +363,80 @@ class StrictBAUAdapters(base.Adapters):
         source = Path(entry["source_path"]).resolve()
         clean = Path(batch_dir).resolve() / "evidence" / "heroes" / f"{tank}-clean.png"
         receipt_path = Path(batch_dir).resolve() / "evidence" / "generation" / f"{tank}.json"
+        self.budget.register_fish(tank)
+        ledger = self.budget._load()
+        if ledger.get("blocked") is True:
+            raise StrictAdapterError(
+                f"generation budget is blocked: {ledger.get('blocked_reason') or 'cap exceeded'}")
+        outstanding = [rid for rid, reservation in ledger["reservations"].items()
+                       if reservation.get("tank") == tank and not reservation.get("settled")]
+
+        # A reliable local file+receipt pair is the only permitted recovery for
+        # an unknown generation result.  It reconciles the held reservation
+        # without another provider call.
         if clean.exists():
             receipt = self._generation_receipt(tank, clean, source)
             if receipt is None:
-                raise StrictAdapterError(
-                    "generation output exists without a reliable receipt; manual reconciliation required"
+                raise base.ReconciliationPending(
+                    "generation",
+                    "generation output exists without a reliable receipt; manual reconciliation required",
                 )
+            if len(outstanding) > 1:
+                raise base.ReconciliationPending(
+                    "generation", "multiple unsettled generation requests require manual reconciliation")
+            if outstanding:
+                self.budget.settle(outstanding[0], float(receipt["grokai_cost"]), reported=True)
             return {"hero_path": str(clean), "hero_sha256": _sha(clean),
                     "generation_receipt": str(receipt_path)}
 
+        if outstanding:
+            raise base.ReconciliationPending(
+                "generation", "unsettled generation request requires reconciliation; request will not replay")
+        ok, reason = self.budget.can_attempt(tank)
+        if not ok:
+            raise StrictAdapterError(f"generation blocked: {reason}")
+        reservation = self.budget.reserve(tank)
+        attempt = int(self.budget._load()["fish"][tank]["attempts"])
         runner = self.runners.get("generate") or base._subprocess_runner
-        self.budget.register_fish(tank)
-        ledger = self.budget._load()
-        if any(r.get("tank") == tank and not r.get("settled") for r in ledger["reservations"].values()):
-            raise StrictAdapterError("unsettled generation request requires reconciliation; request will not replay")
-        last_error: Optional[Exception] = None
-        for attempt in range(1, int(self.budget.limits["max_attempts_per_fish"]) + 1):
-            ok, reason = self.budget.can_attempt(tank)
-            if not ok:
-                raise StrictAdapterError(f"generation blocked: {reason}")
-            reservation = self.budget.reserve(tank)
-            started = time.monotonic()
-            try:
-                output = runner([sys.executable, str(_SCRIPT_DIR / "grok_hero.py"),
-                                 "--source", str(source), "--output", str(clean),
-                                 "--model", GROK_MODEL, "--quality", "low"])
-            except Exception as exc:
-                self.budget.settle(reservation, None, reported=False)
-                self._record("generate", "ERROR", tank=tank, started=started,
-                             error=str(exc), detail={"attempt": attempt})
-                if clean.exists():
-                    raise StrictAdapterError(
-                        "generation outcome is uncertain; output retained and request will not replay"
-                    ) from exc
-                last_error = exc
-                continue
-            try:
-                receipt = json.loads(output) if isinstance(output, str) else output
-                if not isinstance(receipt, dict) or not clean.is_file():
-                    raise StrictAdapterError("generation omitted its output or JSON receipt")
-                self._validate_generation_receipt(receipt, source, clean)
-            except Exception as exc:
-                self.budget.settle(reservation, None, reported=False)
-                self._record("generate", "UNCERTAIN", tank=tank, started=started,
-                             error=str(exc), detail={"attempt": attempt})
-                raise StrictAdapterError(
-                    "generation output lacks a reliable receipt; request will not replay"
-                ) from exc
-            charged = self.budget.settle(reservation, float(receipt["grokai_cost"]), reported=True)
+        started = time.monotonic()
+        try:
+            output = runner([sys.executable, str(_SCRIPT_DIR / "grok_hero.py"),
+                             "--source", str(source), "--output", str(clean),
+                             "--model", GROK_MODEL, "--quality", "low"])
+        except Exception as exc:
+            # Acceptance is unknown. Keep the conservative reservation held and
+            # never issue a second provider request.
+            self._record("generate", "UNCERTAIN", tank=tank, started=started,
+                         error=str(exc), detail={"attempt": attempt, "reservation": reservation})
+            raise base.ReconciliationPending(
+                "generation", "generation outcome is uncertain; request will not replay") from exc
+        try:
+            receipt = json.loads(output) if isinstance(output, str) else output
+            if not isinstance(receipt, dict) or not clean.is_file():
+                raise StrictAdapterError("generation omitted its output or JSON receipt")
+            self._validate_generation_receipt(receipt, source, clean)
+            # Evidence lands first. A crash before settlement is reconciled from
+            # these local bytes on the next run.
             _write_immutable_json(receipt_path, receipt)
-            self._record("generate", "OK", tank=tank, started=started,
-                         provider=receipt["provider"], model=receipt["model"],
-                         tokens_input=receipt.get("tokens_input"),
-                         tokens_output=receipt.get("tokens_output"), cost=charged,
-                         cost_source=receipt["grokai_cost_source"],
-                         detail={"attempt": attempt, "receipt": str(receipt_path)})
-            return {"hero_path": str(clean), "hero_sha256": _sha(clean),
-                    "generation_receipt": str(receipt_path)}
-        raise StrictAdapterError(f"generation failed within budget for {tank}: {last_error}")
+            charged = self.budget.settle(
+                reservation, float(receipt["grokai_cost"]), reported=True)
+        except Exception as exc:
+            self._record("generate", "UNCERTAIN", tank=tank, started=started,
+                         error=str(exc), detail={"attempt": attempt, "reservation": reservation})
+            ledger = self.budget._load()
+            if ledger.get("blocked") is True:
+                raise StrictAdapterError(
+                    f"generation budget is blocked: {ledger.get('blocked_reason') or 'cap exceeded'}") from exc
+            raise base.ReconciliationPending(
+                "generation", "generation output lacks a reliable receipt; request will not replay") from exc
+        self._record("generate", "OK", tank=tank, started=started,
+                     provider=receipt["provider"], model=receipt["model"],
+                     tokens_input=receipt.get("tokens_input"),
+                     tokens_output=receipt.get("tokens_output"), cost=charged,
+                     cost_source=receipt["grokai_cost_source"],
+                     detail={"attempt": attempt, "receipt": str(receipt_path)})
+        return {"hero_path": str(clean), "hero_sha256": _sha(clean),
+                "generation_receipt": str(receipt_path)}
 
     # -- exact mandatory QA ---------------------------------------------- #
     def qa(self, entry, batch_dir):
@@ -348,12 +444,16 @@ class StrictBAUAdapters(base.Adapters):
         hero = Path(entry["hero_path"]).resolve()
         runner = self.runners.get("qa")
         started = time.monotonic()
+        path = Path(batch_dir).resolve() / "evidence" / "qa" / f"{entry['tank_id']}.json"
+        reused = path.is_file()
         if runner is None:
             from PIL import Image
             with Image.open(hero) as image:
                 if image.size != (2048, 2048) or hero.name != f"{entry['tank_id']}.png":
                     raise StrictAdapterError("deterministic hero dimensions/filename check failed")
-        if runner is None:
+        if reused:
+            evidence = json.loads(path.read_text(encoding="utf-8"))
+        elif runner is None:
             evidence = json.loads(base._subprocess_runner([
                 sys.executable, str(_SCRIPT_DIR / "vision_review.py"), "--mode", "qa",
                 "--file", str(source), "--file", str(hero), "--file", str(source),
@@ -365,7 +465,12 @@ class StrictBAUAdapters(base.Adapters):
         expected_hashes = [entry["source_sha256"], entry["hero_sha256"], entry["source_sha256"]]
         if _sha(source) != entry["source_sha256"] or _sha(hero) != entry["hero_sha256"]:
             raise StrictAdapterError("QA input bytes changed")
-        _attested_call(evidence, expected_hashes, "QA")
+        _attested_call(evidence, expected_hashes, "QA", not_before=self.evidence_not_before)
+        if reused:
+            self._validate_receipt_identity(
+                evidence, source=source, source_sha256=entry["source_sha256"],
+                tank=entry["tank_id"], hero=hero, hero_sha256=entry["hero_sha256"],
+            )
         output = evidence.get("output") if isinstance(evidence.get("output"), dict) else evidence
         assertions = output.get("assertions") if isinstance(output, dict) else None
         overall = output.get("overall") if isinstance(output, dict) else None
@@ -381,22 +486,22 @@ class StrictBAUAdapters(base.Adapters):
             return {"outcome": "FAIL", "failed_assertions": failed,
                     "accepted_exception": None}
         receipt = {
+            "batch_id": self.batch_id, "tank_id": entry["tank_id"],
+            "source_identity": {"path": str(source), "sha256": entry["source_sha256"]},
+            "hero_identity": {"path": str(hero), "sha256": entry["hero_sha256"]},
             "provider": evidence["provider"], "model": evidence["model"],
             "call_id": evidence["call_id"], "timestamp": evidence["timestamp"],
             "input_hashes": expected_hashes,
             "routing": evidence.get("routing"), "usage": evidence.get("usage"),
+            "attempts": evidence.get("attempts") or [],
             "output": {"assertions": {name: assertions[name] for name in sorted(assertions)},
                        "overall": "PASS", "reasons": output.get("reasons", [])},
         }
-        path = Path(batch_dir).resolve() / "evidence" / "qa" / f"{entry['tank_id']}.json"
         _write_immutable_json(path, receipt)
         entry["image_qa_path"] = str(path)
         entry["image_qa_sha256"] = _sha(path)
-        self._record("qa", "OK", tank=entry["tank_id"], started=started,
-                     provider=evidence["provider"], model=evidence["model"],
-                     tokens_input=(evidence.get("usage") or {}).get("tokens_input"),
-                     tokens_output=(evidence.get("usage") or {}).get("tokens_output"),
-                     detail={"call_id": evidence["call_id"], "receipt": str(path)})
+        if not reused:
+            self._record_vision_evidence("qa", entry["tank_id"], evidence, started)
         return {"outcome": "PASS", "failed_assertions": [],
                 "accepted_exception": None, "receipt_path": str(path),
                 "receipt_sha256": _sha(path)}
@@ -549,7 +654,24 @@ class StrictBAUAdapters(base.Adapters):
         result = preflight(manifest_path=path, manifest_sha256=state["manifest_sha256"], tank_id=entry["tank_id"])
         if result.get("status") != "PREFLIGHT_PASS":
             raise StrictAdapterError("fresh uploader preflight blocked execution")
-        return self.runners["execute"](entry, path, state["manifest_sha256"])
+        try:
+            return self.runners["execute"](entry, path, state["manifest_sha256"])
+        except Exception as exc:
+            raise base.ReconciliationPending(
+                "shopify", "Shopify write result is unknown; mutation will not replay") from exc
+
+    def reconcile(self, entry, state, batch_dir):
+        """Perform only the binding's read-only reconciliation for pending Shopify state."""
+        path = Path(state["manifest_path"])
+        if not path.is_file() or _sha(path) != state.get("manifest_sha256"):
+            raise StrictAdapterError("persisted manifest bytes changed before reconciliation")
+        runner = self.runners.get("reconcile")
+        if runner is None:
+            raise StrictAdapterError("Shopify reconciliation runner is required")
+        result = runner(entry, path, state["manifest_sha256"])
+        if not isinstance(result, dict):
+            raise StrictAdapterError("Shopify reconciliation returned a non-object result")
+        return result
 
     # -- per-fish operational telemetry plus call export ----------------- #
     def telemetry(self, state, batch_dir):
@@ -569,15 +691,25 @@ class StrictBAUAdapters(base.Adapters):
                 models = sorted({row[2] for row in rows if row[2]})
                 grok = [row for row in rows if row[0] == "generate"]
                 costs = [float(row[5]) for row in grok if row[5] is not None]
+                started_at = entry.get("date_entered") or state.get("created_at") or base.iso_now()
+                verified_at = ((entry.get("shopify_receipt") or {}).get("verified_at")
+                               if isinstance(entry.get("shopify_receipt"), dict) else None)
+                archive_receipt = state.get("archive_receipt")
+                archive_completed_at = state.get("archive_completed_at")
+                if archive_completed_at is None and isinstance(archive_receipt, Mapping):
+                    archive_completed_at = archive_receipt.get("completed_at")
                 telemetry_mod.upsert(con, {
                     "batch_id": self.batch_id, "tank_number": entry["tank_id"],
-                    "date_entered": entry.get("date_entered") or state.get("created_at") or base.iso_now(),
+                    "date_entered": started_at,
                     "arrival_date": entry.get("photo_date"),
-                    "onboarding_started_at": entry.get("date_entered"),
-                    "shopify_verified_at": (entry.get("shopify_receipt") or {}).get("verified_at")
-                        if isinstance(entry.get("shopify_receipt"), dict) else None,
+                    "onboarding_started_at": started_at,
+                    "shopify_verified_at": verified_at,
+                    "onboarding_seconds": telemetry_mod.seconds_between(started_at, verified_at),
+                    "archive_completed_at": archive_completed_at,
+                    "end_to_archive_seconds": telemetry_mod.seconds_between(started_at, archive_completed_at),
                     "model_calls": sum(1 for row in rows if row[1] or row[2]),
-                    "retry_count": max(0, len(grok) - 1), "grok_calls": len(grok),
+                    "retry_count": sum(1 for row in rows if row[7] in {"ERROR", "UNCERTAIN"}),
+                    "grok_calls": len(grok),
                     "grok_cost_unknown_calls": sum(1 for row in grok if row[5] is None),
                     "tokens_input": sum(int(row[3] or 0) for row in rows),
                     "tokens_output": sum(int(row[4] or 0) for row in rows),
@@ -591,7 +723,7 @@ class StrictBAUAdapters(base.Adapters):
             calls_csv = batch_dir / "reports" / "betta-call-telemetry.csv"
             rows = telemetry_mod.export_calls(con, self.batch_id, calls_csv)
             aggregate_csv = batch_dir / "reports" / "betta-telemetry.csv"
-            telemetry_mod.export_csv(con, aggregate_csv)
+            telemetry_mod.export_csv(con, aggregate_csv, batch_id=self.batch_id)
             summary = telemetry_mod.batch_call_summary(con, self.batch_id)
             summary.update({"call_rows": rows, "calls_csv": str(calls_csv),
                             "telemetry_csv": str(aggregate_csv)})
@@ -604,6 +736,6 @@ def make_strict_adapters(**kwargs) -> dict:
     bundle = StrictBAUAdapters(**kwargs)
     return {name: getattr(bundle, name) for name in (
         "intake", "identify", "generate", "finish", "qa", "resolve",
-        "build_manifest", "execute", "telemetry", "archive",
+        "build_manifest", "execute", "reconcile", "telemetry", "archive",
     )}
 

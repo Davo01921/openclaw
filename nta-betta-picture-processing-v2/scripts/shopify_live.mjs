@@ -57,15 +57,17 @@ function snapshot(product,tank) {
   const variant=product.variants.nodes[0], levels=variant.inventoryItem?.inventoryLevels?.nodes||[];
   if(variant.inventoryItem.inventoryLevels.pageInfo?.hasNextPage!==false || levels.length!==1) fail('Resolved variant must have exactly one inventory location');
   const level=levels[0], available=level.quantities?.find(x=>x.name==='available')?.quantity;
+  const onHand=level.quantities?.find(x=>x.name==='on_hand')?.quantity;
+  const committed=level.quantities?.find(x=>x.name==='committed')?.quantity;
   if(product.media.pageInfo?.hasNextPage!==false) fail('Resolved media truncated');
-  if(!Number.isInteger(available)) fail('Resolved inventory quantity unavailable');
+  if(![available,onHand,committed].every(Number.isInteger)) fail('Resolved inventory quantities unavailable');
   return {id:product.id,variant_id:variant.id,inventory_item_id:variant.inventoryItem.id,
     raw_product:product,location:level.location,location_id:level.location.id,source:'FRESH_SHOPIFY_READ',tank_id:tank,
-    fetched_at:new Date().toISOString(),fetch_id:crypto.randomUUID(),before:{
+    fetched_at:new Date().toISOString(),fetch_id:crypto.randomUUID(),query:tank,before:{
       title:product.title,description:product.descriptionHtml,price:variant.price,
       cost:variant.inventoryItem.unitCost?.amount??null,vendor:product.vendor,
       product_type:product.productType,handle:product.handle,status:product.status,
-      inventory:available,inventory_policy:variant.inventoryPolicy,tracked:variant.inventoryItem.tracked,
+      inventory:available,on_hand:onHand,committed,inventory_policy:variant.inventoryPolicy,tracked:variant.inventoryItem.tracked,
       arrival_date:product.arrival?.value??null,media:(product.media?.nodes||[]).map(m=>({
         id:m.id,alt:m.alt,status:m.status,url:m.image?.url,width:m.image?.width,height:m.image?.height}))}};
 }

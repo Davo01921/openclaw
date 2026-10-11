@@ -243,6 +243,8 @@ def _gather_audit_sources(
                 sources.append(Path(receipt["path"]))
     if state_root is not None:
         batch_id = manifest.get("batch_id")
+        for receipt in sorted((Path(state_root) / "receipts").glob("*.json")):
+            sources.append(receipt)
         if batch_id:
             for receipt in sorted((Path(state_root) / str(batch_id)).glob("*/receipts/*.json")):
                 sources.append(receipt)

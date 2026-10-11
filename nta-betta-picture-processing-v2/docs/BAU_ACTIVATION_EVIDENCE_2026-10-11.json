@@ -1,0 +1,88 @@
+{
+  "schema": "nta-betta-bau-activation-evidence-v1",
+  "activated_at": "2026-10-11T15:08:39.884352+11:00",
+  "outcome": "BAU_ACTIVE",
+  "approval": "David approved four fixes and production activation; additional cost-verification gate waived; existing configured caps retained.",
+  "offline_tests_passed": 298,
+  "independent_review": "PASS; no remaining critical blockers",
+  "smoke": {
+    "config_enabled": true,
+    "blockers": [],
+    "policy_enabled": true,
+    "stable_new_sources": 0,
+    "policy_paid_generation_authorised": true,
+    "policy_automatic_batch_authorisation": true,
+    "processed_hashes": 33,
+    "historical_hashes_available": 33,
+    "owned_active_batches": [],
+    "unmanaged_active_batches": [],
+    "resumable_owned_batches": [],
+    "live_generation_requested": true,
+    "live_shopify_requested": true,
+    "mode": "smoke",
+    "ok": true
+  },
+  "launchd": {
+    "state": "spawn scheduled",
+    "runs": "3",
+    "last_exit_code": "0",
+    "interval": "60 seconds"
+  },
+  "restart_persistence": "Installed LaunchAgent was booted out and bootstrapped again; flags/plist persisted and activation-hold run exited 0. No Mac reboot performed.",
+  "runtime_context_preflight": {
+    "ok": true,
+    "checks": {
+      "configuration": true,
+      "image_runtime": true,
+      "intake_readable": true,
+      "telemetry_integrity": true,
+      "keychain_readable": true,
+      "vision_route": true,
+      "shopify_identity": true,
+      "discord_identity": true
+    },
+    "shop": {
+      "id": "gid://shopify/Shop/60857712849",
+      "name": "Nano Tanks Australia",
+      "myshopifyDomain": "nano-tanks-australia-aquarium-shop.myshopify.com",
+      "currencyCode": "AUD"
+    },
+    "vision_route": {
+      "class": "STANDARD",
+      "capability_requirements": [
+        "image",
+        "structured_output"
+      ],
+      "agent": "fred",
+      "requested_route": "openai/gpt-5.6-sol",
+      "eligible_routes": [
+        "openai/gpt-5.6-sol",
+        "qwen-token-plan/qwen3.8-flash",
+        "qwen/qwen3.8-max"
+      ],
+      "authority": "adaptive-model-router/v2.1",
+      "execution_attested": false
+    },
+    "paid_calls": 0,
+    "shopify_mutations": 0,
+    "discord_sends": 0
+  },
+  "bridge_self_test": "SELF_TEST_PASS; secrets_exposed:false",
+  "grok_sha256": "5732aa9803f860eca361c26e34348220ba6fb510969eb81187e2b62550b2878e",
+  "generation_budget": {
+    "fallback_cost_usd": 0.07,
+    "max_attempts_per_fish": 2,
+    "max_fish_per_batch": 20,
+    "max_retries_per_fish": 1,
+    "per_batch_usd": 2.8,
+    "per_fish_usd": 0.14
+  },
+  "activation_hold": false,
+  "shopify_authority": "automatic, scoped, exact per-batch persisted-manifest SHA-256",
+  "watcher_plist": "/Users/davidlo/Library/LaunchAgents/com.nta.betta-watch.plist",
+  "config": "/Users/davidlo/Documents/Betta Processing/bau-config.json",
+  "policy": "/Users/davidlo/Documents/Betta Processing/automation-policy.json",
+  "activation_paid_calls": 0,
+  "activation_shopify_mutations": 0,
+  "activation_discord_sends": 0
+}

@@ -22,7 +22,26 @@ RESOLVE_JSON = json.dumps({"ok": True, "status": "RESOLVED", "snapshot": {
     "id": "gid://shopify/Product/1", "variant_id": "gid://shopify/ProductVariant/2",
     "location_id": "gid://shopify/Location/3", "inventory_item_id": "gid://shopify/InventoryItem/4",
     "source": "FRESH_SHOPIFY_READ", "tank_id": "2BT12",
-    "before": {"inventory": 1, "price": "35.00", "status": "ACTIVE"}}})
+    "query": "2BT12", "fetched_at": "2026-10-11T00:00:00Z",
+    "location": {"id": "gid://shopify/Location/3", "name": "NTA"},
+    "before": {"inventory": 1, "on_hand": 1, "committed": 0,
+               "price": "35.00", "status": "ACTIVE"},
+    "raw_product": {"id": "gid://shopify/Product/1",
+        "media": {"pageInfo": {"hasNextPage": False}, "nodes": []},
+        "variants": {"pageInfo": {"hasNextPage": False}, "nodes": [{
+            "id": "gid://shopify/ProductVariant/2", "inventoryItem": {
+                "id": "gid://shopify/InventoryItem/4", "inventoryLevels": {
+                    "pageInfo": {"hasNextPage": False}, "nodes": [{
+                        "location": {"id": "gid://shopify/Location/3", "name": "NTA"},
+                        "quantities": [{"name": "available", "quantity": 1},
+                                       {"name": "on_hand", "quantity": 1},
+                                       {"name": "committed", "quantity": 0}],
+                    }],
+                },
+            },
+        }]},
+    },
+}})
 
 
 class BindingTests(unittest.TestCase):
@@ -49,7 +68,7 @@ class BindingTests(unittest.TestCase):
     def test_execute_live_requires_matching_digest(self):
         with tempfile.TemporaryDirectory() as tmp:
             manifest = Path(tmp) / "m.json"
-            manifest.write_bytes(b'{"persisted":true}\n')
+            manifest.write_bytes(b'{"batch_id":"legacy-test","persisted":true}\n')
             digest = hashlib.sha256(manifest.read_bytes()).hexdigest()
 
             def runner(argv):
@@ -58,7 +77,16 @@ class BindingTests(unittest.TestCase):
                     return json.dumps({"manifest_sha256": digest, "items": [{
                         "tank_id": "2BT12", "stage": "NEW", "status": "PENDING",
                     }]})
-                return json.dumps({"manifest_sha256": digest, "report_path": f"/{command}.json",
+                report_path = Path(tmp) / f"{command}.json"
+                if command == "verify":
+                    report_path.write_text(json.dumps({
+                        "command": "verify", "batch_id": "legacy-test",
+                        "manifest_sha256": digest,
+                        "created_at": "2026-10-11T00:00:00+00:00",
+                        "items": [{"tank_id": "2BT12", "status": bnd.READBACK_PASS}],
+                    }), encoding="utf-8")
+                return json.dumps({"manifest_sha256": digest,
+                                   "report_path": str(report_path),
                                    "items": [{"tank_id": "2BT12",
                                               "status": bnd.READBACK_PASS,
                                               "receipt": "r"}]})
@@ -72,7 +100,7 @@ class BindingTests(unittest.TestCase):
     def test_execute_live_non_verified_is_failure(self):
         with tempfile.TemporaryDirectory() as tmp:
             manifest = Path(tmp) / "m.json"
-            manifest.write_bytes(b'{"persisted":true}\n')
+            manifest.write_bytes(b'{"batch_id":"legacy-test","persisted":true}\n')
             digest = hashlib.sha256(manifest.read_bytes()).hexdigest()
 
             def runner(argv):

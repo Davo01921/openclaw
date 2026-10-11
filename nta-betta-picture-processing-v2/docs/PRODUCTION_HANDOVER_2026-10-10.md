@@ -1,64 +1,39 @@
 # NTA Betta Processing V2.2 — BAU handover
 
-Date: 2026-10-11 (Australia/Sydney)
-Canonical runtime: `~/openclaw-skills-v3/nta-betta-picture-processing-v2/`
-Repository: https://github.com/Davo01921/openclaw-skills
+**BAU ACTIVE — activated 2026-10-11, Australia/Sydney.**
 
-**BAU is NOT ACTIVATED. Critical gates failed; authority, paid generation and dispatcher remain disabled. The watcher is not installed or loaded.**
+Drop photographs into `~/Documents/Betta Processing/`. The watcher allows 60 seconds for transfers to settle and checks every 60 seconds. Eligible batches are processed automatically, verified against Shopify, archived with SHA-256 evidence, and reported to Discord #betta-processing.
 
-David’s standing approval is accepted. Existing successful E2Es are sufficient; no additional paid/live test or routine owner approval is required. Activation work made zero paid calls, zero Shopify mutations and zero Discord sends. Existing Grok generation code/prompts remain unchanged.
+## Approved configuration
+
+- Canonical runtime: `~/openclaw-skills-v3/nta-betta-picture-processing-v2/`; repo https://github.com/Davo01921/openclaw-skills.
+- Existing Grok generation and prompts preserved; SHA-256 `5732aa9803f860eca361c26e34348220ba6fb510969eb81187e2b62550b2878e`.
+- Existing ledger limits remain USD 0.14/fish, USD 2.80/batch, two attempts/fish and 20 fish/batch. David waived the additional price-verification gate; the existing fallback accounting remains.
+- Standing Shopify authority enabled only for eligible existing Betta products, bound automatically to each exact persisted production manifest. No product creation, protected-field edits or automatic material QA exceptions.
+- Inventory remains tracked/DENY, scoped to the exact variant/location with compare-and-set and persisted idempotency.
+- Actual image/source/hero hashes, attested vision route/provider/model, batch identity and timezone-aware timestamps are required. Material discrepancies quarantine.
 
 ## Completed repairs
 
-- Added exact persisted-manifest authorization with immutable receipts, strict inventory scope and mandatory budget caps.
-- Added dispatcher-owned source selection, history deduplication, batch limits, durable notification intent, and read-only status/smoke.
-- Repaired configured uploader/bridge/archiver wiring, full protected snapshots and SHA-verified generic audit inputs.
-- Added strict production adapters, complete QA assertions, catalogue/title preservation, canonical uploader manifests, budget reservations and uncertainty replay refusal.
-- Added actual verification timestamps, inert completed-batch restart, per-fish quarantine and terminal archive receipt gate.
-- Prepared disabled policy/runtime configuration and launchd candidate using the existing image-capable virtual environment.
+1. Final archive: immutable final process/outcome and batch telemetry CSVs, archive completion timing, SHA-verified local/archive completion receipts; original intake cleanup only after archived-source hash verification.
+2. Recovery: uncertain generation holds its reservation and never blindly retries; Shopify uncertainty uses read-only reconciliation. Pending batches remain recoverable and prevent conflicting intake.
+3. Vision evidence: reject overrides, unknown or unattested routes, stale/wrong-batch evidence and invalid/future timestamps. Valid persisted receipts resume without another model call.
+4. Archive readback binding: verification report bytes, SHA, batch, manifest, command, timestamp and exact tank PASS are revalidated before archiving. Archive inputs are frozen for safe resume.
 
-## Validation
+## Evidence
 
-266 offline tests passed. Independent safety review completed and identified the blockers below. Fresh read-only checks verified Nano Tanks Australia Shopify identity, the authenticated offline-session bridge, #betta-processing, telemetry integrity/writability, Keychain retrieval without exposure, configured vision capabilities, and deterministic 2048×2048 rendering.
+- 298 offline tests passed; independent review passed with no remaining critical blockers.
+- Read-only readiness probe executed through launchd: image runtime, photo-folder access, telemetry integrity, Keychain retrieval without exposure, Fred's image-capable OpenAI → Qwen Token Plan → Qwen API route, Nano Tanks Australia Shopify identity and Discord identity all passed.
+- Authenticated Shopify bridge self-test passed; fresh read-only resolver preserved the exact protected snapshot and all inventory quantities.
+- LaunchAgent `com.nta.betta-watch` installed and loaded, interval 60 seconds. Bootout/bootstrap verified persistent configuration and successful exit. This verifies service reload/login configuration, not a full Mac reboot.
+- Standing authority, automatic per-batch authorization and paid generation enabled; activation hold released. Non-mutating smoke passed, no photos or active owned batches were pending, and dispatcher returned IDLE.
+- Activation checks made zero paid generation calls, zero Shopify mutations and zero Discord sends. Existing successful E2Es were accepted; no extra live test batch was run.
+- Detailed evidence: `BAU_ACTIVATION_EVIDENCE_2026-10-11.json`.
 
-Grok SHA-256: `5732aa9803f860eca361c26e34348220ba6fb510969eb81187e2b62550b2878e`
+## Operation and recovery
 
-## Blocking gates and exact next actions
+Routine batches need no owner approval. Oversized scans, material discrepancies and uncertain writes fail closed; unresolved generation stays pending without paid replay. Resolve the recorded evidence before releasing a pending operation.
 
-### 1. paid-cost-ceiling
+Configuration: `~/Documents/Betta Processing/bau-config.json`; policy: `automation-policy.json`; logs: `state/logs/watcher.stdout.log` and `watcher.stderr.log`; batch evidence: `batches/<batch-id>/`.
 
-grok_hero.normalized_usage({}) supplies USD 0.07 from nta_default_0.07; strict adapter settles fallback as reported actual.
-
-Preserve Grok generation; require provider-reported cost or independently verified fixed-price upper bound for this exact model/quality before dispatch. Treat default/configured costs as estimates, not reported actual. Fail closed when no provable ceiling is available.
-
-### 2. final-telemetry-archive
-
-Telemetry and process snapshot are archived before archive receipt, ARCHIVED/COMPLETE and dispatcher outcome are persisted; archive completion timing remains absent.
-
-Add finalization evidence after verified archive; persist archive timing and terminal process/dispatcher receipts, and SHA-verify final telemetry and outcome in the audit archive. Verify original intake-folder cleanup only against the archived source digest.
-
-### 3. uncertain-reconciliation
-
-PENDING_RECONCILIATION and unsettled generation are turned into terminal quarantined/ABANDONED batches; replay is refused but a reconciliation-only continuation cannot be scheduled.
-
-Keep uncertainty in a distinct recoverable checkpoint. Permit read-only reconciliation without replay, only advance after proven outcome; preserve reservations and mutation idempotency journals.
-
-### 4. vision-route-attestation
-
-Strict evidence checker accepts execution_attested:false override and a naive 1970 timestamp.
-
-Reject overrides and unknown/unattested provider/model in BAU. Require route-bound actual execution and timezone-aware timestamp bounded to the selected source/batch. Retain all call usage/retry evidence.
-
-### 5. archive-readback-binding
-
-Later archive report collection checks tank and PASS status without rebinding manifest/batch/command/timestamp or persisted report SHA.
-
-Persist the verification report digest with the execute receipt. At archive, validate those exact bytes, exact batch/manifest identity, verify command and readback receipt before accepting PASS.
-
-## Activation sequence after repair
-
-Re-run the offline integration and independent review. Only when all critical gates pass: enable the scoped automatic policy and paid generation within USD 0.14/fish, USD 2.80/batch, 2 attempts/fish and 20 fish/batch; install/bootstrap the prepared watcher; verify launchd context, restart persistence and read-only smoke without processing any live batch.
-
-Restart persistence remains unverified because activation stopped before installing launchd. Historical batches and photographs were not changed.
-
-Evidence: `BAU_READINESS_REPAIR_2026-10-11.json`. Candidate watcher: `com.nta.betta-watch.plist` (prepared only).
+Emergency stop: set dispatcher configuration `enabled` false, disable policy `enabled` and `paid_generation_authorised`, then boot out `com.nta.betta-watch`. Preserve reservations and all batch/mutation journals. Reconcile unknown writes before any retry.

@@ -40,7 +40,8 @@ class FakeAdapters:
         self.duplicates = duplicates or {}
         self.resolved = resolved
         self.execute_ok = execute_ok
-        self.calls = {"generate": 0, "execute": 0, "telemetry": 0, "archive": 0}
+        self.calls = {"generate": 0, "execute": 0, "reconcile": 0,
+                      "telemetry": 0, "archive": 0}
 
     def intake(self, batch_dir, state):
         return {"fish": [{"path": f"/src/{t}.png", "sha256": f"hash-{t}"} for t in self.tanks]}
@@ -76,6 +77,10 @@ class FakeAdapters:
             return {"status": "FAILED"}
         return {"status": "VERIFIED", "receipt": f"receipt-{entry['tank_id']}"}
 
+    def reconcile(self, entry, state, batch_dir):
+        self.calls["reconcile"] += 1
+        return {"status": "READ_ONLY_VERIFIED", "receipt": f"verified-{entry['tank_id']}"}
+
     def telemetry(self, state, batch_dir):
         self.calls["telemetry"] += 1
 
@@ -100,7 +105,7 @@ class OrchestratorTests(unittest.TestCase):
         return bp.process_batch(self.batch_dir, self.batch_id, adapters={
             m: getattr(adapters, m) for m in
             ("intake", "identify", "generate", "finish", "qa", "resolve",
-             "build_manifest", "execute", "telemetry", "archive")}, policy=pol)
+             "build_manifest", "execute", "reconcile", "telemetry", "archive")}, policy=pol)
 
     def test_full_happy_path_completes(self):
         adapters = FakeAdapters(tanks=["2BT12", "3BT21"])
@@ -178,6 +183,43 @@ class OrchestratorTests(unittest.TestCase):
         summary = self.drive(adapters, policy())
         self.assertEqual(summary["published"], 0)
         self.assertEqual(summary["quarantined"], 1)
+
+    def test_generation_uncertainty_remains_recoverable_and_not_quarantined(self):
+        class Pending(RuntimeError):
+            reconciliation_pending = True
+
+        adapters = FakeAdapters(tanks=["2BT12"])
+
+        def uncertain(entry, batch_dir):
+            adapters.calls["generate"] += 1
+            raise Pending("provider result unknown")
+
+        adapters.generate = uncertain
+        first = self.drive(adapters, policy())
+        second = self.drive(adapters, policy())
+        self.assertEqual(first["status"], "RECONCILIATION_PENDING")
+        self.assertEqual(second["status"], "RECONCILIATION_PENDING")
+        self.assertEqual(first["quarantined"], 0)
+        state = json.loads((self.batch_dir / "state" / "process.json").read_text())
+        entry = next(iter(state["fish"].values()))
+        self.assertEqual(entry["status"], bp.FISH_RECONCILIATION_PENDING)
+        self.assertEqual(entry["pending_kind"], "generation")
+
+    def test_shopify_uncertainty_uses_only_read_only_reconciliation(self):
+        adapters = FakeAdapters(tanks=["2BT12"])
+
+        def uncertain(entry, state, batch_dir):
+            adapters.calls["execute"] += 1
+            return {"status": "PENDING_RECONCILIATION", "reason": "write result unknown"}
+
+        adapters.execute = uncertain
+        first = self.drive(adapters, policy())
+        self.assertEqual(first["status"], "RECONCILIATION_PENDING")
+        self.assertEqual(adapters.calls["execute"], 1)
+        second = self.drive(adapters, policy())
+        self.assertEqual(second["status"], "COMPLETE")
+        self.assertEqual(adapters.calls["execute"], 1)
+        self.assertEqual(adapters.calls["reconcile"], 1)
 
 
 class PolicyTests(unittest.TestCase):
