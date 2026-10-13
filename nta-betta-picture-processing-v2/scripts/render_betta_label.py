@@ -9,10 +9,15 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 
 
+def valid_tank_number(tank):
+    """Accept legacy numeric BT tanks and the owner-approved APE namespace."""
+    return re.fullmatch(r"(?:[0-9]+BT[0-9]+|APE[0-9]+)", tank) is not None
+
+
 def render(source, output, tank, photo_date):
     tank = tank.upper().replace(" ", "")
 
-    if not re.fullmatch(r"[0-9]+BT[0-9]+", tank):
+    if not valid_tank_number(tank):
         raise ValueError("Invalid tank number")
 
     date = datetime.strptime(photo_date, "%Y-%m-%d")
