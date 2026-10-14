@@ -267,6 +267,106 @@ class DispatcherTests(unittest.TestCase):
         self.assertEqual(result["status"], "BLOCKED")
         self.assertEqual(calls, [])
 
+    def _owned_batch_with_state(self, state):
+        source = self.add_source(f"{state.get('status', 'x').lower()}.png",
+                                 str(state.get("status", "x")).encode())
+        entry = bau.betta_batches.create_batch(self.batches, label="BAU automatic intake")
+        digest = hashlib.sha256(source.read_bytes()).hexdigest()
+        entry["sources"] = bau._persist_sources(entry, [{
+            "path": str(source.resolve()), "sha256": digest, "size": source.stat().st_size,
+        }])
+        bau._record_selected(Path(self.config["paths"]["registry"]), entry["batch_id"],
+                             entry["sources"]["selected_sources"])
+        state_path = Path(entry["path"]) / "state" / "process.json"
+        state_path.write_text(json.dumps(state), encoding="utf-8")
+        return entry, state_path
+
+    def test_zero_mutation_quarantined_batch_reconciles_truthfully_once(self):
+        state = {
+            "batch_id": "placeholder", "status": "PARTIAL", "stage": "SHOPIFY_RESOLVED",
+            "executed": [], "manifest_sha256": None,
+            "fish": {"/x.png": {"tank_id": None, "status": "QUARANTINED",
+                                "notes": ["identification uncertain"]}},
+        }
+        entry, state_path = self._owned_batch_with_state(state)
+        state_path.write_text(json.dumps({**state, "batch_id": entry["batch_id"]}),
+                              encoding="utf-8")
+        state_bytes = state_path.read_bytes()
+        calls = {"process": 0, "message": 0}
+
+        def process(*_args, **_kwargs):
+            calls["process"] += 1
+
+        def message(_argv):
+            calls["message"] += 1
+            return json.dumps({"messageId": "fixture"})
+
+        result = bau.run_once(self.config, deps=self.deps(process, command=message))
+        self.assertEqual(result["status"], "RECONCILED")
+        self.assertEqual(result["actionable_status"], "PARTIAL")
+        self.assertEqual(result["quarantined"], 1)
+        self.assertEqual(calls, {"process": 0, "message": 1})
+        self.assertEqual(state_path.read_bytes(), state_bytes)  # evidence is never altered
+        outcome = json.loads((Path(entry["path"]) / "state" / "bau-outcome.json").read_text())
+        self.assertFalse(outcome["resumable"])
+        self.assertEqual(outcome["summary"]["finalization"]["status"],
+                         "NOT_REQUIRED_NO_MUTATIONS")
+        registry = json.loads((self.batches / "registry.json").read_text())
+        owned = next(row for row in registry["batches"]
+                     if row["batch_id"] == entry["batch_id"])
+        self.assertEqual(owned["status"], bau.betta_batches.ABANDONED)
+        # A second run is idle and never repeats the notification.
+        second = bau.run_once(self.config, deps=self.deps(process, command=message))
+        self.assertEqual(second["status"], "IDLE")
+        self.assertEqual(calls, {"process": 0, "message": 1})
+
+    def test_zero_mutation_reconciliation_requires_all_fish_terminal(self):
+        state = {
+            "batch_id": "placeholder", "status": "PARTIAL", "stage": "SHOPIFY_VERIFIED",
+            "executed": [], "fish": {"/x.png": {"status": "VERIFIED"}},
+        }
+        entry, state_path = self._owned_batch_with_state(state)
+        state_path.write_text(json.dumps({**state, "batch_id": entry["batch_id"]}),
+                              encoding="utf-8")
+        calls = {"process": 0, "message": 0}
+        result = bau.run_once(self.config, deps=self.deps(
+            lambda *_a, **_k: calls.__setitem__("process", calls["process"] + 1),
+            command=lambda _a: calls.__setitem__("message", calls["message"] + 1) or "{}"))
+        self.assertEqual(result["status"], "BLOCKED")
+        self.assertEqual(calls["process"], 0)
+
+    def test_zero_mutation_reconciliation_refuses_executed_batches(self):
+        state = {
+            "batch_id": "placeholder", "status": "PARTIAL", "stage": "SHOPIFY_VERIFIED",
+            "executed": ["/x.png"], "fish": {"/x.png": {"status": "QUARANTINED"}},
+        }
+        entry, state_path = self._owned_batch_with_state(state)
+        state_path.write_text(json.dumps({**state, "batch_id": entry["batch_id"]}),
+                              encoding="utf-8")
+        result = bau.run_once(self.config, deps=self.deps(lambda *_a, **_k: None))
+        self.assertEqual(result["status"], "BLOCKED")
+
+    def test_finalization_gate_accepts_zero_mutation_terminal_without_archive(self):
+        batch_dir = self.batches / "zero-mutation"
+        (batch_dir / "state").mkdir(parents=True)
+        process_path = batch_dir / "state" / "process.json"
+        process_path.write_text(json.dumps({
+            "batch_id": "zero-mutation", "status": "PARTIAL", "stage": "SHOPIFY_RESOLVED",
+            "executed": [], "fish": {"/x.png": {"status": "QUARANTINED"}},
+        }), encoding="utf-8")
+        summary = {"batch_id": "zero-mutation", "status": "PARTIAL",
+                   "stage": "SHOPIFY_RESOLVED", "published": 0, "quarantined": 1}
+        entry = {"batch_id": "zero-mutation", "path": str(batch_dir)}
+        resolved = bau._finalize_if_required(self.config, entry, summary, deps={})
+        self.assertEqual(resolved["finalization"]["status"], "NOT_REQUIRED_NO_MUTATIONS")
+        # Anything not provably mutation-free still waits for the archive gate.
+        process_path.write_text(json.dumps({
+            "batch_id": "zero-mutation", "status": "PARTIAL", "stage": "SHOPIFY_VERIFIED",
+            "executed": [], "fish": {"/x.png": {"status": "VERIFIED"}},
+        }), encoding="utf-8")
+        pending = bau._finalize_if_required(self.config, entry, summary, deps={})
+        self.assertEqual(pending["status"], "FINALIZATION_PENDING")
+
     def test_notification_pending_becomes_uncertain_and_is_not_retried(self):
         batch = self.root / "batch"
         summary = {"batch_id": "b-1", "stage": "COMPLETE", "status": "COMPLETE",

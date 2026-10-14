@@ -82,7 +82,7 @@ async function main(){
     console.log(JSON.stringify({ok:true,shop:data.shop,api_version:API_VERSION,capabilities:['authenticate','fresh_resolve']}));
     return;
   }
-  if(!/^\d+BT\d+$/.test(tank||'')) fail('canonical tank ID required');
+  if(!/^(?:\d+BT\d+|APE\d+)$/.test(tank||'')) fail('canonical tank ID required');
   const data=await gql(RESOLVE,{query:tank});
   if(data.products?.pageInfo?.hasNextPage!==false) fail('Product resolution truncated');
   const matches=(data.products?.nodes||[]).filter(p=>exactTank(p,tank));

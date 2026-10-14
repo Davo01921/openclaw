@@ -15,7 +15,9 @@ class LabelIdentityTests(unittest.TestCase):
     def test_normalize_tank(self):
         self.assertEqual(li.normalize_tank("2 BT 14"), "2BT14")
         self.assertEqual(li.normalize_tank("3bt21"), "3BT21")
-        for bad in ("BT14", "3BT", "3 BT X", ""):
+        self.assertEqual(li.normalize_tank("APE16"), "APE16")
+        self.assertEqual(li.normalize_tank("ape 16"), "APE16")
+        for bad in ("BT14", "3BT", "3 BT X", "APE", ""):
             with self.assertRaises(ValueError):
                 li.normalize_tank(bad)
 

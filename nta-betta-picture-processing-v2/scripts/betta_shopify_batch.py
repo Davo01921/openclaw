@@ -37,7 +37,7 @@ STATE_SCHEMA = "nta-betta-shopify-batch-state-v1"
 REPORT_SCHEMA = "nta-betta-shopify-batch-report-v1"
 FINAL_RECEIPT_SCHEMA = "nta-betta-shopify-final-receipt-v1"
 
-TANK_RE = re.compile(r"^[1-9]\d*BT[1-9]\d*$")
+TANK_RE = re.compile(r"^(?:[1-9]\d*BT[1-9]\d*|APE\d+)$")
 BATCH_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{2,127}$")
 SHA_RE = re.compile(r"^[0-9a-f]{64}$")
 GIDS = {

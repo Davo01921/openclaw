@@ -215,7 +215,13 @@ class BatchProcessor:
                     entry.setdefault("date_entered", detection.get("date_entered") or self.clock())
                     if not decision.get("tank_id") or decision.get("uncertain") is not False:
                         entry["status"] = FISH_QUARANTINED
-                        entry["notes"].append("identification uncertain")
+                        if decision.get("error"):
+                            entry["notes"].append("identification failed")
+                            entry["identify_error"] = str(decision["error"])[:400]
+                        else:
+                            entry["notes"].append("identification uncertain")
+                            if decision.get("uncertain_reason"):
+                                entry["identify_reason"] = str(decision["uncertain_reason"])[:300]
                     fish[key] = entry
                 # duplicate tank ids quarantine every clashing fish
                 seen = {}
@@ -233,6 +239,88 @@ class BatchProcessor:
                 d["fish"] = fish
                 _reach(d, "IDENTIFIED")
             self.state.update(identify)
+
+        # One focused top-label crop retry for otherwise uncertain identifications
+        # before any paid generation or eligibility work.
+        data = self.state.load()
+        retryable = [entry for entry in data["fish"].values()
+                     if entry.get("status") == FISH_QUARANTINED
+                     and isinstance(entry.get("notes"), list) and len(entry["notes"]) == 1
+                     and entry["notes"][0] in ("identification uncertain",
+                                               "identification failed")]
+        if (retryable and not data.get("identification_retry_complete")
+                and self.adapters.get("retry_identify") is not None):
+            def retry_identification(d: dict) -> None:
+                for entry in d["fish"].values():
+                    notes = entry.get("notes")
+                    if not (entry.get("status") == FISH_QUARANTINED
+                            and isinstance(notes, list) and len(notes) == 1
+                            and notes[0] in ("identification uncertain",
+                                             "identification failed")):
+                        continue
+                    try:
+                        decision = self._call("retry_identify", entry=entry,
+                                              batch_dir=self.batch_dir)
+                    except Exception as exc:
+                        entry["notes"] = ["focused label retry failed"]
+                        entry["identify_error"] = str(exc)[:400]
+                        continue
+                    if decision.get("uncertain") is False and decision.get("tank_id"):
+                        entry.update({
+                            "tank_id": decision["tank_id"],
+                            "photo_date": decision["photo_date"],
+                            "title": decision.get("proposed_title"),
+                            "proposed_title": decision.get("proposed_title"),
+                            "catalogue_evidence_path": decision.get("catalogue_evidence_path"),
+                            "catalogue_evidence_sha256": decision.get("catalogue_evidence_sha256"),
+                            "status": "PENDING",
+                            "notes": ["focused label retry accepted"],
+                        })
+                    else:
+                        entry["notes"] = ["focused label retry uncertain"]
+                # re-check duplicate tank ids among the pending fish
+                seen = {}
+                for key, entry in d["fish"].items():
+                    if entry.get("status") != "PENDING":
+                        continue
+                    tank = entry.get("tank_id")
+                    if tank in seen:
+                        entry["status"] = FISH_QUARANTINED
+                        entry["notes"].append("duplicate tank id")
+                        other = d["fish"][seen[tank]]
+                        other["status"] = FISH_QUARANTINED
+                        other["notes"].append("duplicate tank id")
+                    else:
+                        seen[tank] = key
+                d["identification_retry_complete"] = True
+            self.state.update(retry_identification)
+
+        # Automatic (BAU) runs perform one read-only Shopify resolution and
+        # standing-baseline check before any paid generation.  A fish that could
+        # not be written under the standing scope (for example a product whose
+        # inventory is not 0) is quarantined with its reason instead of spending
+        # generation budget.  Supervised runs without the adapter are unchanged.
+        data = self.state.load()
+        if (automatic and self.adapters.get("eligibility") is not None
+                and not self._stage_done(data, "GENERATED")):
+            def eligibility(d: dict) -> None:
+                for entry in d["fish"].values():
+                    if entry.get("status") != "PENDING" or entry.get("product"):
+                        continue
+                    try:
+                        verdict = self._call("eligibility", entry=entry, state=d,
+                                             batch_dir=self.batch_dir)
+                    except Exception as exc:
+                        verdict = {"eligible": False,
+                                   "reason": f"pre-generation eligibility check failed: {exc}"}
+                    if isinstance(verdict, dict) and verdict.get("eligible") is True:
+                        if isinstance(verdict.get("product"), dict):
+                            entry["product"] = verdict["product"]
+                        continue
+                    entry["status"] = FISH_QUARANTINED
+                    reason = (verdict or {}).get("reason") or "not eligible for automatic writes"
+                    entry.setdefault("notes", []).append(f"pre-generation ineligible: {reason}")
+            self.state.update(eligibility)
 
         # Paid generation, gated by the standing policy.
         data = self.state.load()
@@ -306,6 +394,8 @@ class BatchProcessor:
                 for entry in d["fish"].values():
                     if entry["status"] not in (FISH_PASS, FISH_PASS_EXCEPTION):
                         continue
+                    if entry.get("product"):
+                        continue  # already resolved by the pre-generation eligibility gate
                     try:
                         resolved = self._call("resolve", entry=entry, batch_dir=self.batch_dir)
                     except Exception as exc:

@@ -208,7 +208,7 @@ class StrictAdapterTests(unittest.TestCase):
         receipt = Path(result["catalogue_evidence_path"])
         self.assertEqual(json.loads(receipt.read_text())["call_id"], "cat-1")
 
-    def test_catalogue_rejects_low_confidence(self):
+    def test_catalogue_low_confidence_is_a_truthful_uncertain_decision(self):
         original = self.runners["catalogue"]
         self.runners["catalogue"] = lambda files: {
             **original(files),
@@ -218,8 +218,74 @@ class StrictAdapterTests(unittest.TestCase):
         }
         adapters, _ = self.make()
         record = adapters["intake"](self.batch, {})["fish"][0]
-        with self.assertRaisesRegex(strict_mod.StrictAdapterError, "below 0.90"):
-            adapters["identify"](record, self.batch)
+        result = adapters["identify"](record, self.batch)
+        self.assertTrue(result["uncertain"])
+        self.assertEqual(result["uncertain_reason"], "catalogue confidence below 0.90")
+        receipt = json.loads(Path(result["catalogue_evidence_path"]).read_text())
+        self.assertTrue(receipt["uncertain"])
+        self.assertEqual(receipt["uncertain_reason"], "catalogue confidence below 0.90")
+
+    def test_retry_identify_accepts_only_a_confident_bound_label_read(self):
+        self.runners["label"] = lambda files: {
+            "provider": "mock-router", "model": "mock-vision", "call_id": "label-1",
+            "timestamp": now(), "input_hashes": [sha(files[0])],
+            "routing": routing(), "usage": {"tokens_input": 5, "tokens_output": 3},
+            "output": {"tank_id": "2 BT 12", "tank_confidence": 0.97,
+                       "photo_date": "14/10/2026", "date_confidence": 0.95, "reasons": []},
+        }
+        adapters, _ = self.make()
+        record = adapters["intake"](self.batch, {})["fish"][0]
+        crop = (self.batch / "evidence" / "label-crops" /
+                f"{record['sha256']}-label.png")
+        crop.parent.mkdir(parents=True, exist_ok=True)
+        crop.write_bytes(b"label-crop-fixture")
+        decision = adapters["identify"](record, self.batch)
+        entry = {"source_path": record["path"], "source_sha256": record["sha256"],
+                 **decision}
+        retried = adapters["retry_identify"](entry, self.batch)
+        self.assertFalse(retried["uncertain"])
+        self.assertEqual(retried["tank_id"], "2BT12")
+        self.assertEqual(retried["photo_date"], "2026-10-14")
+        self.assertEqual(retried["proposed_title"], "2BT12 - Blue Red Marble Halfmoon Male")
+        receipt = json.loads(Path(retried["catalogue_evidence_path"]).read_text())
+        self.assertFalse(receipt["uncertain"])
+        self.assertEqual(receipt["input_hashes"], [sha(crop)])
+
+    def test_retry_identify_stays_uncertain_on_low_confidence_label_read(self):
+        self.runners["label"] = lambda files: {
+            "provider": "mock-router", "model": "mock-vision", "call_id": "label-low",
+            "timestamp": now(), "input_hashes": [sha(files[0])],
+            "routing": routing(), "usage": {},
+            "output": {"tank_id": "2 BT 12", "tank_confidence": 0.80,
+                       "photo_date": "14/10/2026", "date_confidence": 0.95, "reasons": []},
+        }
+        adapters, _ = self.make()
+        record = adapters["intake"](self.batch, {})["fish"][0]
+        crop = (self.batch / "evidence" / "label-crops" /
+                f"{record['sha256']}-label.png")
+        crop.parent.mkdir(parents=True, exist_ok=True)
+        crop.write_bytes(b"label-crop-fixture")
+        decision = adapters["identify"](record, self.batch)
+        entry = {"source_path": record["path"], "source_sha256": record["sha256"],
+                 **decision}
+        retried = adapters["retry_identify"](entry, self.batch)
+        self.assertTrue(retried["uncertain"])
+        self.assertIsNone(retried["proposed_title"])
+        receipt = json.loads(Path(retried["catalogue_evidence_path"]).read_text())
+        self.assertTrue(receipt["uncertain"])
+
+    def test_retry_identify_never_calls_for_unsuitable_fish_components(self):
+        calls = {"label": 0}
+        self.runners["label"] = lambda files: (
+            calls.__setitem__("label", calls["label"] + 1) or None)
+        adapters, _ = self.make()
+        record = adapters["intake"](self.batch, {})["fish"][0]
+        unsuitable = {"source_path": record["path"], "source_sha256": record["sha256"],
+                      "fish_name": "", "tail_type": "Halfmoon", "sex": "Male",
+                      "notes": ["identification uncertain"]}
+        retried = adapters["retry_identify"](unsuitable, self.batch)
+        self.assertTrue(retried["uncertain"])
+        self.assertEqual(calls["label"], 0)
 
     def test_catalogue_rejects_unattested_unknown_or_predating_evidence(self):
         original = self.runners["catalogue"]
@@ -412,6 +478,67 @@ class StrictAdapterTests(unittest.TestCase):
         too_many = [dict(self.selected[0], sha256=f"{index:064x}") for index in range(21)]
         with self.assertRaisesRegex(strict_mod.StrictAdapterError, "production maximum"):
             self.make(selected_sources=too_many)
+
+    def test_eligibility_enforces_the_zero_deny_tracked_baseline(self):
+        adapters, _ = self.make()
+        verdict = adapters["eligibility"]({"tank_id": "2BT12"}, {}, self.batch)
+        self.assertTrue(verdict["eligible"])
+        self.assertEqual(verdict["product"]["before"]["inventory"], 0)
+
+        product = self.product()
+        cases = [
+            ({**product["before"], "inventory": 1}, "inventory baseline is 1"),
+            ({**product["before"], "inventory_policy": "CONTINUE"}, "policy is not DENY"),
+            ({**product["before"], "tracked": False}, "not tracked"),
+        ]
+        for before, reason in cases:
+            with self.subTest(reason=reason):
+                self.runners["resolve"] = lambda entry, before=before: {
+                    "status": "RESOLVED",
+                    "product": {**self.product(), "before": before},
+                }
+                adapters, _ = self.make()
+                verdict = adapters["eligibility"]({"tank_id": "2BT12"}, {}, self.batch)
+                self.assertFalse(verdict["eligible"])
+                self.assertIn(reason, verdict["reason"])
+
+    def test_eligibility_retries_transient_errors_but_never_weakens_the_gate(self):
+        attempts = {"count": 0}
+
+        def flaky(entry):
+            attempts["count"] += 1
+            if attempts["count"] < 3:
+                raise RuntimeError("transient bridge error")
+            return {"status": "RESOLVED", "product": self.product()}
+
+        self.runners["resolve"] = flaky
+        self.runners["eligibility_retry_delay_seconds"] = 0
+        adapters, _ = self.make()
+        verdict = adapters["eligibility"]({"tank_id": "2BT12"}, {}, self.batch)
+        self.assertTrue(verdict["eligible"])
+        self.assertEqual(attempts["count"], 3)
+
+        self.runners["resolve"] = lambda entry: {"status": "AMBIGUOUS"}
+        adapters, _ = self.make()
+        verdict = adapters["eligibility"]({"tank_id": "2BT12"}, {}, self.batch)
+        self.assertFalse(verdict["eligible"])
+        self.assertIn("not unique", verdict["reason"])
+
+    def test_eligibility_uses_the_standing_policy_inventory_rule(self):
+        class Policy:
+            def inventory_rule(self):
+                return {"allowed_from": [0], "require_deny": False,
+                        "require_tracked": False}
+
+        self.runners["resolve"] = lambda entry: {
+            "status": "RESOLVED",
+            "product": {**self.product(),
+                        "before": {**self.product()["before"],
+                                   "inventory_policy": "CONTINUE", "tracked": False}},
+        }
+        adapters, _ = self.make(policy=Policy())
+        verdict = adapters["eligibility"]({"tank_id": "2BT12"}, {}, self.batch)
+        self.assertTrue(verdict["eligible"])
 
 
 if __name__ == "__main__":

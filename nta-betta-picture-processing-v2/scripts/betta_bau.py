@@ -308,6 +308,45 @@ def _owned_active_batches(config: dict) -> tuple[list[dict], list[dict]]:
     return owned, unmanaged
 
 
+def _zero_mutation_terminal_state(state: object) -> bool:
+    """True when a terminal process provably performed no Shopify mutation.
+
+    A batch where every fish was quarantined and nothing executed cannot produce
+    the archive receipt that the finalization gate requires, because there is no
+    manifest/readback evidence to bind.  It is safe to resolve it as a truthful
+    terminal PARTIAL: no write happened, so no write verification is owed.
+    """
+    if not isinstance(state, dict):
+        return False
+    if state.get("status") not in ("COMPLETE", "PARTIAL"):
+        return False
+    if state.get("executed"):
+        return False
+    if isinstance(state.get("archive_receipt"), dict):
+        return False
+    fish = state.get("fish")
+    if not isinstance(fish, dict) or not fish:
+        return False
+    if not all(isinstance(entry, dict) for entry in fish.values()):
+        return False
+    return all(entry.get("status") in ("QUARANTINED", "FAILED")
+               for entry in fish.values())
+
+
+def _terminal_summary(state: dict) -> dict:
+    """Summarise a terminal process state without altering it."""
+    fish = state.get("fish") or {}
+    return {
+        "batch_id": state.get("batch_id"),
+        "stage": state.get("stage", "UNKNOWN"),
+        "status": state.get("status", "PARTIAL"),
+        "published": len(state.get("executed") or []),
+        "quarantined": sum(1 for entry in fish.values() if isinstance(entry, dict)
+                           and entry.get("status") == "QUARANTINED"),
+        "manifest_sha256": state.get("manifest_sha256"),
+    }
+
+
 def _resumable(entry: dict) -> bool:
     batch_dir = Path(entry["path"])
     outcome_path = batch_dir / "state" / "bau-outcome.json"
@@ -468,6 +507,36 @@ def _verify_finalization(result: object, batch_dir: Path, config: dict) -> dict:
     return result
 
 
+def _reap_zero_mutation_batch(config: dict, entry: dict, seeded: int, *, deps: dict) -> dict:
+    """Resolve one provably mutation-free terminal batch without reopening it."""
+    state = entry["process"]
+    summary = _terminal_summary(state)
+    if summary["published"]:
+        raise DispatcherError("zero-mutation reconciliation found published fish")
+    finalized = dict(summary)
+    finalized["finalization"] = {
+        "status": "NOT_REQUIRED_NO_MUTATIONS",
+        "reason": "no publishable fish and no Shopify mutations were performed",
+    }
+    actionable = _actionable_status(summary)
+    outcome = {"schema": OUTCOME_SCHEMA, "recorded_at": _utc_now(),
+               "actionable_status": actionable, "resumable": False, "summary": finalized}
+    _atomic_write(Path(entry["path"]) / "state" / "bau-outcome.json", outcome)
+    closer = deps.get("close_batch", betta_batches.close_batch)
+    close_status = (betta_batches.COMPLETE if actionable == "COMPLETE"
+                    else betta_batches.ABANDONED)
+    closer(Path(config["paths"]["batches"]), entry["batch_id"], close_status)
+    notification = notify_discord(
+        config, Path(entry["path"]), summary,
+        command_runner=deps.get("command_runner", _default_command_runner),
+    )
+    result = dict(summary)
+    result.update({"status": "RECONCILED", "actionable_status": actionable,
+                   "reconciled": True, "finalization": finalized["finalization"],
+                   "notification": notification, "seeded_hashes": seeded})
+    return result
+
+
 def _finalize_if_required(config: dict, entry: dict, summary: dict, *, deps: dict) -> dict:
     """Apply the final immutable audit gate after process/archive completion."""
     if summary.get("status") not in ("COMPLETE", "PARTIAL"):
@@ -479,6 +548,20 @@ def _finalize_if_required(config: dict, entry: dict, summary: dict, *, deps: dic
         return summary
     pending = dict(summary)
     if not _positive_archive_receipt(Path(entry["path"])):
+        # A terminal batch that provably performed no Shopify mutation cannot
+        # produce the archive receipt this gate requires.  Resolve it truthfully
+        # as PARTIAL; the mutating-batch archive contract is unchanged.
+        try:
+            state = _read_json(Path(entry["path"]) / "state" / "process.json")
+        except (OSError, ValueError, DispatcherError):
+            state = None
+        if _zero_mutation_terminal_state(state):
+            resolved = dict(summary)
+            resolved["finalization"] = {
+                "status": "NOT_REQUIRED_NO_MUTATIONS",
+                "reason": "no publishable fish and no Shopify mutations were performed",
+            }
+            return resolved
         pending.update({"status": "FINALIZATION_PENDING",
                         "reason": "verified archive receipt is not available"})
         return pending
@@ -676,7 +759,22 @@ def run_once(config: dict, *, deps: Optional[dict] = None) -> dict:
                              entry["sources"]["selected_sources"])
         elif nonresumable:
             # A terminal dispatcher batch left ACTIVE in the lifecycle registry
-            # is not permission to reopen it or allocate around it.
+            # is not permission to reopen it or allocate around it.  The single
+            # self-healing exception is a batch that provably performed no
+            # Shopify mutation; it is resolved as a truthful terminal PARTIAL
+            # (one batch per run) so the dispatcher cannot deadlock on it.
+            reapable = []
+            for candidate in sorted(nonresumable, key=lambda value: value["batch_id"]):
+                try:
+                    state = _read_json(Path(candidate["path"]) / "state" / "process.json")
+                except (OSError, ValueError, DispatcherError):
+                    state = None
+                if _zero_mutation_terminal_state(state):
+                    record = dict(candidate)
+                    record["process"] = state
+                    reapable.append(record)
+            if reapable:
+                return _reap_zero_mutation_batch(config, reapable[0], seeded, deps=deps)
             result = {"status": "BLOCKED", "reason": "owned terminal batch requires reconciliation",
                       "batch_ids": [e["batch_id"] for e in nonresumable], "seeded_hashes": seeded}
             result["notification"] = _notify_intake_block(
@@ -717,6 +815,24 @@ def run_once(config: dict, *, deps: Optional[dict] = None) -> dict:
             summary = {"batch_id": entry["batch_id"], "stage": "DISPATCH",
                        "status": "BLOCKED", "published": 0, "quarantined": 0,
                        "error_type": type(exc).__name__}
+            # Enrich the terminal summary from the durable process state without
+            # altering it, so a failure report cannot understate what happened.
+            try:
+                process_state = _read_json(Path(entry["path"]) / "state" / "process.json")
+                summary.update({
+                    "stage": process_state.get("stage", "DISPATCH"),
+                    "published": len(process_state.get("executed") or []),
+                    "quarantined": sum(
+                        1 for value in (process_state.get("fish") or {}).values()
+                        if isinstance(value, dict)
+                        and value.get("status") == "QUARANTINED"),
+                })
+            except (OSError, ValueError, DispatcherError):
+                pass
+            print(json.dumps({"dispatch_error": str(exc)[:500],
+                              "error_type": type(exc).__name__,
+                              "batch_id": entry["batch_id"]}, sort_keys=True),
+                  file=sys.stderr)
 
         summary = _finalize_if_required(config, entry, summary, deps=deps)
 

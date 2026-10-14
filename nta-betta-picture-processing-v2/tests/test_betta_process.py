@@ -88,6 +88,50 @@ class FakeAdapters:
         self.calls["archive"] += 1
 
 
+class AutomaticPolicy:
+    """Minimal automatic-batch policy fixture (no uploader manifest involved)."""
+
+    def __init__(self):
+        self.data = {"automatic_batch_authorisation": True}
+
+    def paid_generation_authorised(self):
+        return True
+
+    def authorise_manifest(self, manifest_path, receipt_path, expected_sha256=None):
+        return {"kind": "fixture", "manifest_sha256": expected_sha256}
+
+
+class AutomaticAdapters(FakeAdapters):
+    """FakeAdapters plus the automatic-only pre-generation eligibility seam."""
+
+    def __init__(self, *, eligibility=None, **kwargs):
+        super().__init__(**kwargs)
+        self.eligibility_results = eligibility or {}
+        self.calls["resolve"] = 0
+
+    def eligibility(self, entry, state, batch_dir):
+        return self.eligibility_results.get(
+            entry["tank_id"],
+            {"eligible": True, "reason": "fixture baseline",
+             "product": {"id": f"gid://shopify/Product/{entry['tank_id']}"}})
+
+    def resolve(self, entry, batch_dir):
+        self.calls["resolve"] += 1
+        return super().resolve(entry, batch_dir)
+
+    def build_manifest(self, state, batch_dir):
+        base = super().build_manifest(state, batch_dir)
+        path = Path(batch_dir) / "manifest" / "fixture.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(base["manifest"]), encoding="utf-8")
+        base["manifest_path"] = str(path)
+        return base
+
+    def archive(self, state, batch_dir):
+        self.calls["archive"] += 1
+        return {"status": "ARCHIVED", "batch_status": "COMPLETE"}
+
+
 class OrchestratorTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -101,11 +145,11 @@ class OrchestratorTests(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    def drive(self, adapters, pol):
+    def drive(self, adapters, pol, include=()):
+        names = ("intake", "identify", "generate", "finish", "qa", "resolve",
+                 "build_manifest", "execute", "reconcile", "telemetry", "archive")
         return bp.process_batch(self.batch_dir, self.batch_id, adapters={
-            m: getattr(adapters, m) for m in
-            ("intake", "identify", "generate", "finish", "qa", "resolve",
-             "build_manifest", "execute", "reconcile", "telemetry", "archive")}, policy=pol)
+            m: getattr(adapters, m) for m in names + tuple(include)}, policy=pol)
 
     def test_full_happy_path_completes(self):
         adapters = FakeAdapters(tanks=["2BT12", "3BT21"])
@@ -204,6 +248,102 @@ class OrchestratorTests(unittest.TestCase):
         entry = next(iter(state["fish"].values()))
         self.assertEqual(entry["status"], bp.FISH_RECONCILIATION_PENDING)
         self.assertEqual(entry["pending_kind"], "generation")
+
+    def test_focused_label_retry_recovers_an_uncertain_identification(self):
+        adapters = FakeAdapters(tanks=["2BT12"], uncertain={"2BT12"})
+        retries = {"count": 0}
+
+        def retry(entry, batch_dir):
+            retries["count"] += 1
+            return {"uncertain": False, "tank_id": "2BT12", "photo_date": "2026-10-09",
+                    "proposed_title": "2BT12 - Blue Red Marble Halfmoon Male"}
+
+        adapters.retry_identify = retry
+        summary = self.drive(adapters, policy(), include=("retry_identify",))
+        self.assertEqual(summary["status"], "COMPLETE")
+        self.assertEqual(summary["published"], 1)
+        self.assertEqual(adapters.calls["generate"], 1)
+        self.assertEqual(retries["count"], 1)
+        state = json.loads((self.batch_dir / "state" / "process.json").read_text())
+        entry = next(iter(state["fish"].values()))
+        self.assertEqual(entry["tank_id"], "2BT12")
+        self.assertEqual(entry["notes"], ["focused label retry accepted"])
+
+    def test_focused_label_retry_runs_once_and_never_repeats(self):
+        adapters = FakeAdapters(tanks=["2BT12"], uncertain={"2BT12"})
+        retries = {"count": 0}
+
+        def retry(entry, batch_dir):
+            retries["count"] += 1
+            return {"uncertain": True, "tank_id": None, "photo_date": None}
+
+        adapters.retry_identify = retry
+        first = self.drive(adapters, policy(), include=("retry_identify",))
+        second = self.drive(adapters, policy(), include=("retry_identify",))
+        self.assertEqual(first["quarantined"], 1)
+        self.assertEqual(second["quarantined"], 1)
+        self.assertEqual(retries["count"], 1)
+        self.assertEqual(adapters.calls["generate"], 0)
+
+    def test_focused_label_retry_rechecks_duplicate_tank_ids(self):
+        adapters = FakeAdapters(tanks=["2BT12", "3BT21"], uncertain={"3BT21"})
+
+        def retry(entry, batch_dir):
+            return {"uncertain": False, "tank_id": "2BT12", "photo_date": "2026-10-09",
+                    "proposed_title": "2BT12 - Blue Red Marble Halfmoon Male"}
+
+        adapters.retry_identify = retry
+        summary = self.drive(adapters, policy(), include=("retry_identify",))
+        self.assertEqual(summary["published"], 0)
+        self.assertEqual(summary["quarantined"], 2)
+
+    def test_focused_label_retry_failure_is_recorded_without_crashing(self):
+        adapters = FakeAdapters(tanks=["2BT12"], uncertain={"2BT12"})
+
+        def retry(entry, batch_dir):
+            raise RuntimeError("label crop call failed")
+
+        adapters.retry_identify = retry
+        summary = self.drive(adapters, policy(), include=("retry_identify",))
+        self.assertEqual(summary["quarantined"], 1)
+        state = json.loads((self.batch_dir / "state" / "process.json").read_text())
+        entry = next(iter(state["fish"].values()))
+        self.assertEqual(entry["notes"], ["focused label retry failed"])
+        self.assertIn("label crop call failed", entry["identify_error"])
+
+    def test_automatic_eligibility_quarantines_ineligible_before_any_spend(self):
+        adapters = AutomaticAdapters(
+            tanks=["2BT12", "3BT21"],
+            eligibility={"3BT21": {
+                "eligible": False,
+                "reason": ("shopify inventory baseline is 1; "
+                           "automatic scope permits [0] to 1 only"),
+            }})
+        summary = self.drive(adapters, AutomaticPolicy(), include=("eligibility",))
+        self.assertEqual(adapters.calls["generate"], 1)
+        self.assertEqual(summary["quarantined"], 1)
+        self.assertEqual(summary["published"], 1)
+        self.assertEqual(adapters.calls["resolve"], 0)  # pre-resolved; no second read
+        state = json.loads((self.batch_dir / "state" / "process.json").read_text())
+        entries = {e["tank_id"]: e for e in state["fish"].values()}
+        self.assertEqual(entries["3BT21"]["status"], bp.FISH_QUARANTINED)
+        self.assertIn("pre-generation ineligible", " ".join(entries["3BT21"]["notes"]))
+        self.assertIn("inventory baseline is 1", " ".join(entries["3BT21"]["notes"]))
+
+    def test_automatic_runs_without_eligibility_adapter_are_unchanged(self):
+        adapters = AutomaticAdapters(tanks=["2BT12"])
+        summary = self.drive(adapters, AutomaticPolicy())
+        self.assertEqual(summary["status"], "COMPLETE")
+        self.assertEqual(adapters.calls["generate"], 1)
+        self.assertEqual(adapters.calls["resolve"], 1)
+
+    def test_supervised_runs_do_not_apply_the_automatic_eligibility_gate(self):
+        adapters = AutomaticAdapters(
+            tanks=["2BT12"],
+            eligibility={"2BT12": {"eligible": False, "reason": "would quarantine"}})
+        summary = self.drive(adapters, policy(), include=("eligibility",))
+        self.assertEqual(summary["status"], "COMPLETE")
+        self.assertEqual(adapters.calls["generate"], 1)
 
     def test_shopify_uncertainty_uses_only_read_only_reconciliation(self):
         adapters = FakeAdapters(tanks=["2BT12"])

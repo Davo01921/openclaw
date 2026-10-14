@@ -5,11 +5,14 @@ import re
 from datetime import date, datetime
 from decimal import Decimal
 
+# Owner-approved tank namespaces: legacy numeric BT tanks and APE tanks.
+TANK_PATTERN = r"(?:\d+BT\d+|APE\d+)"
+
 
 def normalize_tank(raw: str) -> str:
     text = re.sub(r"[\s-]+", "", raw.upper().strip())
 
-    if not re.fullmatch(r"\d+BT\d+", text):
+    if not re.fullmatch(TANK_PATTERN, text):
         raise ValueError(f"Invalid or incomplete tank ID: {raw!r}")
 
     return text

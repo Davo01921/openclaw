@@ -40,6 +40,16 @@ QA_PROMPT = (
     "Fail uncertain identity. Apply NTA Betta image standard. No invented evidence."
 )
 
+LABEL_PROMPT = (
+    "JSON only. This is a crop of an Australian handwritten Betta tank card. "
+    "Return {\"tank_id\":\"\",\"tank_confidence\":0.0,"
+    "\"photo_date\":\"D/M/YYYY\",\"date_confidence\":0.0,\"reasons\":[]}. "
+    "Tank IDs are digits then BT then digits (for example 2BT14), or APE then "
+    "digits (for example APE16); do not turn a handwritten 5 into S. Dates are "
+    "Australian day/month/year, so 9/10/2026 means 9 October 2026. "
+    "Read only the physical card. Never infer from adjacent tanks."
+)
+
 
 def digest(path: Path) -> str:
     h = hashlib.sha256()
@@ -133,11 +143,15 @@ def run_review(files: list[Path], mode: str, agent: str, models: list[str]) -> d
     if models:
         raise RuntimeError("vision model overrides are disabled for attested BAU review")
     route = resolve_route(agent)
-    prompt = CATALOGUE_PROMPT if mode == "catalogue" else QA_PROMPT
+    prompt = {"catalogue": CATALOGUE_PROMPT, "qa": QA_PROMPT,
+              "label": LABEL_PROMPT}[mode]
     errors = []
     child_env = os.environ.copy()
     preferred = ["/opt/homebrew/opt/node/bin", "/opt/homebrew/bin"]
     child_env["PATH"] = os.pathsep.join(preferred + child_env.get("PATH", "").split(os.pathsep))
+    # Multimodal structured-output calls can legitimately exceed one minute; the
+    # caller applies its own bounded retries.  Keep this a hard ceiling only.
+    timeout_seconds = int(os.getenv("BETTA_VISION_TIMEOUT_SECONDS", "180"))
     for model in [None]:
         cmd = [os.getenv("BETTA_OPENCLAW", "/opt/homebrew/bin/openclaw"), "infer", "model", "run", "--agent", agent]
         if model:
@@ -145,7 +159,7 @@ def run_review(files: list[Path], mode: str, agent: str, models: list[str]) -> d
         cmd.extend(["--prompt", prompt, "--json"])
         for path in files:
             cmd.extend(["--file", str(path)])
-        completed = subprocess.run(cmd, capture_output=True, text=True, timeout=60, env=child_env)
+        completed = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout_seconds, env=child_env)
         try:
             envelope = json.loads(completed.stdout)
         except json.JSONDecodeError:
@@ -193,12 +207,12 @@ def run_review(files: list[Path], mode: str, agent: str, models: list[str]) -> d
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--mode", choices=("catalogue", "qa"), required=True)
+    parser.add_argument("--mode", choices=("catalogue", "qa", "label"), required=True)
     parser.add_argument("--file", action="append", type=Path, required=True)
     parser.add_argument("--agent", default="fred")
     parser.add_argument("--models", default=os.getenv("BETTA_VISION_MODELS", DEFAULT_MODELS))
     args = parser.parse_args()
-    expected = 1 if args.mode == "catalogue" else 3
+    expected = 1 if args.mode in ("catalogue", "label") else 3
     if len(args.file) != expected or not all(path.is_file() for path in args.file):
         print(f"expected {expected} existing image file(s)", file=sys.stderr)
         return 2

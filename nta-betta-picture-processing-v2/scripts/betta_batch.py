@@ -112,7 +112,8 @@ def expected_catalogue_title(cat: dict) -> str:
     tank_id = str(cat.get("tank_id") or "").strip()
     fish_name = " ".join(str(cat.get("fish_name") or "").split())
     tail_type = " ".join(str(cat.get("tail_type") or "").split())
-    require(re.fullmatch(r"[1-9]\d*BT[1-9]\d*", tank_id), "canonical tank ID required for title")
+    require(re.fullmatch(r"(?:[1-9]\d*BT[1-9]\d*|APE\d+)", tank_id),
+            "canonical tank ID required for title")
     require(fish_name, "catalogue fish_name required for title")
     require(tail_type, "catalogue tail_type required for title")
     require(" - " not in fish_name and " - " not in tail_type, "title components must not contain title separator")

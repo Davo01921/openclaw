@@ -247,22 +247,53 @@ class StrictBAUAdapters(base.Adapters):
         return {"fish": fish, "selected_source_count": len(fish)}
 
     # -- complete, attested catalogue ------------------------------------ #
+    def _vision_call(self, files: list, mode: str, *, attempts: int = 2) -> dict:
+        """One moderation-free vision call with bounded retries on call failures.
+
+        Retries cover transport-level failures (timeout, nonzero exit, invalid
+        envelope JSON); deterministic evidence/quality outcomes are never retried
+        here.
+        """
+        runner = self.runners.get(mode) if mode == "label" else self.runners.get("catalogue")
+        delay = float(self.runners.get("vision_retry_delay_seconds", 2.0))
+        last_error: Optional[Exception] = None
+        for attempt in range(1, attempts + 1):
+            try:
+                if runner is not None:
+                    evidence = runner([Path(value) for value in files])
+                else:
+                    argv = [sys.executable, str(_SCRIPT_DIR / "vision_review.py"),
+                            "--mode", mode]
+                    for value in files:
+                        argv.extend(["--file", str(value)])
+                    evidence = json.loads(base._subprocess_runner(argv))
+                if not isinstance(evidence, dict):
+                    raise StrictAdapterError(f"{mode} returned non-object evidence")
+                return evidence
+            except Exception as exc:  # transport failure: bounded retry
+                last_error = exc
+                if attempt < attempts and delay > 0:
+                    time.sleep(delay)
+        raise StrictAdapterError(
+            f"{mode} call failed after {attempts} attempts: {last_error}") from last_error
+
     def identify(self, record, batch_dir):
         source = Path(record["path"])
-        runner = self.runners.get("catalogue")
         started = time.monotonic()
         receipt_path = Path(batch_dir) / "evidence" / "catalogue" / f"{record['sha256']}.json"
         reused = receipt_path.is_file()
         if reused:
             evidence = json.loads(receipt_path.read_text())
-        elif runner is None:
-            raw = base._subprocess_runner([
-                sys.executable, str(_SCRIPT_DIR / "vision_review.py"), "--mode", "catalogue",
-                "--file", str(source),
-            ])
-            evidence = json.loads(raw)
         else:
-            evidence = runner([source])
+            try:
+                evidence = self._vision_call([source], "catalogue")
+            except StrictAdapterError as exc:
+                try:
+                    self._record("identify", "ERROR", tank=source.stem, started=started,
+                                 error=str(exc))
+                except Exception:  # never mask the original failure
+                    pass
+                raise
         if not isinstance(evidence, dict):
             raise StrictAdapterError("catalogue returned non-object evidence")
         _attested_call(evidence, [record["sha256"]], "catalogue",
@@ -274,30 +305,52 @@ class StrictBAUAdapters(base.Adapters):
         output = evidence.get("output")
         if not isinstance(output, dict):
             raise StrictAdapterError("catalogue output object missing")
-        confidence_output = dict(output)
-        confidence_output.setdefault("tank_id_confidence", output.get("tank_confidence"))
-        confidence_output.setdefault("photo_date_confidence", output.get("date_confidence"))
-        for field in ("tank_id", "photo_date"):
-            _confidence(confidence_output, field)
-        if output.get("one_fish_visible") is not True or output.get("uncertainty_reasons"):
-            raise StrictAdapterError("catalogue fish identity is uncertain")
-        try:
-            tank = label_mod.normalize_tank(output.get("tank_id"))
-            photo_date = output.get("photo_date")
-            if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(photo_date or "")):
-                photo_date = label_mod.normalize_date(photo_date)
-        except (TypeError, ValueError) as exc:
-            raise StrictAdapterError("catalogue tank/date is invalid") from exc
+
+        # Identity-quality outcomes (low confidence, unreadable or malformed
+        # label, unusable title components) are returned as a truthful uncertain
+        # decision for the orchestrator to quarantine and retry with a focused
+        # label crop.  Only call/attestation failures raise.
+        uncertain_reason: Optional[str] = None
+        tank = None
+        photo_date = None
         fish_name = str(output.get("fish_name") or "").strip()
         tail_type = str(output.get("tail_type") or "").strip()
         sex = str(output.get("sex") or "").strip().title()
-        if (not TITLE_COMPONENT_RE.fullmatch(fish_name)
+        title = None
+        try:
+            tank = label_mod.normalize_tank(output.get("tank_id")) if output.get("tank_id") else None
+            photo_date = output.get("photo_date")
+            if photo_date is not None and not re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(photo_date)):
+                photo_date = label_mod.normalize_date(photo_date)
+        except (TypeError, ValueError):
+            tank, photo_date = None, None
+        confidence_output = dict(output)
+        confidence_output.setdefault("tank_id_confidence", output.get("tank_confidence"))
+        confidence_output.setdefault("photo_date_confidence", output.get("date_confidence"))
+        confidence_values = {}
+        for field in ("tank_id", "photo_date"):
+            try:
+                confidence_values[field] = _confidence(confidence_output, field)
+            except StrictAdapterError:
+                confidence_values[field] = None
+        if output.get("one_fish_visible") is not True:
+            uncertain_reason = "one fish not confirmed visible"
+        elif confidence_values["tank_id"] is None or confidence_values["photo_date"] is None:
+            uncertain_reason = "catalogue confidence below 0.90"
+        elif not tank or not photo_date:
+            uncertain_reason = "catalogue tank/date is invalid"
+        elif (not TITLE_COMPONENT_RE.fullmatch(fish_name)
                 or not TITLE_COMPONENT_RE.fullmatch(tail_type)
                 or sex not in {"Male", "Female"}):
-            raise StrictAdapterError("catalogue title components are incomplete or invalid")
-        if tank.lower() in fish_name.lower() or sex.lower() in fish_name.lower():
-            raise StrictAdapterError("fish_name contains a deterministic title component")
-        title = batch_mod.expected_catalogue_title({**output, "tank_id": tank})
+            uncertain_reason = "catalogue title components are incomplete or invalid"
+        elif tank.lower() in fish_name.lower() or sex.lower() in fish_name.lower():
+            uncertain_reason = "fish_name contains a deterministic title component"
+        else:
+            try:
+                title = batch_mod.expected_catalogue_title({**output, "tank_id": tank})
+            except (TypeError, ValueError):
+                uncertain_reason = "deterministic title could not be composed"
+
         receipt = {
             "batch_id": self.batch_id,
             "source_identity": {"path": str(source.resolve()), "sha256": record["sha256"]},
@@ -308,21 +361,192 @@ class StrictBAUAdapters(base.Adapters):
                 "fish_name": fish_name, "tail_type": tail_type, "sex": sex,
                 "title": title,
             },
+            "uncertain": uncertain_reason is not None,
+            "uncertain_reason": uncertain_reason,
             "routing": evidence.get("routing"), "usage": evidence.get("usage"),
             "attempts": evidence.get("attempts") or [],
         }
         receipt_path = (Path(batch_dir) / "evidence" / "catalogue" /
                         f"{record['sha256']}.json")
-        _write_immutable_json(receipt_path, receipt)
         if not reused:
-            self._record_vision_evidence("identify", tank, evidence, started)
-        return {
+            _write_immutable_json(receipt_path, receipt)
+        if not reused:
+            self._record_vision_evidence(
+                "identify", tank or source.stem, evidence, started)
+        result = {
             "tank_id": tank, "photo_date": photo_date, "fish_name": fish_name,
             "tail_type": tail_type, "sex": sex, "title": title,
-            "uncertain": False, "catalogue_evidence_path": str(receipt_path),
+            "uncertain": uncertain_reason is not None,
+            "uncertain_reason": uncertain_reason,
+            "catalogue_evidence_path": str(receipt_path),
             "catalogue_evidence_sha256": _sha(receipt_path),
             "date_entered": record.get("date_entered"),
         }
+        return result
+
+    def retry_identify(self, entry, batch_dir):
+        """One focused top-label crop re-read for otherwise uncertain fish.
+
+        The crop covers the physical tank card only; a confident reading binds
+        the same source hash and must pass the same attestation and confidence
+        gates as the catalogue read before it can replace an uncertain result.
+        """
+        source = Path(entry["source_path"]).resolve()
+        digest = entry.get("source_sha256")
+        if not isinstance(digest, str) or _sha(source) != digest:
+            raise StrictAdapterError("label retry source changed")
+        fish_name = str(entry.get("fish_name") or "")
+        tail_type = str(entry.get("tail_type") or "")
+        sex = str(entry.get("sex") or "Male")
+        if (not TITLE_COMPONENT_RE.fullmatch(fish_name)
+                or not TITLE_COMPONENT_RE.fullmatch(tail_type)
+                or sex not in {"Male", "Female"}):
+            return {"tank_id": None, "photo_date": None, "uncertain": True,
+                    "proposed_title": None,
+                    "uncertain_reason": "fish components unsuitable for label retry"}
+        crop_dir = Path(batch_dir) / "evidence" / "label-crops"
+        crop_dir.mkdir(parents=True, exist_ok=True)
+        crop = crop_dir / f"{digest}-label.png"
+        if not crop.is_file():
+            temporary = crop_dir / (crop.name + ".part")
+            try:
+                from PIL import Image  # local import: only needed for the crop
+                with Image.open(source) as image:
+                    width, height = image.size
+                    upper = image.convert("RGB").crop(
+                        (0, 0, width, max(1, int(height * 0.30))))
+                    upper.save(temporary, format="PNG")
+                os.replace(temporary, crop)
+            except Exception as exc:
+                if temporary.exists():
+                    temporary.unlink()
+                raise StrictAdapterError(
+                    f"label crop could not be created: {exc}") from exc
+        crop_sha = _sha(crop)
+        started = time.monotonic()
+        try:
+            evidence = self._vision_call([crop], "label")
+        except StrictAdapterError as exc:
+            try:
+                self._record("identify_label_retry", "ERROR",
+                             tank=entry.get("tank_id") or source.stem,
+                             started=started, error=str(exc))
+            except Exception:
+                pass
+            raise
+        _attested_call(evidence, [crop_sha], "catalogue label retry",
+                       not_before=self.evidence_not_before)
+        output = evidence.get("output")
+        if not isinstance(output, dict):
+            raise StrictAdapterError("catalogue label retry output object missing")
+        tank = None
+        photo_date = None
+        try:
+            tank = label_mod.normalize_tank(output.get("tank_id")) if output.get("tank_id") else None
+            photo_date = output.get("photo_date")
+            if photo_date is not None and not re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(photo_date)):
+                photo_date = label_mod.normalize_date(photo_date)
+        except (TypeError, ValueError):
+            tank, photo_date = None, None
+        tank_confidence = output.get("tank_confidence")
+        date_confidence = output.get("date_confidence")
+        uncertain = not tank or not photo_date
+        for value in (tank_confidence, date_confidence):
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                uncertain = True
+            elif not math.isfinite(float(value)) or float(value) < 0.90:
+                uncertain = True
+        title = None
+        if not uncertain:
+            try:
+                title = batch_mod.expected_catalogue_title({
+                    "tank_id": tank, "fish_name": fish_name,
+                    "tail_type": tail_type, "sex": sex,
+                })
+            except (TypeError, ValueError):
+                uncertain = True
+        receipt = {
+            "batch_id": self.batch_id,
+            "source_identity": {"path": str(source), "sha256": digest},
+            "crop_identity": {"path": str(crop), "sha256": crop_sha},
+            "provider": evidence["provider"], "model": evidence["model"],
+            "call_id": evidence["call_id"], "timestamp": evidence["timestamp"],
+            "input_hashes": [crop_sha],
+            "output": {**output, "tank_id": tank, "photo_date": photo_date,
+                       "title": title if not uncertain else None},
+            "uncertain": uncertain,
+            "routing": evidence.get("routing"), "usage": evidence.get("usage"),
+            "attempts": evidence.get("attempts") or [],
+        }
+        receipt_path = (Path(batch_dir) / "evidence" / "catalogue" /
+                        f"{digest}-label-retry.json")
+        _write_immutable_json(receipt_path, receipt)
+        self._record("identify_label_retry", "UNCERTAIN" if uncertain else "OK",
+                     tank=tank or entry.get("tank_id") or source.stem, started=started,
+                     provider=evidence.get("provider"), model=evidence.get("model"))
+        return {
+            "tank_id": tank if not uncertain else None,
+            "photo_date": photo_date if not uncertain else None,
+            "uncertain": uncertain, "proposed_title": title,
+            "tank_confidence": tank_confidence, "date_confidence": date_confidence,
+            "catalogue_evidence_path": str(receipt_path),
+            "catalogue_evidence_sha256": _sha(receipt_path),
+        }
+
+    # -- pre-generation eligibility (read-only, no spend) ----------------- #
+    def eligibility(self, entry, state, batch_dir):
+        """Resolve the exact product and enforce the standing 0-to-1 baseline.
+
+        Read-only: one fresh Shopify resolution with bounded retries.  Ineligible
+        fish carry a precise reason so the orchestrator quarantines them instead
+        of spending generation budget on a write the standing scope cannot
+        authorise.
+        """
+        tank = entry.get("tank_id")
+        if not tank:
+            return {"eligible": False, "reason": "tank identity is unresolved"}
+        runner = self.runners.get("resolve")
+        if runner is None:
+            raise StrictAdapterError("eligibility requires the Shopify resolve runner")
+        attempts = 3
+        delay = float(self.runners.get("eligibility_retry_delay_seconds", 1.0))
+        last_error: Optional[Exception] = None
+        resolved = None
+        for attempt in range(1, attempts + 1):
+            try:
+                resolved = runner(entry)
+                last_error = None
+                break
+            except Exception as exc:  # transient bridge/network errors retry
+                last_error = exc
+                if attempt < attempts and delay > 0:
+                    time.sleep(delay)
+                    delay = min(delay * 2, 4.0)
+        if last_error is not None:
+            return {"eligible": False,
+                    "reason": f"shopify resolution failed after {attempts} attempts: {last_error}"}
+        if not isinstance(resolved, dict) or resolved.get("status") != "RESOLVED":
+            return {"eligible": False, "reason": "shopify resolution is not unique"}
+        product = resolved.get("product")
+        if not isinstance(product, dict):
+            return {"eligible": False, "reason": "shopify resolution omitted the product snapshot"}
+        before = product.get("before")
+        if not isinstance(before, dict):
+            return {"eligible": False, "reason": "shopify resolution omitted the baseline"}
+        rule = self.policy.inventory_rule() if callable(
+            getattr(self.policy, "inventory_rule", None)) else {}
+        allowed_from = rule.get("allowed_from", [0])
+        available = before.get("inventory")
+        if available not in allowed_from:
+            return {"eligible": False,
+                    "reason": (f"shopify inventory baseline is {available!r}; "
+                               f"automatic scope permits {allowed_from} to 1 only")}
+        if rule.get("require_deny", True) and before.get("inventory_policy") != "DENY":
+            return {"eligible": False, "reason": "shopify inventory policy is not DENY"}
+        if rule.get("require_tracked", True) and before.get("tracked") is not True:
+            return {"eligible": False, "reason": "shopify inventory is not tracked"}
+        return {"eligible": True, "reason": "shopify baseline permits 0-to-1",
+                "product": product}
 
     # -- paid generation with durable, hash-bound receipt ---------------- #
     def _generation_receipt(self, tank: str, clean: Path, source: Path) -> Optional[dict]:
@@ -735,7 +959,8 @@ class StrictBAUAdapters(base.Adapters):
 def make_strict_adapters(**kwargs) -> dict:
     bundle = StrictBAUAdapters(**kwargs)
     return {name: getattr(bundle, name) for name in (
-        "intake", "identify", "generate", "finish", "qa", "resolve",
-        "build_manifest", "execute", "reconcile", "telemetry", "archive",
+        "intake", "identify", "retry_identify", "eligibility", "generate", "finish",
+        "qa", "resolve", "build_manifest", "execute", "reconcile", "telemetry",
+        "archive",
     )}
 
