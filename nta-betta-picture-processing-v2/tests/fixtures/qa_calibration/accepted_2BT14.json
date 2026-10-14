@@ -1,0 +1,29 @@
+{
+  "assertions": {
+    "body_anatomy": "FAIL",
+    "complete_framing": "PASS",
+    "hero_composition": "PASS",
+    "label": "PASS",
+    "realistic_texture": "PASS",
+    "reference_integrity": "PASS",
+    "regional_colour": "FAIL",
+    "same_identity": "FAIL",
+    "scale_markings": "FAIL",
+    "tail_fins_pose": "FAIL"
+  },
+  "calibrated_expectation": "PASS",
+  "calibrated_note": "Owner-accepted studio hero; failures were evidence-insufficiency and display-pose differences, not contradictions.",
+  "date": "2026-10-14",
+  "model": "gpt-5.6-sol",
+  "overall": "FAIL",
+  "owner_decision": "owner visually reviewed and accepted 2026-10-14 (discord message 1559824840394018847)",
+  "reasons": [
+    "Identity cannot be established: the source fish is dark, blurred, and lacks enough visible anatomical, scale, and fin detail for reliable comparison.",
+    "The hero presents sharply defined body anatomy, scale patterning, and fully spread fins that are not evidenced by the source.",
+    "The hero's saturated blue body and extensive red fins cannot be reliably verified from the dim source.",
+    "The third image appears to be the full original source and its tank label is consistent with the hero label: 2BT14 and 14/10/2026."
+  ],
+  "schema": "nta-betta-qa-calibration-fixture-v1",
+  "source_batch": "betta-20261014-161029-7e1j3n",
+  "tank_id": "2BT14"
+}

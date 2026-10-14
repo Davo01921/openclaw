@@ -29,16 +29,120 @@ CATALOGUE_PROMPT = (
     "Do not compose the Shopify title; deterministic code owns title formatting."
 )
 
-QA_PROMPT = (
-    "JSON only. Order: source, hero, original. Return {\"assertions\":{"
+QA_PROMPT_TEMPLATE = (
+    "JSON only. Order: prepared working photo (the fish as photographed, cropped and "
+    "tone-adjusted), hero candidate, untouched camera original. Return {{\"assertions\":{{"
     "\"same_identity\":\"PASS|FAIL\",\"body_anatomy\":\"PASS|FAIL\","
     "\"scale_markings\":\"PASS|FAIL\",\"regional_colour\":\"PASS|FAIL\","
     "\"tail_fins_pose\":\"PASS|FAIL\",\"complete_framing\":\"PASS|FAIL\","
     "\"realistic_texture\":\"PASS|FAIL\",\"hero_composition\":\"PASS|FAIL\","
-    "\"label\":\"PASS|FAIL\",\"reference_integrity\":\"PASS|FAIL\"},"
-    "\"overall\":\"PASS|FAIL\",\"reasons\":[]}. Third image must be full original source. "
-    "Fail uncertain identity. Apply NTA Betta image standard. No invented evidence."
+    "\"label\":\"PASS|FAIL\",\"reference_integrity\":\"PASS|FAIL\"}},"
+    "\"overall\":\"PASS|FAIL\",\"reasons\":[]}}. "
+    "The hero is a generated studio catalogue representation of the SAME individual fish "
+    "shown in the prepared and original photographs. Judge it as a professional product "
+    "photograph, not a forensic copy. The source photo may be dark, small, angled or "
+    "partially obscured inside an aquarium; that alone is not a failure. The hero is "
+    "produced under studio lighting on a near-black background, so it will generally "
+    "appear deeper, darker, richer and more contrasty than the in-tank source; treat "
+    "those tonal rendering differences as presentation, never as colour or marking "
+    "failures. "
+    "ACCEPTABLE and never a failure: a natural display posture with more spread fins than "
+    "the source; sharper detail, cleaner texture and deeper saturation of the SAME hues; "
+    "professional studio lighting; removal of tank water, debris, glare and background; "
+    "fine detail that the source cannot resolve when it does not contradict visible "
+    "evidence (note it in reasons instead). "
+    "same_identity FAILS only when the hero contradicts visible evidence: a different "
+    "colour family or swapped regional colour distribution; a different pattern class "
+    "(for example solid vs marble); a different body or tail form class; or, where the "
+    "source clearly shows distinctive individual markings, materially different markings. "
+    "body_anatomy FAILS for structural fabrication or distortion: extra or missing fins, "
+    "eyes or structures; duplicated parts; grossly changed proportions beyond what pose "
+    "or angle explains. "
+    "scale_markings FAILS when discrete markings visible in the source are missing or "
+    "moved, or prominent new discrete patterns are added where the source visibly shows "
+    "a plain coat; sharper, darker or more contrasted rendering of the SAME markings and "
+    "visible scale texture is never a failure. "
+    "regional_colour FAILS when the hue direction or its regional distribution is "
+    "contradicted (for example red body with blue fins becoming blue body with red fins), "
+    "or new dominant HUE families appear that the source visibly refutes; a darker, "
+    "richer or more saturated rendering of the same hues is never a failure. "
+    "tail_fins_pose FAILS only for fin-form class contradictions or malformed, torn or "
+    "duplicated fin structures; pose and spread differences are acceptable. "
+    "complete_framing FAILS if any fin or tail tip is cut off by the frame, or the fish "
+    "is partial or too small. "
+    "realistic_texture FAILS for clearly synthetic artefacts (plastic smoothing, "
+    "repeating geometry, warped anatomy), not for clean professional texture. "
+    "hero_composition: one centred fish on a clean near-black background with "
+    "comfortable margins and no props. "
+    "label: the hero's bottom label must read exactly {tank} and photo date {date}; "
+    "FAIL on any label mismatch or unreadable label. "
+    "reference_integrity FAILS if the hero contains tank borders, cards, hands, text, "
+    "watermarks or other clutter. "
+    "The third image must be the full original source. No invented evidence; no markdown."
 )
+
+PREFLIGHT_PROMPT = (
+    "Inspect this *unmodified* Betta photo and return JSON only: "
+    "{\"tank_id\":\"\", \"photo_date\":\"YYYY-MM-DD\", \"tank_confidence\":0.0, "
+    "\"date_confidence\":0.0, \"fish_confidence\":0.0, \"one_fish_visible\":true, "
+    "\"tank_bounds\":[left,top,right,bottom], \"fish_bounds\":[left,top,right,bottom], "
+    "\"debris_boxes\":[], \"needs_retake\":false, \"reason\":\"\"}. "
+    "Bounds are XYXY normalized fractions of the full oriented photo in [0,1]. "
+    "Tank bounds must include only the photographed aquarium/water scene, not "
+    "neighbouring tanks, room background or unrelated objects. Fish bounds must include "
+    "*all* fins and tail extensions. Read the tank/date label from the RAW image: tank "
+    "IDs are digits then BT then digits (for example 2BT14), or APE then digits (for "
+    "example APE16); dates are Australian day/month/year. Never infer an adjacent tank. "
+    "Debris boxes may mark only small isolated contaminant patches *well away from the "
+    "fish*; never glass reflections or regions crossing fish or fins; if uncertain, "
+    "return empty debris_boxes. Never propose removing disease signs, injuries, egg "
+    "spots, fish colour or unique markings. If the whole tank or fish cannot be safely "
+    "bounded, set confidence low or needs_retake true. Do not invent fish colour, tank "
+    "number or date. No markdown."
+)
+
+PREP_QA_PROMPT = (
+    "Compare the two images: (1) the unmodified camera original (it may be dark, "
+    "low-detail and taken through aquarium glass); (2) the prepared working photo "
+    "derived only by cropping outside the tank, bounded exposure and white-balance "
+    "correction, and removal of small isolated neutral water debris outside the fish. "
+    "Return JSON only: {\"overall\":\"PASS|FAIL\", \"same_fish\":true, "
+    "\"full_fins\":true, \"faithful_colours\":true, \"tank_only\":true, "
+    "\"lighting_usable\":true, \"no_identity_alteration\":true, \"reason\":\"\"}. "
+    "PASS only if every criterion is true. same_fish: the prepared photo still shows "
+    "the same individual/class of fish. full_fins: no fin or tail appears clipped by "
+    "the crop. faithful_colours: no colour shift beyond mild exposure correction. "
+    "tank_only: no neighbouring tanks or unrelated room scenes remain prominent "
+    "(aquarium glass edges are acceptable). lighting_usable: exposure is suitable for "
+    "professional reprocessing. no_identity_alteration: no fish pixels were "
+    "structurally altered, no detail invented, no markings, scales or defects removed. "
+    "Tone and exposure differences from the bounded correction are acceptable. "
+    "Fail if uncertain. No markdown."
+)
+
+QA_FAILURE_CATEGORIES = {
+    "same_identity": "identity",
+    "scale_markings": "identity",
+    "regional_colour": "identity",
+    "label": "identity",
+    "body_anatomy": "anatomy",
+    "tail_fins_pose": "anatomy",
+    "complete_framing": "presentation",
+    "realistic_texture": "presentation",
+    "hero_composition": "presentation",
+    "reference_integrity": "presentation",
+}
+
+
+def categorise_assertions(assertions: dict) -> dict:
+    """Group failed assertions by the documented calibration taxonomy (reporting only)."""
+    categories = {"identity": [], "anatomy": [], "presentation": []}
+    for name, value in (assertions or {}).items():
+        if value != "FAIL":
+            continue
+        categories[QA_FAILURE_CATEGORIES.get(name, "presentation")].append(name)
+    return {key: sorted(value) for key, value in categories.items()}
+
 
 LABEL_PROMPT = (
     "JSON only. This is a crop of an Australian handwritten Betta tank card. "
@@ -138,13 +242,19 @@ def failed_attempts(envelope: dict) -> list[dict]:
     return result
 
 
-def run_review(files: list[Path], mode: str, agent: str, models: list[str]) -> dict:
+def run_review(files: list[Path], mode: str, agent: str, models: list[str],
+               *, expect_tank: str = "", expect_date: str = "") -> dict:
     from betta_vision_route import resolve_route, attest
     if models:
         raise RuntimeError("vision model overrides are disabled for attested BAU review")
     route = resolve_route(agent)
-    prompt = {"catalogue": CATALOGUE_PROMPT, "qa": QA_PROMPT,
-              "label": LABEL_PROMPT}[mode]
+    if mode == "qa":
+        prompt = QA_PROMPT_TEMPLATE.format(
+            tank=expect_tank or "<tank shown in the source label>",
+            date=expect_date or "<photo date shown in the source label>")
+    else:
+        prompt = {"catalogue": CATALOGUE_PROMPT, "label": LABEL_PROMPT,
+                  "preflight": PREFLIGHT_PROMPT, "prep": PREP_QA_PROMPT}[mode]
     errors = []
     child_env = os.environ.copy()
     preferred = ["/opt/homebrew/opt/node/bin", "/opt/homebrew/bin"]
@@ -207,17 +317,23 @@ def run_review(files: list[Path], mode: str, agent: str, models: list[str]) -> d
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--mode", choices=("catalogue", "qa", "label"), required=True)
+    parser.add_argument("--mode", choices=("catalogue", "qa", "label", "preflight", "prep"),
+                        required=True)
     parser.add_argument("--file", action="append", type=Path, required=True)
     parser.add_argument("--agent", default="fred")
     parser.add_argument("--models", default=os.getenv("BETTA_VISION_MODELS", DEFAULT_MODELS))
+    parser.add_argument("--expect-tank", default="")
+    parser.add_argument("--expect-date", default="")
     args = parser.parse_args()
-    expected = 1 if args.mode in ("catalogue", "label") else 3
+    expected = {"catalogue": 1, "label": 1, "preflight": 1, "prep": 2, "qa": 3}[args.mode]
     if len(args.file) != expected or not all(path.is_file() for path in args.file):
         print(f"expected {expected} existing image file(s)", file=sys.stderr)
         return 2
     try:
-        print(json.dumps(run_review(args.file, args.mode, args.agent, [m.strip() for m in args.models.split(",") if m.strip()]), sort_keys=True))
+        print(json.dumps(run_review(args.file, args.mode, args.agent,
+                                    [m.strip() for m in args.models.split(",") if m.strip()],
+                                    expect_tank=args.expect_tank, expect_date=args.expect_date),
+                         sort_keys=True))
         return 0
     except (RuntimeError, subprocess.TimeoutExpired) as exc:
         print(str(exc), file=sys.stderr)

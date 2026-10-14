@@ -1,0 +1,29 @@
+{
+  "assertions": {
+    "body_anatomy": "PASS",
+    "complete_framing": "PASS",
+    "hero_composition": "PASS",
+    "label": "FAIL",
+    "realistic_texture": "PASS",
+    "reference_integrity": "PASS",
+    "regional_colour": "PASS",
+    "same_identity": "FAIL",
+    "scale_markings": "FAIL",
+    "tail_fins_pose": "FAIL"
+  },
+  "calibrated_expectation": "REJECT",
+  "calibrated_note": "True rejection: materially different marking distribution versus a visible source; must keep failing.",
+  "date": "2026-10-10",
+  "model": "gpt-5.6-sol",
+  "overall": "FAIL",
+  "owner_decision": "owner-accepted exception 2026-10-10; classified in the V2.2 QA review",
+  "reasons": [
+    "Identity is uncertain because the source fish is small and blurred, while the hero shows substantially more and differently distributed dark body markings.",
+    "The hero's fins are dramatically expanded and their apparent shapes cannot be verified against the folded, blurred fins in the source.",
+    "The hero label reads \"3BT42\" while the source tank label appears to read \"3 BT-42\"; formatting does not faithfully match.",
+    "The third image is the full original source and matches the first image."
+  ],
+  "schema": "nta-betta-qa-calibration-fixture-v1",
+  "source_batch": "betta-20261010-084538-08z3re",
+  "tank_id": "3BT42"
+}

@@ -249,6 +249,105 @@ class OrchestratorTests(unittest.TestCase):
         self.assertEqual(entry["status"], bp.FISH_RECONCILIATION_PENDING)
         self.assertEqual(entry["pending_kind"], "generation")
 
+    def test_qa_failure_reason_and_receipt_are_recorded_on_the_entry(self):
+        adapters = FakeAdapters(tanks=["2BT12"])
+
+        def qa(entry, batch_dir):
+            return {"outcome": "FAIL", "failed_assertions": ["same_identity"],
+                    "accepted_exception": None,
+                    "reasons": ["The hero adds markings the source refutes."],
+                    "failure_receipt_path": "/receipts/fail.json",
+                    "failure_receipt_sha256": "fail-hash"}
+
+        adapters.qa = qa
+        summary = self.drive(adapters, policy())
+        self.assertEqual(summary["quarantined"], 1)
+        state = json.loads((self.batch_dir / "state" / "process.json").read_text())
+        entry = next(iter(state["fish"].values()))
+        self.assertIn("qa failed: same_identity", entry["notes"][0])
+        self.assertIn("The hero adds markings", entry["notes"][0])
+        self.assertEqual(entry["qa_failure_receipt_path"], "/receipts/fail.json")
+        self.assertEqual(entry["qa_failure_receipt_sha256"], "fail-hash")
+
+    def test_zero_candidate_supervised_batch_stops_before_the_manifest(self):
+        adapters = FakeAdapters(
+            tanks=["2BT12"],
+            qa={"2BT12": {"outcome": "FAIL", "failed_assertions": ["same_identity"]}})
+        summary = self.drive(adapters, policy())
+        self.assertEqual(summary["status"], "PARTIAL")
+        self.assertEqual(summary["published"], 0)
+        self.assertEqual(adapters.calls["execute"], 0)
+        self.assertEqual(adapters.calls["archive"], 0)
+        state = json.loads((self.batch_dir / "state" / "process.json").read_text())
+        self.assertIsNone(state.get("manifest_sha256"))
+
+    def test_preparation_stage_records_working_image_for_generation(self):
+        adapters = FakeAdapters(tanks=["2BT12"])
+        seen = {}
+        original_generate = adapters.generate
+
+        def prepare(entry, batch_dir):
+            return {"status": "PREPARED", "reason": None,
+                    "working_path": "/work/2BT12-working.png",
+                    "working_sha256": "working-hash",
+                    "receipt_path": "/receipts/2BT12.json",
+                    "receipt_sha256": "receipt-hash"}
+
+        def generate(entry, batch_dir):
+            seen["working"] = entry.get("working_input_path")
+            seen["prep_status"] = entry.get("prep_status")
+            return original_generate(entry, batch_dir)
+
+        adapters.prepare = prepare
+        adapters.generate = generate
+        summary = self.drive(adapters, policy(), include=("prepare",))
+        self.assertEqual(summary["status"], "COMPLETE")
+        self.assertEqual(seen["working"], "/work/2BT12-working.png")
+        state = json.loads((self.batch_dir / "state" / "process.json").read_text())
+        entry = next(iter(state["fish"].values()))
+        self.assertEqual(entry["prep_status"], "PREPARED")
+        self.assertEqual(entry["working_receipt_sha256"], "receipt-hash")
+        self.assertIn("PREPARED", [item["stage"] for item in state["log"]])
+
+    def test_blocked_preparation_quarantines_before_any_spend(self):
+        adapters = FakeAdapters(tanks=["2BT12"])
+        adapters.prepare = lambda entry, batch_dir: {
+            "status": "BLOCKED",
+            "reason": "tank read conflict: identified 2BT12, preflight read 9BT99"}
+        summary = self.drive(adapters, policy(), include=("prepare",))
+        self.assertEqual(summary["quarantined"], 1)
+        self.assertEqual(adapters.calls["generate"], 0)
+        state = json.loads((self.batch_dir / "state" / "process.json").read_text())
+        entry = next(iter(state["fish"].values()))
+        self.assertIn("preparation blocked", " ".join(entry["notes"]))
+
+    def test_raw_fallback_preparation_is_recorded_and_proceeds(self):
+        adapters = FakeAdapters(tanks=["2BT12"])
+        adapters.prepare = lambda entry, batch_dir: {
+            "status": "FALLBACK_RAW", "reason": "prepared images were rejected",
+            "working_path": "/work/2BT12-raw.png", "working_sha256": "raw-hash",
+            "receipt_path": "/receipts/2BT12.json", "receipt_sha256": "receipt-hash"}
+        summary = self.drive(adapters, policy(), include=("prepare",))
+        self.assertEqual(summary["status"], "COMPLETE")
+        state = json.loads((self.batch_dir / "state" / "process.json").read_text())
+        entry = next(iter(state["fish"].values()))
+        self.assertEqual(entry["prep_status"], "FALLBACK_RAW")
+        self.assertIn("camera original used for generation", " ".join(entry["notes"]))
+
+    def test_preparation_failure_quarantines_without_crashing(self):
+        adapters = FakeAdapters(tanks=["2BT12"])
+
+        def prepare(entry, batch_dir):
+            raise RuntimeError("preflight service exploded")
+
+        adapters.prepare = prepare
+        summary = self.drive(adapters, policy(), include=("prepare",))
+        self.assertEqual(summary["quarantined"], 1)
+        state = json.loads((self.batch_dir / "state" / "process.json").read_text())
+        entry = next(iter(state["fish"].values()))
+        self.assertIn("preparation failed: preflight service exploded",
+                      " ".join(entry["notes"]))
+
     def test_focused_label_retry_recovers_an_uncertain_identification(self):
         adapters = FakeAdapters(tanks=["2BT12"], uncertain={"2BT12"})
         retries = {"count": 0}

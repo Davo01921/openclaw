@@ -383,7 +383,10 @@ class ManifestBundle:
                     f"{tank}: inventory_reason must be received or correction")
             require(isinstance(raw.get("write_authorised"), bool),
                     f"{tank}: write_authorised must be boolean")
-            for role in ("hero", "original"):
+            roles = ["hero", "original"]
+            if raw.get("working") is not None:
+                roles.append("working")  # the prepared generation input, when present
+            for role in roles:
                 asset = raw.get(role)
                 require(isinstance(asset, dict), f"{tank} {role}: asset object required")
                 path = resolve_path(self.path.parent, asset.get("path"), f"{tank} {role}")
@@ -514,9 +517,10 @@ class ManifestBundle:
         require(qa_path.is_file() and sha256_file(qa_path) == qa_digest,
                 f"{tank}: image-QA receipt missing/hash mismatch")
         qa = read_json(qa_path)
+        working_hash = (raw.get("working") or raw["original"])["sha256"]
         require(qa.get("input_hashes") == [
-            raw["original"]["sha256"], raw["hero"]["sha256"], raw["original"]["sha256"]
-        ], f"{tank}: image-QA hashes do not bind source/hero/original")
+            working_hash, raw["hero"]["sha256"], raw["original"]["sha256"]
+        ], f"{tank}: image-QA hashes do not bind working/hero/original")
         self._validate_qa(tank, qa, qa_digest, qa_record.get("exception"))
 
         protected = {

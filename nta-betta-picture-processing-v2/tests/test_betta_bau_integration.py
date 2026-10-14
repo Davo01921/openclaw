@@ -22,8 +22,23 @@ class BAUIntegrationTests(StrictAdapterTests):
             calls['archive'] += 1
             self.assertTrue((directory/'reports/betta-inventory.csv').is_file())
             return {'status': 'ARCHIVED', 'batch_status': 'COMPLETE'}
-        self.runners.update(execute=execute, archive=archive,
-                            preflight=lambda **kwargs: {'status': 'PREFLIGHT_PASS'})
+        def vision_preflight(files):
+            # An unreadable fixture frame: geometry unusable, no identity conflict.
+            return {
+                'provider': 'mock-router', 'model': 'mock-vision', 'call_id': 'pf-1',
+                'timestamp': now(), 'input_hashes': [sha(files[0])],
+                'routing': routing(), 'usage': {},
+                'output': {'tank_id': '', 'photo_date': '', 'tank_confidence': 0.0,
+                           'date_confidence': 0.0, 'fish_confidence': 0.0,
+                           'one_fish_visible': True, 'needs_retake': False,
+                           'tank_bounds': None, 'fish_bounds': None, 'debris_boxes': []},
+            }
+
+        self.runners.update(
+            execute=execute, archive=archive,
+            preflight=lambda **kwargs: {'status': 'PREFLIGHT_PASS'},
+            vision_preflight=vision_preflight,
+            vision_retry_delay_seconds=0)
         adapters, _ = self.make(policy=policy)
         return adapters, policy, calls
 

@@ -1,0 +1,31 @@
+{
+  "assertions": {
+    "body_anatomy": "FAIL",
+    "complete_framing": "PASS",
+    "hero_composition": "PASS",
+    "label": "FAIL",
+    "realistic_texture": "PASS",
+    "reference_integrity": "PASS",
+    "regional_colour": "FAIL",
+    "same_identity": "FAIL",
+    "scale_markings": "FAIL",
+    "tail_fins_pose": "FAIL"
+  },
+  "calibrated_expectation": "REJECT",
+  "calibrated_note": "True rejection: hero label identity mismatch (4BT15 vs source 4BT12) plus material changes; must keep failing.",
+  "date": "2026-10-10",
+  "model": "gpt-5.6-sol",
+  "overall": "FAIL",
+  "owner_decision": "owner-accepted exception 2026-10-10; classified in the V2.2 QA review",
+  "reasons": [
+    "Identity is not reliably preserved: the hero has substantially different body proportions, head detail, scale pattern, and fin structure from the source.",
+    "The hero exaggerates and reshapes the dorsal, caudal, anal, and ventral fins beyond what is evidenced in the source.",
+    "Regional coloration differs: the source has a pale dorsal body with a broad dark maroon mid-body region, while the hero shows a uniformly pale, sharply detailed scaled body and more saturated red fins.",
+    "Tail and fin pose differ substantially from the compact, partially folded source pose.",
+    "Hero label reads \"4BT15\" while the source tank label appears to read \"4BT12\"; the dates appear consistent at 9/10/2026.",
+    "The third image is the full original source and matches the first image."
+  ],
+  "schema": "nta-betta-qa-calibration-fixture-v1",
+  "source_batch": "betta-20261010-084538-08z3re",
+  "tank_id": "4BT15"
+}

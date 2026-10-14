@@ -36,10 +36,10 @@ SYDNEY = ZoneInfo("Australia/Sydney")
 STATE_SCHEMA = "nta-betta-process-v1"
 
 STAGES = (
-    "DETECTED", "ALLOCATED", "INTAKE_VERIFIED", "IDENTIFIED", "GENERATED",
-    "QA_VERIFIED", "SHOPIFY_RESOLVED", "MANIFEST_READY", "AUTHORISED",
-    "SHOPIFY_EXECUTING", "SHOPIFY_VERIFIED", "TELEMETRY_EXPORTED", "ARCHIVING",
-    "ARCHIVED", "COMPLETE",
+    "DETECTED", "ALLOCATED", "INTAKE_VERIFIED", "IDENTIFIED", "PREPARED",
+    "GENERATED", "QA_VERIFIED", "SHOPIFY_RESOLVED", "MANIFEST_READY",
+    "AUTHORISED", "SHOPIFY_EXECUTING", "SHOPIFY_VERIFIED", "TELEMETRY_EXPORTED",
+    "ARCHIVING", "ARCHIVED", "COMPLETE",
 )
 STAGE_INDEX = {name: index for index, name in enumerate(STAGES)}
 
@@ -322,6 +322,42 @@ class BatchProcessor:
                     entry.setdefault("notes", []).append(f"pre-generation ineligible: {reason}")
             self.state.update(eligibility)
 
+        # Deterministic working-photo preparation (mandatory before generation
+        # when the adapter is present): crop/exposure/cleanup with fish
+        # protection, a prepared-image visual QA, and a verified receipt.
+        data = self.state.load()
+        if (self.adapters.get("prepare") is not None
+                and not self._stage_done(data, "GENERATED")
+                and not self._stage_done(data, "PREPARED")):
+            def prepare(d: dict) -> None:
+                for entry in d["fish"].values():
+                    if entry.get("status") != "PENDING":
+                        continue
+                    if entry.get("working_input_path"):
+                        continue
+                    try:
+                        verdict = self._call("prepare", entry=entry, batch_dir=self.batch_dir)
+                    except Exception as exc:
+                        entry["status"] = FISH_QUARANTINED
+                        entry["notes"].append(f"preparation failed: {exc}")
+                        continue
+                    status = str((verdict or {}).get("status", "")).upper()
+                    if status == "BLOCKED":
+                        entry["status"] = FISH_QUARANTINED
+                        entry["notes"].append(
+                            "preparation blocked: " + str((verdict or {}).get("reason") or "unknown"))
+                        continue
+                    entry["working_input_path"] = (verdict or {}).get("working_path")
+                    entry["working_input_sha256"] = (verdict or {}).get("working_sha256")
+                    entry["working_receipt_path"] = (verdict or {}).get("receipt_path")
+                    entry["working_receipt_sha256"] = (verdict or {}).get("receipt_sha256")
+                    entry["prep_status"] = status or "PREPARED"
+                    if status == "FALLBACK_RAW":
+                        entry["notes"].append(
+                            "prepared image rejected; camera original used for generation")
+                _reach(d, "PREPARED")
+            self.state.update(prepare)
+
         # Paid generation, gated by the standing policy.
         data = self.state.load()
         eligible = {k: v for k, v in data["fish"].items()
@@ -383,7 +419,14 @@ class BatchProcessor:
                         entry["accepted_exception"] = result["accepted_exception"]
                     else:
                         entry["status"] = FISH_QUARANTINED
-                        entry["notes"].append("qa failed: " + ",".join(result.get("failed_assertions", [])))
+                        note = "qa failed: " + ",".join(result.get("failed_assertions", []))
+                        reasons = result.get("reasons") or []
+                        if reasons:
+                            note += " | " + str(reasons[0])[:240]
+                        entry["notes"].append(note)
+                        if result.get("failure_receipt_path"):
+                            entry["qa_failure_receipt_path"] = result["failure_receipt_path"]
+                            entry["qa_failure_receipt_sha256"] = result.get("failure_receipt_sha256")
                 _reach(d, "QA_VERIFIED")
             self.state.update(qa)
 
@@ -408,9 +451,10 @@ class BatchProcessor:
                 _reach(d, "SHOPIFY_RESOLVED")
             self.state.update(resolve)
 
-        # Immutable manifest + standing authorisation bound to its hash.
+        # Immutable manifest + standing authorisation bound to its hash.  A batch
+        # with no publishable fish is terminal here for every authority mode.
         data = self.state.load()
-        if automatic and not self._shopify_candidates(data):
+        if not self._shopify_candidates(data):
             self._call("telemetry", state=data, batch_dir=self.batch_dir)
             return self._finish(data, "PARTIAL")
         if not self._stage_done(data, "MANIFEST_READY"):

@@ -1,0 +1,30 @@
+{
+  "assertions": {
+    "body_anatomy": "PASS",
+    "complete_framing": "PASS",
+    "hero_composition": "PASS",
+    "label": "FAIL",
+    "realistic_texture": "PASS",
+    "reference_integrity": "PASS",
+    "regional_colour": "PASS",
+    "same_identity": "FAIL",
+    "scale_markings": "FAIL",
+    "tail_fins_pose": "FAIL"
+  },
+  "calibrated_expectation": "PASS",
+  "calibrated_note": "Owner-accepted; label formatting complaint from the source-card read is metadata noise under calibration.",
+  "date": "2026-10-14",
+  "model": "gpt-5.6-sol",
+  "overall": "FAIL",
+  "owner_decision": "owner visually reviewed and accepted 2026-10-14 (discord message 1559824840394018847)",
+  "reasons": [
+    "Identity is uncertain because the source images are too dark and low-detail to verify the hero fish's scale pattern and fin details.",
+    "The hero shows sharply defined scale markings that cannot be confirmed from the source.",
+    "The hero's fins are much more fully spread than in the source, preventing reliable pose and fin-shape correspondence.",
+    "The hero label reads 1BT43, while the source tank label appears to read 1BT41; the date 14/10/2026 matches.",
+    "The third image is the full original source."
+  ],
+  "schema": "nta-betta-qa-calibration-fixture-v1",
+  "source_batch": "betta-20261014-161029-7e1j3n",
+  "tank_id": "1BT43"
+}

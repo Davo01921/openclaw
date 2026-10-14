@@ -422,6 +422,61 @@ class StrictAdapterTests(unittest.TestCase):
         self.assertEqual(failed["outcome"], "FAIL")
         self.assertIsNone(failed["accepted_exception"])
 
+    def test_qa_failure_receipt_preserves_reasons_and_categories(self):
+        adapters, _bundle, entry = self.prepared_entry()
+        receipt = Path(entry["image_qa_path"])
+        os.chmod(receipt, 0o644)
+        receipt.unlink()
+        reasons = ["The hero introduces blue markings the source visibly refutes.",
+                   "Regional colour direction is contradicted."]
+        self.runners["qa"] = lambda value: {
+            **self.qa(value),
+            "call_id": "qa-fail-1",
+            "output": {**self.qa(value)["output"],
+                       "assertions": {**{name: "PASS" for name in strict_mod.QA_ASSERTIONS},
+                                      "same_identity": "FAIL", "regional_colour": "FAIL"},
+                       "overall": "FAIL", "reasons": reasons},
+        }
+        failed = adapters["qa"](entry, self.batch)
+        self.assertEqual(failed["outcome"], "FAIL")
+        self.assertEqual(failed["reasons"], reasons)
+        self.assertIn("same_identity", failed["categories"]["identity"])
+        self.assertIn("regional_colour", failed["categories"]["identity"])
+        failure_receipt = json.loads(Path(failed["failure_receipt_path"]).read_text())
+        self.assertEqual(failure_receipt["output"]["reasons"], reasons)
+        self.assertEqual(failure_receipt["failed_assertions"],
+                         ["regional_colour", "same_identity"])
+
+    def test_qa_subprocess_transport_failures_are_retried(self):
+        adapters, _bundle, entry = self.prepared_entry()
+        receipt = Path(entry["image_qa_path"])
+        os.chmod(receipt, 0o644)
+        receipt.unlink()
+        self.runners.pop("qa")  # force the attested subprocess path
+        self.runners["vision_retry_delay_seconds"] = 0
+        # The deterministic subprocess path requires a real 2048 hero image.
+        from PIL import Image as _Image
+        hero = Path(entry["hero_path"])
+        _Image.new("RGB", (2048, 2048), (8, 8, 10)).save(hero)
+        entry["hero_sha256"] = sha(hero)
+        adapters, _ = self.make()
+        attempts = {"count": 0}
+        original = strict_mod.base._subprocess_runner
+
+        def flaky(argv):
+            attempts["count"] += 1
+            if attempts["count"] == 1:
+                raise strict_mod.base.AdapterError("command failed (2): connection error")
+            return json.dumps(self.qa(entry))
+
+        strict_mod.base._subprocess_runner = flaky
+        try:
+            result = adapters["qa"](entry, self.batch)
+        finally:
+            strict_mod.base._subprocess_runner = original
+        self.assertEqual(result["outcome"], "PASS")
+        self.assertEqual(attempts["count"], 2)
+
     def test_build_manifest_passes_real_manifest_bundle_validation(self):
         adapters, _bundle, entry = self.prepared_entry()
         built = adapters["build_manifest"]({"fish": {"source": entry}}, self.batch)

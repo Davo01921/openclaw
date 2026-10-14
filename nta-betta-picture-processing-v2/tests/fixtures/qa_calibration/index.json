@@ -1,0 +1,47 @@
+{
+  "cases": [
+    {
+      "calibrated_expectation": "PASS",
+      "file": "accepted_2BT16.json",
+      "overall": "PASS",
+      "tank_id": "2BT16"
+    },
+    {
+      "calibrated_expectation": "PASS",
+      "file": "accepted_2BT14.json",
+      "overall": "FAIL",
+      "tank_id": "2BT14"
+    },
+    {
+      "calibrated_expectation": "PASS",
+      "file": "accepted_1BT45.json",
+      "overall": "FAIL",
+      "tank_id": "1BT45"
+    },
+    {
+      "calibrated_expectation": "PASS",
+      "file": "accepted_1BT43.json",
+      "overall": "FAIL",
+      "tank_id": "1BT43"
+    },
+    {
+      "calibrated_expectation": "REJECT",
+      "file": "rejected_4BT14.json",
+      "overall": "FAIL",
+      "tank_id": "4BT14"
+    },
+    {
+      "calibrated_expectation": "REJECT",
+      "file": "rejected_3BT42.json",
+      "overall": "FAIL",
+      "tank_id": "3BT42"
+    },
+    {
+      "calibrated_expectation": "REJECT",
+      "file": "rejected_4BT15.json",
+      "overall": "FAIL",
+      "tank_id": "4BT15"
+    }
+  ],
+  "schema": "nta-betta-qa-calibration-index-v1"
+}

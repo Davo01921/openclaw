@@ -54,19 +54,13 @@ reconciliation` and no new intake could be allocated.
   confident read (`2BT13`) → eligibility quarantine. Outcome `PARTIAL`, one
   notification, zero generation calls, zero Shopify writes.
 
-## Remaining functional item vs. the original brief (owner decision required)
+## Follow-up delivered 2026-10-15
 
-The orchestrator brief's mandatory local pre-processing stage (aquarium-boundary
-crop, exposure correction, water-debris cleanup, with its own crop-safety quality
-gate) is **not** part of the approved V2.2/BAU chain: paid generation currently
-consumes the raw camera original, and the Grok prompt plus independent QA handle
-presentation quality (QA failures quarantine, never auto-accept). The supervised
-flows of 10–14 October used one-off cleaned inputs and owner review; making that
-stage autonomous means porting the prototype's `preflight.py` / `preflight_vision`
-boundary detection and bounded local edits into the BAU pipeline as a new gated
-stage with crop-safety tests. That changes the approved pipeline and spends
-additional vision calls, so it is recorded here for an explicit owner decision
-rather than added silently.
+The local pre-processing stage recorded here as an owner decision item was
+requested and implemented on 2026-10-15 (deterministic preparation with
+fish-protection gates, prepared-image QA, QA calibration, and the integration
+into the automatic pipeline). See `AUTONOMY_COMPLETION_2026-10-15.md` and
+`QA_CALIBRATION_2026-10-15.md`.
 
 ## Residual risks / notes
 

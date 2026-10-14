@@ -32,6 +32,7 @@ import betta_shopify_batch as uploader  # noqa: E402
 import betta_telemetry as telemetry_mod  # noqa: E402
 import label_identity as label_mod  # noqa: E402
 import betta_batch as batch_mod
+import betta_prepare as prepare_mod  # noqa: E402
 
 
 CATALOGUE_FIELDS = ("tank_id", "photo_date", "fish_name", "tail_type", "sex")
@@ -42,6 +43,8 @@ QA_ASSERTIONS = {
 }
 GROK_MODEL = "grok-imagine-image-2.0"
 TITLE_COMPONENT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 '/+().,&-]*$")
+PREPARED_QA_KEYS = ("same_fish", "full_fins", "faithful_colours", "tank_only",
+                    "lighting_usable", "no_identity_alteration")
 
 
 class StrictAdapterError(base.AdapterError):
@@ -247,14 +250,19 @@ class StrictBAUAdapters(base.Adapters):
         return {"fish": fish, "selected_source_count": len(fish)}
 
     # -- complete, attested catalogue ------------------------------------ #
-    def _vision_call(self, files: list, mode: str, *, attempts: int = 2) -> dict:
+    def _vision_call(self, files: list, mode: str, *, attempts: int = 2,
+                     extra_args: Optional[list] = None) -> dict:
         """One moderation-free vision call with bounded retries on call failures.
 
         Retries cover transport-level failures (timeout, nonzero exit, invalid
         envelope JSON); deterministic evidence/quality outcomes are never retried
         here.
         """
-        runner = self.runners.get(mode) if mode == "label" else self.runners.get("catalogue")
+        runner_key = {"label": "label", "preflight": "vision_preflight",
+                      "prep": "vision_prepqa"}.get(mode, "catalogue")
+        # The QA runner contract is entry-based and handled by qa() itself; this
+        # helper only ever performs the attested subprocess call for that mode.
+        runner = None if mode == "qa" else self.runners.get(runner_key)
         delay = float(self.runners.get("vision_retry_delay_seconds", 2.0))
         last_error: Optional[Exception] = None
         for attempt in range(1, attempts + 1):
@@ -266,6 +274,8 @@ class StrictBAUAdapters(base.Adapters):
                             "--mode", mode]
                     for value in files:
                         argv.extend(["--file", str(value)])
+                    for argument in (extra_args or []):
+                        argv.append(str(argument))
                     evidence = json.loads(base._subprocess_runner(argv))
                 if not isinstance(evidence, dict):
                     raise StrictAdapterError(f"{mode} returned non-object evidence")
@@ -493,6 +503,274 @@ class StrictBAUAdapters(base.Adapters):
             "catalogue_evidence_sha256": _sha(receipt_path),
         }
 
+    # -- deterministic working-photo preparation (pre-generation) ---------- #
+    @staticmethod
+    def _prepare_confidence(value) -> float:
+        try:
+            result = float(value)
+        except (TypeError, ValueError):
+            return 0.0
+        return result if math.isfinite(result) else 0.0
+
+    def _identity_cross_check(self, output: Mapping[str, Any], entry: dict) -> dict:
+        """Compare the preflight label reading with the authoritative identity."""
+        def normalise_tank(value):
+            try:
+                return label_mod.normalize_tank(value) if value else None
+            except (TypeError, ValueError):
+                return None
+
+        def normalise_date(value):
+            if not value:
+                return None
+            if re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(value)):
+                return str(value)
+            try:
+                return label_mod.normalize_date(str(value))
+            except ValueError:
+                return None
+
+        tank = normalise_tank(output.get("tank_id"))
+        date = normalise_date(output.get("photo_date"))
+        tank_confidence = self._prepare_confidence(output.get("tank_confidence"))
+        date_confidence = self._prepare_confidence(output.get("date_confidence"))
+        result = {
+            "identified": {"tank_id": entry.get("tank_id"),
+                           "photo_date": entry.get("photo_date")},
+            "preflight": {"tank_id": tank, "photo_date": date,
+                          "tank_confidence": tank_confidence,
+                          "date_confidence": date_confidence},
+            "status": "UNAVAILABLE", "conflicts": [],
+        }
+        if tank and tank_confidence >= 0.90 and entry.get("tank_id") and tank != entry["tank_id"]:
+            result["conflicts"].append(
+                f"tank read conflict: identified {entry['tank_id']}, preflight read {tank}")
+        if date and date_confidence >= 0.90 and entry.get("photo_date") and date != entry["photo_date"]:
+            result["conflicts"].append(
+                f"date read conflict: identified {entry['photo_date']}, preflight read {date}")
+        if result["conflicts"]:
+            result["status"] = "CONFLICT"
+        elif (tank and tank_confidence >= 0.90
+              and date and date_confidence >= 0.90):
+            result["status"] = "AGREES"
+        return result
+
+    def _preflight_evidence(self, source: Path, entry: dict) -> dict:
+        started = time.monotonic()
+        try:
+            evidence = self._vision_call([source], "preflight")
+        except StrictAdapterError as exc:
+            try:
+                self._record("prepare_preflight", "ERROR", tank=entry.get("tank_id"),
+                             started=started, error=str(exc))
+            except Exception:
+                pass
+            raise
+        _attested_call(evidence, [entry["source_sha256"]], "preflight",
+                       not_before=self.evidence_not_before)
+        output = evidence.get("output")
+        if not isinstance(output, dict):
+            raise StrictAdapterError("preflight output object missing")
+        self._record_vision_evidence("prepare_preflight", entry.get("tank_id") or source.stem,
+                                     evidence, started)
+        return evidence
+
+    def _prep_qa_evidence(self, raw: Path, working: Path, entry: dict) -> dict:
+        started = time.monotonic()
+        try:
+            evidence = self._vision_call([raw, working], "prep")
+        except StrictAdapterError as exc:
+            try:
+                self._record("prepare_qa", "ERROR", tank=entry.get("tank_id"),
+                             started=started, error=str(exc))
+            except Exception:
+                pass
+            raise
+        _attested_call(evidence, [_sha(raw), _sha(working)], "prep-QA",
+                       not_before=self.evidence_not_before)
+        output = evidence.get("output")
+        if not isinstance(output, dict):
+            raise StrictAdapterError("prep-QA output object missing")
+        self._record_vision_evidence("prepare_qa", entry.get("tank_id") or raw.stem,
+                                     evidence, started)
+        return evidence
+
+    def _preparation_bounds(self, output: Mapping[str, Any]) -> tuple[bool, Optional[list], Optional[list]]:
+        """Vision bounds are usable only when every confidence gate passes."""
+        usable = (
+            output.get("one_fish_visible") is True
+            and output.get("needs_retake") is not True
+            and self._prepare_confidence(output.get("tank_confidence")) >= 0.90
+            and self._prepare_confidence(output.get("fish_confidence")) >= 0.90
+            and isinstance(output.get("tank_bounds"), (list, tuple))
+            and isinstance(output.get("fish_bounds"), (list, tuple))
+        )
+        if not usable:
+            return False, None, None
+        return True, output.get("tank_bounds"), output.get("fish_bounds")
+
+    def prepare(self, entry, batch_dir):
+        """Produce and verify the working image; never alters the raw original.
+
+        Ladder: full crop/cleanup (vision bounds) -> conservative fallback (no
+        crop, no cleanup) -> raw copy.  A confident identity read conflict blocks
+        the fish instead of guessing.  The receipt is immutable and reused on
+        resume.
+        """
+        tank = entry["tank_id"]
+        source = Path(entry["source_path"]).resolve()
+        digest = entry.get("source_sha256")
+        if not isinstance(digest, str) or _sha(source) != digest:
+            raise StrictAdapterError("preparation source changed")
+        work_dir = Path(batch_dir).resolve() / "evidence" / "working"
+        work_dir.mkdir(parents=True, exist_ok=True)
+        receipt_path = work_dir / f"{tank}.json"
+        if receipt_path.is_file():
+            receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+            if (receipt.get("schema") != "nta-betta-preparation-v1"
+                    or receipt.get("batch_id") != self.batch_id
+                    or receipt.get("tank_id") != tank
+                    or (receipt.get("source_identity") or {}).get("sha256") != digest):
+                raise StrictAdapterError("preparation receipt does not bind this batch/source")
+            working = receipt.get("working_identity") or {}
+            working_file = Path(str(working.get("path", "")))
+            if not working_file.is_file() or _sha(working_file) != working.get("sha256"):
+                raise StrictAdapterError("prepared working file changed since its receipt")
+            accepted = receipt.get("accepted") or {}
+            if receipt.get("status") == "PREPARED":
+                violations = prepare_mod.verify_preparation(accepted.get("operations"))
+                if violations:
+                    raise StrictAdapterError(
+                        "stored preparation violates its invariants: " + "; ".join(violations))
+            return {
+                "status": receipt.get("status"), "reason": receipt.get("reason"),
+                "working_path": str(working_file), "working_sha256": working.get("sha256"),
+                "receipt_path": str(receipt_path), "receipt_sha256": _sha(receipt_path),
+            }
+
+        cross: dict = {"identified": {"tank_id": tank, "photo_date": entry.get("photo_date")},
+                       "preflight": None, "status": "UNAVAILABLE", "conflicts": []}
+        preflight_evidence = None
+        assessment = None
+        try:
+            preflight_evidence = self._preflight_evidence(source, entry)
+            assessment = preflight_evidence["output"]
+            cross = self._identity_cross_check(assessment, entry)
+        except StrictAdapterError as exc:
+            cross["reason"] = f"preflight unavailable: {exc}"
+        if cross.get("status") == "CONFLICT":
+            receipt = {
+                "schema": "nta-betta-preparation-v1", "batch_id": self.batch_id,
+                "tank_id": tank,
+                "source_identity": {"path": str(source), "sha256": digest},
+                "identity_cross_check": cross, "attempts": [], "accepted": None,
+                "working_identity": None, "status": "BLOCKED",
+                "reason": "; ".join(cross["conflicts"]),
+            }
+            _write_immutable_json(receipt_path, receipt)
+            return {"status": "BLOCKED", "reason": receipt["reason"],
+                    "receipt_path": str(receipt_path), "receipt_sha256": _sha(receipt_path)}
+
+        bounds_usable, tank_bounds, fish_bounds = (False, None, None)
+        if assessment is not None:
+            bounds_usable, tank_bounds, fish_bounds = self._preparation_bounds(assessment)
+
+        attempts: list = []
+        accepted: Optional[dict] = None
+        levels = ["FULL", "L1"] if bounds_usable else ["L1"]
+        for level in levels:
+            candidate = work_dir / (f"{tank}-working-full.png"
+                                    if level == prepare_mod.LEVEL_FULL
+                                    else f"{tank}-working.png")
+            try:
+                operations = prepare_mod.prepare_image(
+                    raw_path=source, output_path=candidate, level=level,
+                    tank_bounds=tank_bounds if level == prepare_mod.LEVEL_FULL else None,
+                    fish_bounds=fish_bounds if level == prepare_mod.LEVEL_FULL else None,
+                )
+            except Exception as exc:
+                attempts.append({"level": level, "gate": "ERROR", "reason": str(exc)})
+                continue
+            violations = list(prepare_mod.verify_preparation(operations))
+            try:
+                from PIL import Image as _Image
+                with _Image.open(candidate) as image:
+                    if list(image.size) != list(operations["working_dimensions"]):
+                        violations.append("working image dimensions differ from the record")
+            except Exception as exc:
+                violations.append(f"working image unreadable: {exc}")
+            if violations:
+                attempts.append({"level": level, "gate": "FAIL", "violations": violations,
+                                 "operations": operations})
+                continue
+            prep_qa = None
+            prep_qa_unavailable = None
+            try:
+                prep_qa = self._prep_qa_evidence(source, candidate, entry)
+            except StrictAdapterError as exc:
+                prep_qa_unavailable = str(exc)
+            if prep_qa is None:
+                attempts.append({"level": level, "prep_qa": "UNAVAILABLE",
+                                 "reason": prep_qa_unavailable})
+                accepted = {"level": level, "operations": operations, "prep_qa": None,
+                            "prep_qa_unavailable": prep_qa_unavailable}
+                break
+            output = prep_qa["output"]
+            passed = (output.get("overall") == "PASS"
+                      and all(output.get(name) is True for name in PREPARED_QA_KEYS))
+            if passed:
+                accepted = {"level": level, "operations": operations,
+                            "prep_qa": {"provider": prep_qa.get("provider"),
+                                        "model": prep_qa.get("model"),
+                                        "call_id": prep_qa.get("call_id"),
+                                        "timestamp": prep_qa.get("timestamp"),
+                                        "input_hashes": prep_qa.get("input_hashes"),
+                                        "output": output, "usage": prep_qa.get("usage")}}
+                break
+            attempts.append({"level": level, "prep_qa": "FAIL",
+                             "reason": output.get("reason", ""),
+                             "output": output})
+
+        if accepted is not None:
+            # The accepted attempt's candidate path is deterministic per level.
+            level = accepted["level"]
+            working_path = work_dir / (f"{tank}-working-full.png"
+                                       if level == prepare_mod.LEVEL_FULL
+                                       else f"{tank}-working.png")
+            working_sha = _sha(working_path)
+            receipt = {
+                "schema": "nta-betta-preparation-v1", "batch_id": self.batch_id,
+                "tank_id": tank,
+                "source_identity": {"path": str(source), "sha256": digest},
+                "identity_cross_check": cross,
+                "attempts": attempts, "accepted": accepted,
+                "working_identity": {"path": str(working_path), "sha256": working_sha},
+                "status": "PREPARED", "reason": None,
+            }
+            _write_immutable_json(receipt_path, receipt)
+            return {"status": "PREPARED", "reason": None, "working_path": str(working_path),
+                    "working_sha256": working_sha, "level": accepted["level"],
+                    "receipt_path": str(receipt_path), "receipt_sha256": _sha(receipt_path)}
+
+        raw_copy = work_dir / f"{tank}-working-raw.png"
+        if not raw_copy.is_file():
+            raw_copy.write_bytes(source.read_bytes())
+        working_sha = _sha(raw_copy)
+        receipt = {
+            "schema": "nta-betta-preparation-v1", "batch_id": self.batch_id,
+            "tank_id": tank,
+            "source_identity": {"path": str(source), "sha256": digest},
+            "identity_cross_check": cross, "attempts": attempts, "accepted": None,
+            "working_identity": {"path": str(raw_copy), "sha256": working_sha,
+                                 "raw_copy": True},
+            "status": "FALLBACK_RAW",
+            "reason": "prepared images were rejected; the untouched camera original is used",
+        }
+        _write_immutable_json(receipt_path, receipt)
+        return {"status": "FALLBACK_RAW", "reason": receipt["reason"],
+                "working_path": str(raw_copy), "working_sha256": working_sha,
+                "receipt_path": str(receipt_path), "receipt_sha256": _sha(receipt_path)}
+
     # -- pre-generation eligibility (read-only, no spend) ----------------- #
     def eligibility(self, entry, state, batch_dir):
         """Resolve the exact product and enforce the standing 0-to-1 baseline.
@@ -584,7 +862,10 @@ class StrictBAUAdapters(base.Adapters):
         if not self.live_generation and "generate" not in self.runners:
             raise StrictAdapterError("paid generation not authorised for this run")
         tank = entry["tank_id"]
-        source = Path(entry["source_path"]).resolve()
+        source = Path(entry.get("working_input_path") or entry["source_path"]).resolve()
+        expected_source_sha = entry.get("working_input_sha256") or entry["source_sha256"]
+        if _sha(source) != expected_source_sha:
+            raise StrictAdapterError("generation source image changed")
         clean = Path(batch_dir).resolve() / "evidence" / "heroes" / f"{tank}-clean.png"
         receipt_path = Path(batch_dir).resolve() / "evidence" / "generation" / f"{tank}.json"
         self.budget.register_fish(tank)
@@ -664,7 +945,9 @@ class StrictBAUAdapters(base.Adapters):
 
     # -- exact mandatory QA ---------------------------------------------- #
     def qa(self, entry, batch_dir):
-        source = Path(entry["source_path"]).resolve()
+        original = Path(entry["source_path"]).resolve()
+        working = Path(entry.get("working_input_path") or entry["source_path"]).resolve()
+        working_sha = entry.get("working_input_sha256") or entry["source_sha256"]
         hero = Path(entry["hero_path"]).resolve()
         runner = self.runners.get("qa")
         started = time.monotonic()
@@ -678,23 +961,34 @@ class StrictBAUAdapters(base.Adapters):
         if reused:
             evidence = json.loads(path.read_text(encoding="utf-8"))
         elif runner is None:
-            evidence = json.loads(base._subprocess_runner([
-                sys.executable, str(_SCRIPT_DIR / "vision_review.py"), "--mode", "qa",
-                "--file", str(source), "--file", str(hero), "--file", str(source),
-            ]))
+            expect_date = str(entry.get("photo_date") or "")
+            try:
+                from datetime import date as _date
+                parsed = _date.fromisoformat(expect_date)
+                expect_date = f"{parsed.day}/{parsed.month}/{parsed.year}"
+            except (TypeError, ValueError):
+                expect_date = str(entry.get("photo_date") or "")
+            evidence = self._vision_call(
+                [working, hero, original], "qa",
+                extra_args=["--expect-tank", str(entry.get("tank_id") or ""),
+                            "--expect-date", expect_date])
         else:
             evidence = runner(entry)
         if not isinstance(evidence, dict):
             raise StrictAdapterError("QA returned non-object evidence")
-        expected_hashes = [entry["source_sha256"], entry["hero_sha256"], entry["source_sha256"]]
-        if _sha(source) != entry["source_sha256"] or _sha(hero) != entry["hero_sha256"]:
+        expected_hashes = [working_sha, entry["hero_sha256"], entry["source_sha256"]]
+        if (_sha(working) != working_sha or _sha(hero) != entry["hero_sha256"]
+                or _sha(original) != entry["source_sha256"]):
             raise StrictAdapterError("QA input bytes changed")
         _attested_call(evidence, expected_hashes, "QA", not_before=self.evidence_not_before)
         if reused:
             self._validate_receipt_identity(
-                evidence, source=source, source_sha256=entry["source_sha256"],
+                evidence, source=working, source_sha256=working_sha,
                 tank=entry["tank_id"], hero=hero, hero_sha256=entry["hero_sha256"],
             )
+            expected_original = {"path": str(original), "sha256": entry["source_sha256"]}
+            if evidence.get("original_identity") != expected_original:
+                raise StrictAdapterError("QA receipt does not bind the camera original")
         output = evidence.get("output") if isinstance(evidence.get("output"), dict) else evidence
         assertions = output.get("assertions") if isinstance(output, dict) else None
         overall = output.get("overall") if isinstance(output, dict) else None
@@ -704,14 +998,45 @@ class StrictBAUAdapters(base.Adapters):
                 or overall != "PASS" or evidence.get("accepted_exception")):
             failed = sorted(name for name in QA_ASSERTIONS
                             if not isinstance(assertions, dict) or assertions.get(name) != "PASS")
+            categories = None
+            try:
+                import vision_review as review_mod
+                categories = review_mod.categorise_assertions(assertions or {})
+            except Exception:
+                pass
+            reasons = []
+            if isinstance(output, dict) and isinstance(output.get("reasons"), list):
+                reasons = [str(reason)[:400] for reason in output["reasons"]][:8]
+            failure_receipt = {
+                "batch_id": self.batch_id, "tank_id": entry["tank_id"],
+                "source_identity": {"path": str(working), "sha256": working_sha},
+                "original_identity": {"path": str(original), "sha256": entry["source_sha256"]},
+                "hero_identity": {"path": str(hero), "sha256": entry["hero_sha256"]},
+                "provider": evidence.get("provider"), "model": evidence.get("model"),
+                "call_id": evidence.get("call_id"), "timestamp": evidence.get("timestamp"),
+                "input_hashes": expected_hashes,
+                "routing": evidence.get("routing"), "usage": evidence.get("usage"),
+                "output": {"assertions": assertions if isinstance(assertions, dict) else {},
+                           "overall": overall, "reasons": reasons},
+                "failed_assertions": failed, "categories": categories,
+            }
+            call_token = re.sub(r"[^A-Za-z0-9]", "", str(evidence.get("call_id") or ""))[:12]
+            failure_path = (Path(batch_dir) / "evidence" / "qa" /
+                            f"{entry['tank_id']}-failure-{call_token or 'unknown'}.json")
+            _write_immutable_json(failure_path, failure_receipt)
             self._record("qa", "FAIL", tank=entry["tank_id"], started=started,
                          provider=evidence.get("provider"), model=evidence.get("model"),
-                         detail={"failed_assertions": failed})
+                         detail={"failed_assertions": failed, "categories": categories,
+                                 "reasons": reasons[:2]})
             return {"outcome": "FAIL", "failed_assertions": failed,
-                    "accepted_exception": None}
+                    "accepted_exception": None, "categories": categories,
+                    "reasons": reasons,
+                    "failure_receipt_path": str(failure_path),
+                    "failure_receipt_sha256": _sha(failure_path)}
         receipt = {
             "batch_id": self.batch_id, "tank_id": entry["tank_id"],
-            "source_identity": {"path": str(source), "sha256": entry["source_sha256"]},
+            "source_identity": {"path": str(working), "sha256": working_sha},
+            "original_identity": {"path": str(original), "sha256": entry["source_sha256"]},
             "hero_identity": {"path": str(hero), "sha256": entry["hero_sha256"]},
             "provider": evidence["provider"], "model": evidence["model"],
             "call_id": evidence["call_id"], "timestamp": evidence["timestamp"],
@@ -762,10 +1087,13 @@ class StrictBAUAdapters(base.Adapters):
                 raise StrictAdapterError(f"{tank}: full raw Shopify snapshot missing")
             hero = Path(entry["hero_path"]).resolve()
             original = Path(entry["source_path"]).resolve()
+            working = Path(entry.get("working_input_path") or entry["source_path"]).resolve()
+            working_sha = entry.get("working_input_sha256") or entry["source_sha256"]
             qa_path = Path(entry.get("image_qa_path", "")).resolve()
             for path, digest, label in (
                 (hero, entry.get("hero_sha256"), "hero"),
                 (original, entry.get("source_sha256"), "original"),
+                (working, working_sha, "working"),
                 (qa_path, entry.get("image_qa_sha256"), "QA"),
             ):
                 if not path.is_file() or _sha(path) != digest:
@@ -822,6 +1150,8 @@ class StrictBAUAdapters(base.Adapters):
                          "mime_type": _mime(hero)},
                 "original": {"path": str(original), "sha256": entry["source_sha256"],
                              "mime_type": _mime(original)},
+                "working": {"path": str(working), "sha256": working_sha,
+                            "mime_type": _mime(working)},
                 "image_qa": {"path": str(qa_path), "sha256": entry["image_qa_sha256"],
                              "exception": None},
                 "write_authorised": write_authorised,
@@ -959,8 +1289,8 @@ class StrictBAUAdapters(base.Adapters):
 def make_strict_adapters(**kwargs) -> dict:
     bundle = StrictBAUAdapters(**kwargs)
     return {name: getattr(bundle, name) for name in (
-        "intake", "identify", "retry_identify", "eligibility", "generate", "finish",
-        "qa", "resolve", "build_manifest", "execute", "reconcile", "telemetry",
-        "archive",
+        "intake", "identify", "retry_identify", "eligibility", "prepare", "generate",
+        "finish", "qa", "resolve", "build_manifest", "execute", "reconcile",
+        "telemetry", "archive",
     )}
 

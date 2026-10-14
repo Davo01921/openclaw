@@ -9,3 +9,5 @@ Run `python3 -B -m unittest discover -s nta-betta-picture-processing-v2/tests -p
 The generic live adapters (`scripts/betta_shopify_batch.py`, `scripts/betta_finish_heroes.py`, the authenticated Shopify bridge) currently exist only in the local canonical checkout and are not yet committed to this repository; see [docs/RUNTIME_ADAPTER_STATUS_2026-10-09.md](docs/RUNTIME_ADAPTER_STATUS_2026-10-09.md) for the boundary. Offline helper and fixture completion is not live acceptance.
 
 2026-10-14 autonomy hardening (zero-mutation reconciliation, APE tank namespace, focus-label identify retry, pre-generation eligibility): [docs/AUTONOMY_RECONCILIATION_2026-10-14.md](docs/AUTONOMY_RECONCILIATION_2026-10-14.md).
+
+2026-10-15 autonomy completion (deterministic working-photo preparation with fish-protection gates, QA calibration against genuine owner-accepted evidence, full-chain acceptance): [docs/AUTONOMY_COMPLETION_2026-10-15.md](docs/AUTONOMY_COMPLETION_2026-10-15.md) and [docs/QA_CALIBRATION_2026-10-15.md](docs/QA_CALIBRATION_2026-10-15.md).

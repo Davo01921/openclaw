@@ -192,7 +192,8 @@ class Adapters:
         if clean.is_file():
             return {"hero_path": str(clean), "hero_sha256": sha256_file(clean)}  # idempotent
         tank = entry["tank_id"]
-        source = entry["source_path"]
+        # Generation consumes the prepared working image when one exists.
+        source = entry.get("working_input_path") or entry["source_path"]
         runner = self.runners.get("generate") or _subprocess_runner
         if self.budget is not None:
             self.budget.register_fish(tank)
@@ -253,14 +254,24 @@ class Adapters:
 
     # -- QA ---------------------------------------------------------------- #
     def qa(self, entry, batch_dir):
-        source = Path(entry["source_path"])
+        original = Path(entry["source_path"])
+        working = Path(entry.get("working_input_path") or entry["source_path"])
         hero = Path(entry["hero_path"])
         runner = self.runners.get("qa")
         started = time.monotonic()
         if runner is None:
+            expect_date = str(entry.get("photo_date") or "")
+            try:
+                from datetime import date as _date
+                parsed = _date.fromisoformat(expect_date)
+                expect_date = f"{parsed.day}/{parsed.month}/{parsed.year}"
+            except (TypeError, ValueError):
+                expect_date = str(entry.get("photo_date") or "")
             evidence = json.loads(_subprocess_runner(
                 [sys.executable, str(_SCRIPT_DIR / "vision_review.py"), "--mode", "qa",
-                 "--file", str(source), "--file", str(hero), "--file", str(source)]))
+                 "--file", str(working), "--file", str(hero), "--file", str(original),
+                 "--expect-tank", str(entry.get("tank_id") or ""),
+                 "--expect-date", expect_date]))
         else:
             evidence = runner(entry)
         assertions = evidence.get("assertions") or (evidence.get("output") or {}).get("assertions", {})
