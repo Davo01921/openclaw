@@ -36,4 +36,4 @@ Routine batches need no owner approval. Oversized scans, material discrepancies 
 
 Configuration: `~/Documents/Betta Processing/bau-config.json`; policy: `automation-policy.json`; logs: `state/logs/watcher.stdout.log` and `watcher.stderr.log`; batch evidence: `batches/<batch-id>/`.
 
-Emergency stop: set dispatcher configuration `enabled` false, disable policy `enabled` and `paid_generation_authorised`, then boot out `com.nta.betta-watch`. Preserve reservations and all batch/mutation journals. Reconcile unknown writes before any retry.
+Emergency stop: set dispatcher configuration `enabled` false, disable policy `enabled` and `paid_generation_authorised`, then boot out the watcher (`com.nanotanksaustralia.betta-watch`; label `com.nta.betta-watch` retired 2026-10-15, see docs/AUTONOMY_COMPLETION_2026-10-15.md §5). Preserve reservations and all batch/mutation journals. Reconcile unknown writes before any retry.
