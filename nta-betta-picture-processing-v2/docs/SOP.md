@@ -149,7 +149,7 @@ before retry.
 
 ## 20. Emergency stop procedure
 
-1. Unload the watcher: `launchctl unload ~/Library/LaunchAgents/com.nta.betta-watch.plist`.
+1. Unload the watcher: `launchctl bootout gui/$(id -u)/com.nanotanksaustralia.betta-watch` (label history: `com.nta.betta-watch` retired 2026-10-15; logs now in `~/Library/Logs/nta-betta/`).
 2. Disable standing authority: `python3 scripts/betta_policy.py set-enabled false`.
 3. `set-paid-generation false` if generation must halt too.
 4. Inspect `<batch>/state/process.json`; reconcile any uncertain Shopify result by

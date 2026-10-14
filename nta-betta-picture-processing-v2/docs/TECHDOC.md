@@ -193,7 +193,7 @@ evidence; excluded from publication.
 
 - Intake `~/Documents/Betta Processing/`; archive `~/Documents/Archived Bettas/`.
 - Policy `~/Documents/Betta Processing/automation-policy.json`.
-- Watcher via launchd (`com.nta.betta-watch`), enabled only after approval.
+- Watcher via launchd (`com.nanotanksaustralia.betta-watch`; label `com.nta.betta-watch` retired 2026-10-15), enabled only after approval. Logs: `~/Library/Logs/nta-betta/`.
 
 ## 24. Deployment and rollback
 

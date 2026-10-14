@@ -112,7 +112,32 @@ immutable receipt with reasons + categories.
   pushed; the pull request is listed on the repository.
 * The running local code is the canonical checkout
   `~/openclaw-skills-v3/nta-betta-picture-processing-v2`; the launchd watcher
-  (`com.nta.betta-watch`) executes exactly this checkout.  `git rev-parse HEAD`
-  and the SHA-256 of the key scripts are recorded in the workstream report.
+  executes exactly this checkout.  `git rev-parse HEAD` and the SHA-256 of the
+  key scripts are recorded in the workstream report.
 * No merge or deploy is performed by this workstream; production writes
   remain gated by the standing policy.
+
+## 5. Watcher service incident and hardening (2026-10-15)
+
+During the release review the original watcher service was found in a wedged
+launchd state: its last successful run was 04:08 local time, after which every
+spawn failed instantly with `EX_CONFIG (78)` and no output.  Bisection showed
+the program, environment and full plist content all work correctly under
+launchd; the failing component was launchd opening the **existing** log files
+inside `~/Documents/Betta Processing/state/logs/` (a new file in the same
+directory worked).  That directory sits inside the Dropbox-managed Documents
+tree, where actively appended files can become unopenable by launchd.
+
+Hardening applied:
+
+* service re-registered as **`com.nanotanksaustralia.betta-watch`** (matching
+  the NTA launchd naming convention); the previous plist is retired as
+  `~/Library/LaunchAgents/com.nta.betta-watch.plist.disabled-20261015`;
+* watcher logs moved out of the synced folder to
+  `~/Library/Logs/nta-betta/watcher.{stdout,stderr}.log` (historical logs
+  preserved as `watcher.*.log.20261015-old` in the old location);
+* verified after the change: run-at-load, 60-second interval runs and
+  WatchPaths folder-trigger runs all execute with exit code 0.
+
+Emergency stop is now:
+`launchctl bootout gui/$(id -u)/com.nanotanksaustralia.betta-watch`.
