@@ -106,6 +106,13 @@ def sha256(path) -> str:
     return digest.hexdigest()
 
 
+def pixel_sha256(path) -> str:
+    """SHA-256 of the decoded RGB pixels (portable across PNG encoders)."""
+    with Image.open(path) as image:
+        pixels = image.convert("RGB").tobytes()
+    return hashlib.sha256(pixels).hexdigest()
+
+
 def now_utc() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -461,23 +468,59 @@ class Category02CroppedLabelIdentification(unittest.TestCase):
         self.tmp.cleanup()
 
     def test_2_fresh_crop_reproduces_the_recorded_crop_bytes(self):
-        record = betta_prepare.label_crop(INCIDENT_PHOTO, self.root / "label.png")
+        """Region + decoded pixels are the portable contract; raw PNG bytes are not.
+
+        Cross-environment contract: the crop region (rect/method/source) and the
+        decoded PIXELS must equal the recorded crop artifacts on any platform or
+        Pillow build.  Raw PNG FILE bytes are only guaranteed *within* one
+        environment (two fresh crops in one process are byte-identical; see
+        test_2_crop_is_a_deterministic_region_of_the_source).  If the raw bytes
+        also match the recorded artifact here, that is incidental - never a
+        cross-platform requirement.
+        """
+        fresh = self.root / "label.png"
+        record = betta_prepare.label_crop(INCIDENT_PHOTO, fresh)
         self.assertEqual(record["source_sha256"], INCIDENT_SHA)
         self.assertEqual(record["source_dimensions"], [1512, 2688])
         self.assertEqual(record["rect_px"], [0, 0, 1512, 477])
         self.assertEqual(record["output_dimensions"], [1512, 477])
+        self.assertEqual(record["method"], "card-band")
         self.assertTrue(record["confident"])
-        self.assertEqual(
-            record["output_sha256"],
-            "b6cbc02721b2071d01fe7e16f48cea2b043842bec7478d45ac8b5f80f12107f1")
-        # Two independent real evaluations (A2's and A5's) recorded the same
-        # deterministic crop digest for the same source bytes.
-        archived = EVAL_DIR / "real-run-label-crop.png"
-        if archived.is_file():
-            self.assertEqual(sha256(archived), record["output_sha256"])
-        a2_crop = A2_EVIDENCE_DIR / "label-crop.png"
-        if a2_crop.is_file():
-            self.assertEqual(sha256(a2_crop), record["output_sha256"])
+        # Environment-local byte self-consistency of the helper's own record.
+        self.assertEqual(record["output_sha256"], sha256(fresh))
+
+        # Pixel equality with the committed recorded crop artifacts.  The
+        # expected pixel hash is computed from the committed file at test time;
+        # it is never hardcoded, because PNG encoding differs across
+        # platforms/Pillow builds while the decoded pixels do not.
+        artifacts = [path for path in (EVAL_DIR / "real-run-label-crop.png",
+                                       A2_EVIDENCE_DIR / "label-crop.png")
+                     if path.is_file()]
+        self.assertTrue(artifacts,
+                        "a committed recorded crop artifact is required")
+        fresh_pixels = pixel_sha256(fresh)
+        for artifact in artifacts:
+            self.assertEqual(
+                pixel_sha256(artifact), fresh_pixels,
+                f"decoded crop pixels differ from the recorded {artifact.name}")
+
+        # Region/detection equality with the recorded lineage records.
+        lineage = []
+        a2_lineage = A2_EVIDENCE_DIR / "label-crop.json"
+        if a2_lineage.is_file():
+            lineage.append(json.loads(a2_lineage.read_text()))
+        real_run = EVAL_DIR / "real-run-label-retry-receipt.json"
+        if real_run.is_file():
+            receipt = json.loads(real_run.read_text())
+            detection = (receipt.get("crop_identity") or {}).get("detection")
+            if isinstance(detection, dict):
+                lineage.append(detection)
+        self.assertTrue(lineage, "recorded crop lineage is required")
+        keys = ("rect_px", "method", "source_dimensions", "output_dimensions",
+                "source_sha256")
+        for recorded in lineage:
+            self.assertEqual({key: recorded.get(key) for key in keys},
+                             {key: record[key] for key in keys})
 
     def test_2_recorded_real_crop_read_is_confident_and_correct(self):
         receipt = EVAL_DIR / "real-run-label-retry-receipt.json"
@@ -506,6 +549,9 @@ class Category02CroppedLabelIdentification(unittest.TestCase):
                       "output_dimensions", "confident", "method")
         self.assertEqual({key: first[key] for key in comparable},
                          {key: second[key] for key in comparable})
+        # Environment-local byte determinism: two fresh crops produced in the
+        # same process must be byte-identical (raw PNG bytes are not pinned
+        # across environments; decoded pixels are, see the test above).
         self.assertEqual(out1.read_bytes(), out2.read_bytes())
         with Image.open(INCIDENT_PHOTO) as source:
             expected = source.convert("RGB").crop(tuple(first["rect_px"]))
