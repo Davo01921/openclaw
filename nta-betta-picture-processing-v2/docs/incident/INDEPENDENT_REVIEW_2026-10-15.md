@@ -285,3 +285,12 @@ protected-field/idempotency checks.
 The final **exact-SHA CI confirmation** must be requested after the master
 pushes (this addendum and the updated adversarial suite are new commit content),
 and the #34-stack CI re-run remains required before #34 → `main` (M3).
+
+---
+
+## 11. Exact-SHA confirmation (2026-10-15)
+
+- **Reviewed & pushed head:** `b42c5915778d7607db36b08f2f1603e97ac0e764` — local `HEAD` == `origin/codex/betta-identity-incident-20261015` == PR #35 `headRefOid`; `git status --short` empty; the committed bytes of both A6 files are byte-identical to the reviewed revision. (The confirmation request's reference `b42c59157b99dcab4d01e25e532000ff6f5b7f35` does not exist on GitHub — `No commit found for SHA … (HTTP 422)`; transcription typo of the same `b42c591` prefix.)
+- **CI on this exact SHA** (`gh api …/commits/b42c5915778d76…/check-runs`): `test` (Betta workflow CI) → completed/success ×2 (10:44:38→10:46:28, 10:44:40→10:46:22); `fulfilment` (Shipping fulfilment CI) → completed/success ×2 (10:44:38→10:44:48, 10:44:40→10:44:49). Green-run log: `Ran 608 tests in 98.588s` / `OK (skipped=1)` — **Betta workflow CI is green on this exact SHA.**
+- **PR #35:** `headRefOid b42c5915778d7607db36b08f2f1603e97ac0e764`, `mergeStateStatus: CLEAN`, all four checks SUCCESS. PR #34 remains head `2ae58b1…` (`test` FAILURE ×2, `ModuleNotFoundError: No module named 'PIL'`) pending the stack merge.
+- **Final:** **GO** merge PR #35 into base `codex/betta-autonomy-reconcile-20261014`; **NO-GO** deploy and **NO-GO** #34 → `main` until #34's head moves with the #35 stack (carrying the Pillow CI fix) and its CI is re-run green (M3).
