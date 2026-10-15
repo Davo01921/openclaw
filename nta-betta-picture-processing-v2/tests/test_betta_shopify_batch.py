@@ -15,6 +15,13 @@ bsb = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = bsb
 SPEC.loader.exec_module(bsb)
 
+CORRECTIONS_SCRIPT = Path(__file__).parents[1] / "scripts" / "betta_corrections.py"
+CORRECTIONS_SPEC = importlib.util.spec_from_file_location(
+    "betta_corrections_for_uploader_tests", CORRECTIONS_SCRIPT)
+corrections = importlib.util.module_from_spec(CORRECTIONS_SPEC)
+sys.modules[CORRECTIONS_SPEC.name] = corrections
+CORRECTIONS_SPEC.loader.exec_module(corrections)
+
 
 def digest(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
@@ -214,6 +221,13 @@ class Fixture:
                     "sha256": qa_hash,
                     "exception": None,
                 },
+                "identity": {
+                    "source_sha256": source_hash,
+                    "detected_tank": tank,
+                    "requested_tank": tank,
+                    "accepted_tank": tank,
+                    "correction_sha256": None,
+                },
                 "write_authorised": self.authorised,
             })
 
@@ -238,6 +252,7 @@ class Fixture:
             "shopify_write_authorised": self.authorised,
             "state_dir": str(self.root / "state"),
             "report_dir": str(self.root / "reports"),
+            "corrections_dir": str(self.root / "corrections"),
             "evidence": evidence,
             "items": self.manifest_items,
         }
@@ -249,6 +264,35 @@ class Fixture:
         manifest = json.loads(self.manifest_path.read_text())
         manifest["items"] = self.manifest_items
         write_json(self.manifest_path, manifest)
+
+    def install_correction(self, tank: str, **overrides):
+        """Write one immutably-recorded owner correction and bind it in the manifest."""
+        item = next(value for value in self.manifest_items if value["tank_id"] == tank)
+        values = {
+            "source_sha256": item["original"]["sha256"],
+            "original_model_tank": "9BT9",
+            "corrected_tank": tank,
+            "product_id": item["product_id"],
+            "variant_id": item["variant_id"],
+            "operation": {
+                "fields": list(bsb.IDENTITY_OPERATION_FIELDS),
+                "mode": "owner-directed",
+            },
+            "reason": "owner corrected the vision tank reading",
+            "evidence_reference": "test-evidence-reference",
+            "operator": "owner",
+            "directory": self.root / "corrections",
+            "created_at": "2026-10-15T00:00:00+00:00",
+        }
+        values.update(overrides)
+        path = corrections.record(**values)
+        record = json.loads(path.read_text())
+        item["identity"].update({
+            "detected_tank": values["original_model_tank"],
+            "correction_sha256": record["correction_sha256"],
+        })
+        self.rewrite_manifest()
+        return path, record
 
     def add_completion(self, tank: str):
         item = next(value for value in self.manifest_items if value["tank_id"] == tank)
@@ -513,6 +557,104 @@ class ManifestTests(unittest.TestCase):
             bsb.ManifestBundle(fixture.manifest_path)
             .contexts[tank].qa["output"]["overall"],
         )
+
+    def test_identity_block_is_required_for_every_item(self):
+        fixture = Fixture(self.root)
+        del fixture.manifest_items[0]["identity"]
+        fixture.rewrite_manifest()
+        with self.assertRaisesRegex(bsb.ManifestError, "identity block required"):
+            bsb.ManifestBundle(fixture.manifest_path)
+
+    def test_identity_block_rejects_unknown_keys(self):
+        fixture = Fixture(self.root)
+        fixture.manifest_items[0]["identity"]["extra"] = "not-allowed"
+        fixture.rewrite_manifest()
+        with self.assertRaisesRegex(bsb.ManifestError, "identity block must contain exactly"):
+            bsb.ManifestBundle(fixture.manifest_path)
+
+    def test_identity_source_hash_must_bind_the_camera_original(self):
+        fixture = Fixture(self.root)
+        fixture.manifest_items[0]["identity"]["source_sha256"] = "b" * 64
+        fixture.rewrite_manifest()
+        with self.assertRaisesRegex(bsb.ManifestError, "identity source hash differs"):
+            bsb.ManifestBundle(fixture.manifest_path)
+
+    def test_identity_accepted_tank_must_equal_the_manifest_tank(self):
+        fixture = Fixture(self.root)
+        fixture.manifest_items[0]["identity"]["accepted_tank"] = "9BT9"
+        fixture.rewrite_manifest()
+        with self.assertRaisesRegex(bsb.ManifestError, "accepted_tank must equal"):
+            bsb.ManifestBundle(fixture.manifest_path)
+
+    def test_identity_requested_tank_must_equal_item_tank_without_correction(self):
+        fixture = Fixture(self.root)
+        fixture.manifest_items[0]["identity"]["requested_tank"] = "9BT9"
+        fixture.manifest_items[0]["identity"]["detected_tank"] = "9BT9"
+        fixture.rewrite_manifest()
+        with self.assertRaisesRegex(bsb.ManifestError, "requested_tank must equal"):
+            bsb.ManifestBundle(fixture.manifest_path)
+
+    def test_detected_requested_mismatch_refused_without_correction(self):
+        fixture = Fixture(self.root)
+        fixture.manifest_items[0]["identity"]["detected_tank"] = "9BT9"
+        fixture.rewrite_manifest()
+        with self.assertRaisesRegex(bsb.ManifestError, "without a correction record"):
+            bsb.ManifestBundle(fixture.manifest_path)
+
+    def test_valid_correction_allows_detected_requested_mismatch(self):
+        fixture = Fixture(self.root)
+        _, record = fixture.install_correction("1BT1")
+        bundle = bsb.ManifestBundle(fixture.manifest_path)
+        identity = bundle.contexts["1BT1"].raw["identity"]
+        self.assertEqual("9BT9", identity["detected_tank"])
+        self.assertEqual(record["correction_sha256"], identity["correction_sha256"])
+
+    def test_correction_for_wrong_product_refused(self):
+        fixture = Fixture(self.root)
+        fixture.install_correction(
+            "1BT1", product_id="gid://shopify/Product/999")
+        with self.assertRaisesRegex(bsb.ManifestError, "product_id_mismatch"):
+            bsb.ManifestBundle(fixture.manifest_path)
+
+    def test_correction_for_wrong_source_refused(self):
+        fixture = Fixture(self.root)
+        fixture.install_correction("1BT1", source_sha256="c" * 64)
+        with self.assertRaisesRegex(bsb.ManifestError, "source_sha256_mismatch"):
+            bsb.ManifestBundle(fixture.manifest_path)
+
+    def test_correction_scope_must_cover_betta_operations(self):
+        fixture = Fixture(self.root)
+        fixture.install_correction(
+            "1BT1", operation={"fields": ["retail", "cost", "vendor"],
+                               "mode": "owner-directed"})
+        with self.assertRaisesRegex(bsb.ManifestError, "operation_scope_mismatch"):
+            bsb.ManifestBundle(fixture.manifest_path)
+
+    def test_missing_correction_record_refused(self):
+        fixture = Fixture(self.root)
+        fixture.manifest_items[0]["identity"]["detected_tank"] = "9BT9"
+        fixture.manifest_items[0]["identity"]["correction_sha256"] = "d" * 64
+        fixture.rewrite_manifest()
+        with self.assertRaisesRegex(bsb.ManifestError, "record_unavailable"):
+            bsb.ManifestBundle(fixture.manifest_path)
+
+    def test_tampered_correction_record_refused(self):
+        fixture = Fixture(self.root)
+        path, _ = fixture.install_correction("1BT1")
+        path.chmod(0o600)
+        record = json.loads(path.read_text())
+        record["corrected_tank"] = "9BT9"
+        path.write_text(json.dumps(record))
+        with self.assertRaisesRegex(bsb.ManifestError, "self_hash_mismatch"):
+            bsb.ManifestBundle(fixture.manifest_path)
+
+    def test_invalid_correction_hash_format_refused(self):
+        fixture = Fixture(self.root)
+        fixture.manifest_items[0]["identity"]["detected_tank"] = "9BT9"
+        fixture.manifest_items[0]["identity"]["correction_sha256"] = "NOT-HEX"
+        fixture.rewrite_manifest()
+        with self.assertRaisesRegex(bsb.ManifestError, "lowercase SHA-256"):
+            bsb.ManifestBundle(fixture.manifest_path)
 
 
 class UploaderTests(unittest.TestCase):
@@ -886,6 +1028,42 @@ class UploaderTests(unittest.TestCase):
             "FINAL_SHOPIFY_READBACK_PASS",
             json.loads(receipt.read_text())["status"],
         )
+
+    def test_corrected_item_completes_full_mocked_write_path(self):
+        fixture = Fixture(self.root, authorised=True)
+        fixture.install_correction("1BT1")
+        bundle = bsb.ManifestBundle(fixture.manifest_path)
+        contexts = bundle.select()
+        gateway = FakeGateway(contexts)
+        state = bsb.StateStore(bundle)
+        uploader = bsb.BatchUploader(
+            bundle, gateway, state,
+            sleep=lambda _: None,
+            upload=lambda target, asset: None,
+            poll_attempts=5,
+            poll_interval=0,
+        )
+        report = uploader.execute(contexts)
+        self.assertEqual(1, report["verified_count"])
+        self.assertEqual(0, report["blocked_count"])
+        self.assertEqual("VERIFIED", state.item("1BT1")["stage"])
+
+    def test_execute_and_resume_refuse_unbound_identity_before_any_state(self):
+        fixture = Fixture(self.root, authorised=True)
+        del fixture.manifest_items[0]["identity"]["detected_tank"]
+        fixture.rewrite_manifest()
+        for command in ("execute", "resume"):
+            stderr = io.StringIO()
+            with contextlib.redirect_stderr(stderr):
+                code = bsb.main([
+                    command,
+                    "--manifest", str(fixture.manifest_path),
+                    "--bridge", str(self.root / "bridge.mjs"),
+                ])
+            self.assertEqual(2, code)
+            self.assertIn("identity block", stderr.getvalue())
+        self.assertFalse((fixture.root / "state").exists())
+        self.assertFalse((fixture.root / "reports").exists())
 
 
 if __name__ == "__main__":

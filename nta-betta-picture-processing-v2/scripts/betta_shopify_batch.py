@@ -6,12 +6,21 @@ an explicit --live flag, and the manifest SHA-256 repeated on the command line.
 Every mutation intent is journalled before the authenticated Shopify bridge is
 called. An uncertain write is reconciled from fresh Shopify state and is never
 automatically replayed.
+
+Every manifest item MUST carry the pinned ``identity`` block
+(``source_sha256`` / ``detected_tank`` / ``requested_tank`` / ``accepted_tank`` /
+``correction_sha256``). Items whose vision-detected tank differs from the
+owner-requested tank are refused unless an immutable, hash-verified owner
+correction record binds that exact source, product and operation set; see
+``scripts/betta_corrections.py`` and
+``docs/incident/MUTATION_FIREWALL_DESIGN_2026-10-15.md``.
 """
 
 from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.util
 import json
 import mimetypes
 import os
@@ -30,6 +39,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
+from types import ModuleType
 from typing import Any, Callable, Iterable, Mapping, Protocol
 
 MANIFEST_SCHEMA = "nta-betta-shopify-batch-v1"
@@ -55,6 +65,15 @@ PROTECTED_FIELDS = (
     "description_html", "price", "cost", "vendor",
     "product_type", "handle", "status",
 )
+# Every item MUST carry the pinned identity block (see docs/incident/
+# MUTATION_FIREWALL_DESIGN_2026-10-15.md). The operation fields below are the
+# exact field set a Betta batch manifest can change for one item; a correction
+# record must cover this set in its recorded scope.
+IDENTITY_KEYS = frozenset({
+    "source_sha256", "detected_tank", "requested_tank", "accepted_tank",
+    "correction_sha256",
+})
+IDENTITY_OPERATION_FIELDS = ("title", "arrival_date", "inventory", "media")
 WRITE_OPERATIONS = {
     "betta_batch_stage_images", "betta_batch_add_images",
     "betta_batch_reorder_media", "betta_batch_delete_media",
@@ -229,6 +248,29 @@ def media_alt(batch_id: str, tank_id: str, role: str, digest: str) -> str:
     return f"NTA|{batch_id}|{tank_id}|{role}|sha256={digest}"
 
 
+_CORRECTIONS: ModuleType | None = None
+
+
+def corrections_module() -> ModuleType:
+    """Load the sibling owner-correction module without a package install.
+
+    Mirrors the importlib pattern ``betta_policy`` uses to load this uploader.
+    """
+    global _CORRECTIONS
+    if _CORRECTIONS is not None:
+        return _CORRECTIONS
+    path = Path(__file__).with_name("betta_corrections.py")
+    name = "_nta_betta_corrections_uploader_validation"
+    spec = importlib.util.spec_from_file_location(name, path)
+    if spec is None or spec.loader is None:
+        raise BatchError(f"cannot load corrections module: {path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    _CORRECTIONS = module
+    return module
+
+
 @dataclass(frozen=True)
 class Evidence:
     name: str
@@ -312,6 +354,12 @@ class ManifestBundle:
         require(isinstance(self.raw.get("items"), list) and self.raw["items"],
                 "manifest items must be a non-empty list")
         self.evidence = self._load_evidence()
+        configured_corrections = self.raw.get("corrections_dir")
+        self.corrections_dir = (
+            resolve_path(self.path.parent, configured_corrections, "corrections_dir")
+            if configured_corrections
+            else corrections_module().default_directory()
+        )
         self.contexts: dict[str, ItemContext] = {}
         self._validate_items()
         configured_state = self.raw.get("state_dir")
@@ -399,6 +447,7 @@ class ManifestBundle:
             source_hash = raw["original"]["sha256"]
             require(source_hash not in seen["source"], f"duplicate source hash: {source_hash}")
             seen["source"].add(source_hash)
+            self._validate_identity(raw)
             for label, index in (
                 ("approval", approval), ("snapshot", snapshot), ("details", details),
                 ("label", labels), ("authority", authority),
@@ -408,6 +457,63 @@ class ManifestBundle:
                 raw, approval[tank], snapshot[tank], details[tank],
                 labels[tank], authority[tank],
             )
+
+    @staticmethod
+    def _identity_tank(value: Any, tank: str, label: str) -> str:
+        require(isinstance(value, str) and TANK_RE.fullmatch(value) is not None,
+                f"{tank} identity.{label}: canonical tank ID required")
+        return value
+
+    def _validate_identity(self, raw: Mapping[str, Any]) -> None:
+        """Enforce the pinned identity contract for one manifest item.
+
+        REFUSES (before any write capability exists) unless the identity block
+        binds this exact camera original, the accepted tank equals the manifest
+        tank, the requested tank equals the item tank (delegated to the
+        correction record when one is present), and any vision/requested tank
+        difference is authorised by an immutable, hash-verified correction
+        record covering this exact source, product and operation set.
+        """
+        tank = raw["tank_id"]
+        identity = raw.get("identity")
+        require(isinstance(identity, dict), f"{tank}: identity block required")
+        require(set(identity) == IDENTITY_KEYS,
+                f"{tank}: identity block must contain exactly "
+                + ", ".join(sorted(IDENTITY_KEYS)))
+        source_sha = require_sha(
+            identity.get("source_sha256"), f"{tank} identity.source_sha256")
+        require(source_sha == raw["original"]["sha256"],
+                f"{tank}: identity source hash differs from the camera original")
+        detected = self._identity_tank(
+            identity.get("detected_tank"), tank, "detected_tank")
+        requested = self._identity_tank(
+            identity.get("requested_tank"), tank, "requested_tank")
+        accepted = self._identity_tank(
+            identity.get("accepted_tank"), tank, "accepted_tank")
+        require(accepted == tank,
+                f"{tank}: identity accepted_tank must equal the manifest tank")
+        correction = identity.get("correction_sha256")
+        if correction is None:
+            require(requested == tank,
+                    f"{tank}: identity requested_tank must equal the manifest "
+                    "tank when no correction is present")
+            require(detected == requested,
+                    f"{tank}: vision-detected tank ({detected}) differs from "
+                    f"the requested tank ({requested}) without a correction record")
+            return
+        require(isinstance(correction, str) and SHA_RE.fullmatch(correction) is not None,
+                f"{tank}: identity correction_sha256 must be a lowercase SHA-256")
+        module = corrections_module()
+        verdict = module.validate_correction(
+            module.record_path_for(correction, self.corrections_dir),
+            source_sha256=source_sha,
+            requested_tank=requested,
+            accepted_tank=accepted,
+            product_id=raw["product_id"],
+            operation_fields=list(IDENTITY_OPERATION_FIELDS),
+        )
+        require(verdict.get("valid") is True,
+                f"{tank}: identity correction rejected: {verdict.get('reason')}")
 
     def _build_context(
         self,

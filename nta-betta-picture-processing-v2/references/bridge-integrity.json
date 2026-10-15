@@ -1,0 +1,25 @@
+{
+  "schema": "nta-betta-bridge-integrity-v1",
+  "created_at": "2026-10-15",
+  "created_by": "P1 incident repair A3 (mutation firewall)",
+  "entries": [
+    {
+      "name": "canonical-betta-shopify-session-bridge",
+      "role": "canonical",
+      "path": "/Users/davidlo/.openclaw/workspace/nta-fred-shopify-auth/nta-betta-picture-processor/scripts/shopify-session-bridge.mjs",
+      "sha256": "d1fb226484492c492f3931ceb9e1f5e066aadad76709201c36f8394dfc3a5ba2",
+      "bytes": 42906,
+      "pinned_at": "2026-10-15",
+      "note": "Canonical Fred/NTA Shopify session bridge as observed 2026-10-15 (read-only inspection). Any change to this file is a re-pin event requiring explicit owner authorisation; deployment wiring of this checker into write paths is owner-gated."
+    }
+  ],
+  "known_copies_observed": [
+    {
+      "path": "/Users/davidlo/.openclaw/workspace/fred/tmp/betta-merch-20261014/scripts/shopify-session-bridge.mjs",
+      "sha256": "2251f7097c0b5b09b81776a717df4a32154f02e1ee37bdd8564aa31866cae9d6",
+      "bytes": 49107,
+      "observed_at": "2026-10-15",
+      "note": "Agent-writable workspace copy used by Fred's ad-hoc merch scripts during the P1 incident. Contains a merch write path and an in-file BETTA_MERCH_TARGETS/BETTA_MERCH_VALUES allowlist that does not exist in the canonical bridge. Informational only; check_bridge() must return bridge_not_canonical for this path."
+    }
+  ]
+}
