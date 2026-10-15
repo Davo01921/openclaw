@@ -1,0 +1,42 @@
+{
+  "attempts": [],
+  "batch_id": "betta-20261015-110404-16gddf",
+  "call_id": "probe-catalogue",
+  "input_hashes": [
+    "6e4a4f573f8cfc829218f798eeb5b45cd08803689d31d7db6fce4920cdca9ca9"
+  ],
+  "model": "mock-vision",
+  "output": {
+    "date_confidence": 0.96,
+    "fish_name": "Pastel Pink",
+    "one_fish_visible": true,
+    "photo_date": "2026-10-14",
+    "sex": "Male",
+    "tail_type": "Halfmoon",
+    "tank_confidence": 0.99,
+    "tank_id": "2BT23",
+    "title": "2BT23 - Pastel Pink Halfmoon Male",
+    "uncertainty_reasons": []
+  },
+  "provider": "mock-router",
+  "routing": {
+    "actual_model": "mock-vision",
+    "actual_provider": "mock-router",
+    "authority": "adaptive-model-router/v2.1",
+    "class": "STANDARD",
+    "eligible_routes": [
+      "mock-router/mock-vision"
+    ],
+    "execution_attested": true,
+    "fallback_used": false,
+    "requested_route": "mock-router/mock-vision"
+  },
+  "source_identity": {
+    "path": "/private/var/folders/f0/ncwpvltd3_sfbjtbnct70dnm0000gn/T/opencode/incident-eval/probe/batches/betta-20261015-110404-16gddf/intake/incident-photo.png",
+    "sha256": "6e4a4f573f8cfc829218f798eeb5b45cd08803689d31d7db6fce4920cdca9ca9"
+  },
+  "timestamp": "2026-10-15T00:04:04.684709+00:00",
+  "uncertain": false,
+  "uncertain_reason": null,
+  "usage": {}
+}

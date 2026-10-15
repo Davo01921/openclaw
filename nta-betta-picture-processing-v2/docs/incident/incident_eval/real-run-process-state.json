@@ -1,0 +1,94 @@
+{
+  "batch_id": "betta-20261015-105638-vccnto",
+  "executed": [],
+  "fish": {
+    "/private/var/folders/f0/ncwpvltd3_sfbjtbnct70dnm0000gn/T/opencode/incident-eval/batches/betta-20261015-105638-vccnto/intake/incident-photo.png": {
+      "catalogue_evidence_path": "/private/var/folders/f0/ncwpvltd3_sfbjtbnct70dnm0000gn/T/opencode/incident-eval/batches/betta-20261015-105638-vccnto/evidence/catalogue/6e4a4f573f8cfc829218f798eeb5b45cd08803689d31d7db6fce4920cdca9ca9.json",
+      "catalogue_evidence_sha256": "0965651c9543e492efd6fdf358de4cf84f709800392a452981296ec957dfd1ca",
+      "date_entered": "2026-10-14T23:56:38.867200+00:00",
+      "fish_name": "Pastel Pink",
+      "identify_reason": "catalogue confidence below 0.90",
+      "label_price_visible": "35",
+      "label_reads": {
+        "crop": {
+          "confident": true,
+          "crop_helper": "betta_prepare.label_crop",
+          "crop_path": "/private/var/folders/f0/ncwpvltd3_sfbjtbnct70dnm0000gn/T/opencode/incident-eval/batches/betta-20261015-105638-vccnto/evidence/label-crops/6e4a4f573f8cfc829218f798eeb5b45cd08803689d31d7db6fce4920cdca9ca9-label.png",
+          "crop_sha256": "b6cbc02721b2071d01fe7e16f48cea2b043842bec7478d45ac8b5f80f12107f1",
+          "photo_date": "2026-10-14",
+          "receipt_path": "/private/var/folders/f0/ncwpvltd3_sfbjtbnct70dnm0000gn/T/opencode/incident-eval/batches/betta-20261015-105638-vccnto/evidence/catalogue/6e4a4f573f8cfc829218f798eeb5b45cd08803689d31d7db6fce4920cdca9ca9-label-retry.json",
+          "receipt_sha256": "e9825988256242f9b88298c68fc8f7a8f6a283cee153b92b5ee3dcb49f4865a8",
+          "tank_id": "2BT23"
+        },
+        "full": {
+          "confident": false,
+          "photo_date": "2026-04-10",
+          "receipt_path": "/private/var/folders/f0/ncwpvltd3_sfbjtbnct70dnm0000gn/T/opencode/incident-eval/batches/betta-20261015-105638-vccnto/evidence/catalogue/6e4a4f573f8cfc829218f798eeb5b45cd08803689d31d7db6fce4920cdca9ca9.json",
+          "receipt_sha256": "0965651c9543e492efd6fdf358de4cf84f709800392a452981296ec957dfd1ca",
+          "tank_id": "2BT23"
+        },
+        "reasons": [
+          "catalogue date 2026-04-10 vs label date 2026-10-14"
+        ],
+        "status": "RETRY_CONFLICT",
+        "visible_price": "35"
+      },
+      "notes": [
+        "focused label read contradicts the catalogue read: catalogue date 2026-04-10 vs label date 2026-10-14"
+      ],
+      "photo_date": "2026-04-10",
+      "sex": "Male",
+      "source_path": "/private/var/folders/f0/ncwpvltd3_sfbjtbnct70dnm0000gn/T/opencode/incident-eval/batches/betta-20261015-105638-vccnto/intake/incident-photo.png",
+      "source_sha256": "6e4a4f573f8cfc829218f798eeb5b45cd08803689d31d7db6fce4920cdca9ca9",
+      "status": "QUARANTINED",
+      "tail_type": "Halfmoon Plakat",
+      "tank_id": "2BT23",
+      "title": null,
+      "uncertain": true,
+      "uncertain_reason": "catalogue confidence below 0.90"
+    }
+  },
+  "generated": [],
+  "identification_retry_complete": true,
+  "intake": {
+    "fish": [
+      {
+        "date_entered": "2026-10-14T23:56:38.867200+00:00",
+        "path": "/private/var/folders/f0/ncwpvltd3_sfbjtbnct70dnm0000gn/T/opencode/incident-eval/batches/betta-20261015-105638-vccnto/intake/incident-photo.png",
+        "sha256": "6e4a4f573f8cfc829218f798eeb5b45cd08803689d31d7db6fce4920cdca9ca9",
+        "size": 2936221
+      }
+    ],
+    "selected_source_count": 1
+  },
+  "log": [
+    {
+      "at": "2026-10-15T10:56:38.876497+11:00",
+      "stage": "INTAKE_VERIFIED"
+    },
+    {
+      "at": "2026-10-15T10:57:24.238863+11:00",
+      "stage": "IDENTIFIED"
+    },
+    {
+      "at": "2026-10-15T10:58:02.288169+11:00",
+      "stage": "PREPARED"
+    },
+    {
+      "at": "2026-10-15T10:58:02.288893+11:00",
+      "stage": "GENERATED"
+    },
+    {
+      "at": "2026-10-15T10:58:02.289620+11:00",
+      "stage": "QA_VERIFIED"
+    },
+    {
+      "at": "2026-10-15T10:58:02.290319+11:00",
+      "stage": "SHOPIFY_RESOLVED"
+    }
+  ],
+  "manifest_sha256": null,
+  "schema": "nta-betta-process-v1",
+  "stage": "SHOPIFY_RESOLVED",
+  "status": "PARTIAL"
+}

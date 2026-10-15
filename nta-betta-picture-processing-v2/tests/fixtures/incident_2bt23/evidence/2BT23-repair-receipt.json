@@ -1,0 +1,48 @@
+{
+  "schema": "nta-protected-merchandising-repair-receipt-v1",
+  "planSha256": "5ed84ede17ef8676890304c127ee6bcd5b3cbdf934adcf4eab72ae397f1ed64c",
+  "verifiedAt": "2026-10-14T22:23:12.900Z",
+  "targets": {
+    "revert5BT43": {
+      "tank": "5BT43",
+      "productId": "gid://shopify/Product/7239072481489",
+      "variantId": "gid://shopify/ProductVariant/41532067512529"
+    },
+    "update2BT23": {
+      "tank": "2BT23",
+      "productId": "gid://shopify/Product/7255867588817",
+      "variantId": "gid://shopify/ProductVariant/41571765453009"
+    }
+  },
+  "before": {
+    "5BT43": {
+      "vendor": "Renial",
+      "price": "35.00",
+      "cost": "15.0"
+    },
+    "2BT23": {
+      "vendor": "NTA Imports",
+      "price": "25.00",
+      "cost": "11.42"
+    }
+  },
+  "after": {
+    "5BT43": {
+      "vendor": "NTA Imports",
+      "price": "25.00",
+      "cost": "1.0"
+    },
+    "2BT23": {
+      "vendor": "Renial",
+      "price": "35.00",
+      "cost": "15.0"
+    }
+  },
+  "checks": {
+    "revert5BT43": true,
+    "update2BT23": true,
+    "preserve5BT43": true,
+    "preserve2BT23": true
+  },
+  "pass": true
+}

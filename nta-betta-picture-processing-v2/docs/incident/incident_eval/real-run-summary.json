@@ -1,0 +1,128 @@
+{
+  "batch_dir": "/private/var/folders/f0/ncwpvltd3_sfbjtbnct70dnm0000gn/T/opencode/incident-eval/batches/betta-20261015-105638-vccnto",
+  "batch_id": "betta-20261015-105638-vccnto",
+  "budget_after": {
+    "batch_id": "betta-20261015-105638-vccnto",
+    "batch_reserved": 0.0,
+    "batch_spent": 0.0,
+    "blocked": false,
+    "blocked_reason": null,
+    "fish": {},
+    "limits": {
+      "fallback_cost_usd": 0.07,
+      "max_attempts_per_fish": 2,
+      "max_fish_per_batch": 20,
+      "max_retries_per_fish": 1,
+      "per_batch_usd": 2.8,
+      "per_fish_usd": 0.14
+    }
+  },
+  "budget_before": {
+    "batch_id": "betta-20261015-105638-vccnto",
+    "batch_reserved": 0.0,
+    "batch_spent": 0.0,
+    "blocked": false,
+    "blocked_reason": null,
+    "fish": {},
+    "limits": {
+      "fallback_cost_usd": 0.07,
+      "max_attempts_per_fish": 2,
+      "max_fish_per_batch": 20,
+      "max_retries_per_fish": 1,
+      "per_batch_usd": 2.8,
+      "per_fish_usd": 0.14
+    }
+  },
+  "entries": [
+    {
+      "catalogue_evidence_path": "/private/var/folders/f0/ncwpvltd3_sfbjtbnct70dnm0000gn/T/opencode/incident-eval/batches/betta-20261015-105638-vccnto/evidence/catalogue/6e4a4f573f8cfc829218f798eeb5b45cd08803689d31d7db6fce4920cdca9ca9.json",
+      "catalogue_evidence_sha256": "0965651c9543e492efd6fdf358de4cf84f709800392a452981296ec957dfd1ca",
+      "identify_reason": "catalogue confidence below 0.90",
+      "key": "/private/var/folders/f0/ncwpvltd3_sfbjtbnct70dnm0000gn/T/opencode/incident-eval/batches/betta-20261015-105638-vccnto/intake/incident-photo.png",
+      "label_price_visible": "35",
+      "label_reads": {
+        "crop": {
+          "confident": true,
+          "crop_helper": "betta_prepare.label_crop",
+          "crop_path": "/private/var/folders/f0/ncwpvltd3_sfbjtbnct70dnm0000gn/T/opencode/incident-eval/batches/betta-20261015-105638-vccnto/evidence/label-crops/6e4a4f573f8cfc829218f798eeb5b45cd08803689d31d7db6fce4920cdca9ca9-label.png",
+          "crop_sha256": "b6cbc02721b2071d01fe7e16f48cea2b043842bec7478d45ac8b5f80f12107f1",
+          "photo_date": "2026-10-14",
+          "receipt_path": "/private/var/folders/f0/ncwpvltd3_sfbjtbnct70dnm0000gn/T/opencode/incident-eval/batches/betta-20261015-105638-vccnto/evidence/catalogue/6e4a4f573f8cfc829218f798eeb5b45cd08803689d31d7db6fce4920cdca9ca9-label-retry.json",
+          "receipt_sha256": "e9825988256242f9b88298c68fc8f7a8f6a283cee153b92b5ee3dcb49f4865a8",
+          "tank_id": "2BT23"
+        },
+        "full": {
+          "confident": false,
+          "photo_date": "2026-04-10",
+          "receipt_path": "/private/var/folders/f0/ncwpvltd3_sfbjtbnct70dnm0000gn/T/opencode/incident-eval/batches/betta-20261015-105638-vccnto/evidence/catalogue/6e4a4f573f8cfc829218f798eeb5b45cd08803689d31d7db6fce4920cdca9ca9.json",
+          "receipt_sha256": "0965651c9543e492efd6fdf358de4cf84f709800392a452981296ec957dfd1ca",
+          "tank_id": "2BT23"
+        },
+        "reasons": [
+          "catalogue date 2026-04-10 vs label date 2026-10-14"
+        ],
+        "status": "RETRY_CONFLICT",
+        "visible_price": "35"
+      },
+      "notes": [
+        "focused label read contradicts the catalogue read: catalogue date 2026-04-10 vs label date 2026-10-14"
+      ],
+      "photo_date": "2026-04-10",
+      "prep_status": null,
+      "source_path": "/private/var/folders/f0/ncwpvltd3_sfbjtbnct70dnm0000gn/T/opencode/incident-eval/batches/betta-20261015-105638-vccnto/intake/incident-photo.png",
+      "source_sha256": "6e4a4f573f8cfc829218f798eeb5b45cd08803689d31d7db6fce4920cdca9ca9",
+      "status": "QUARANTINED",
+      "tank_id": "2BT23",
+      "uncertain": true,
+      "uncertain_reason": "catalogue confidence below 0.90",
+      "working_input_path": null,
+      "working_input_sha256": null
+    }
+  ],
+  "fixture": {
+    "path": "/Users/davidlo/openclaw-skills-incident-repair/nta-betta-picture-processing-v2/tests/fixtures/incident_2bt23/incident-photo.png",
+    "sha256": "6e4a4f573f8cfc829218f798eeb5b45cd08803689d31d7db6fce4920cdca9ca9",
+    "sha256_after_run": "6e4a4f573f8cfc829218f798eeb5b45cd08803689d31d7db6fce4920cdca9ca9"
+  },
+  "live_flags": {
+    "live_generation": false,
+    "live_shopify": false
+  },
+  "policy": {
+    "automatic_batch_authorisation": false,
+    "enabled": false,
+    "paid_generation_authorised": false
+  },
+  "raw_source": {
+    "path": "/private/var/folders/f0/ncwpvltd3_sfbjtbnct70dnm0000gn/T/opencode/incident-eval/intake/incident-photo.png",
+    "sha256_after": "6e4a4f573f8cfc829218f798eeb5b45cd08803689d31d7db6fce4920cdca9ca9",
+    "sha256_before": "6e4a4f573f8cfc829218f798eeb5b45cd08803689d31d7db6fce4920cdca9ca9",
+    "size_bytes": 2936221,
+    "unchanged": true
+  },
+  "receipt_copies": {
+    "catalogue": {
+      "copy": "/private/var/folders/f0/ncwpvltd3_sfbjtbnct70dnm0000gn/T/opencode/incident-eval/evidence/catalogue-receipt.json",
+      "sha256": "0965651c9543e492efd6fdf358de4cf84f709800392a452981296ec957dfd1ca",
+      "source": "/private/var/folders/f0/ncwpvltd3_sfbjtbnct70dnm0000gn/T/opencode/incident-eval/batches/betta-20261015-105638-vccnto/evidence/catalogue/6e4a4f573f8cfc829218f798eeb5b45cd08803689d31d7db6fce4920cdca9ca9.json"
+    },
+    "label_corroboration": {
+      "copy": "/private/var/folders/f0/ncwpvltd3_sfbjtbnct70dnm0000gn/T/opencode/incident-eval/evidence/label_corroboration-receipt.json",
+      "sha256": "e9825988256242f9b88298c68fc8f7a8f6a283cee153b92b5ee3dcb49f4865a8",
+      "source": "/private/var/folders/f0/ncwpvltd3_sfbjtbnct70dnm0000gn/T/opencode/incident-eval/batches/betta-20261015-105638-vccnto/evidence/catalogue/6e4a4f573f8cfc829218f798eeb5b45cd08803689d31d7db6fce4920cdca9ca9-label-retry.json"
+    },
+    "label_crop": {
+      "copy": "/private/var/folders/f0/ncwpvltd3_sfbjtbnct70dnm0000gn/T/opencode/incident-eval/evidence/label-crop.png",
+      "sha256": "b6cbc02721b2071d01fe7e16f48cea2b043842bec7478d45ac8b5f80f12107f1",
+      "source": "/private/var/folders/f0/ncwpvltd3_sfbjtbnct70dnm0000gn/T/opencode/incident-eval/batches/betta-20261015-105638-vccnto/evidence/label-crops/6e4a4f573f8cfc829218f798eeb5b45cd08803689d31d7db6fce4920cdca9ca9-label.png"
+    }
+  },
+  "result": {
+    "batch_id": "betta-20261015-105638-vccnto",
+    "manifest_sha256": null,
+    "published": 0,
+    "quarantined": 1,
+    "stage": "SHOPIFY_RESOLVED",
+    "status": "PARTIAL"
+  }
+}

@@ -1,0 +1,58 @@
+{
+  "attempts": [],
+  "batch_id": "betta-20261015-105638-vccnto",
+  "call_id": "7bd0c9e7-e995-4969-a132-06454958d278",
+  "input_hashes": [
+    "6e4a4f573f8cfc829218f798eeb5b45cd08803689d31d7db6fce4920cdca9ca9"
+  ],
+  "model": "gpt-5.6-sol",
+  "output": {
+    "date_confidence": 0.88,
+    "fish_name": "Pastel Pink",
+    "one_fish_visible": true,
+    "photo_date": "2026-04-10",
+    "proposed_title": "2BT23 - Pastel Pink Halfmoon Plakat Male",
+    "sex": "Male",
+    "sex_confidence": 0.0,
+    "tail_type": "Halfmoon Plakat",
+    "tank_confidence": 0.98,
+    "tank_id": "2BT23",
+    "title": null,
+    "uncertainty_reasons": [
+      "Handwritten date could be interpreted as 4/10/2026 or 14/10/2026.",
+      "Sex is not confidently supported by visible anatomy."
+    ]
+  },
+  "provider": "openai",
+  "routing": {
+    "actual_model": "gpt-5.6-sol",
+    "actual_provider": "openai",
+    "agent": "fred",
+    "authority": "adaptive-model-router/v2.1",
+    "capability_requirements": [
+      "image",
+      "structured_output"
+    ],
+    "class": "STANDARD",
+    "eligible_routes": [
+      "openai/gpt-5.6-sol",
+      "qwen-token-plan/qwen3.8-flash",
+      "qwen/qwen3.8-max"
+    ],
+    "execution_attested": true,
+    "fallback_used": false,
+    "requested_route": "openai/gpt-5.6-sol"
+  },
+  "source_identity": {
+    "path": "/private/var/folders/f0/ncwpvltd3_sfbjtbnct70dnm0000gn/T/opencode/incident-eval/batches/betta-20261015-105638-vccnto/intake/incident-photo.png",
+    "sha256": "6e4a4f573f8cfc829218f798eeb5b45cd08803689d31d7db6fce4920cdca9ca9"
+  },
+  "timestamp": "2026-10-14T23:57:24.218543+00:00",
+  "uncertain": true,
+  "uncertain_reason": "catalogue confidence below 0.90",
+  "usage": {
+    "token_usage_reported": false,
+    "tokens_input": 0,
+    "tokens_output": 0
+  }
+}

@@ -1,0 +1,63 @@
+{
+  "accepted": null,
+  "attempts": [
+    {
+      "level": "FULL",
+      "output": {
+        "faithful_colours": false,
+        "full_fins": true,
+        "lighting_usable": false,
+        "no_identity_alteration": true,
+        "overall": "FAIL",
+        "reason": "The prepared image has substantially increased exposure/contrast with clipped highlights on the fish and label, plus a noticeable pink/magenta colour shift. This exceeds mild bounded correction and loses recoverable fish detail, making it unsuitable for professional reprocessing.",
+        "same_fish": true,
+        "tank_only": true
+      },
+      "prep_qa": "FAIL",
+      "reason": "The prepared image has substantially increased exposure/contrast with clipped highlights on the fish and label, plus a noticeable pink/magenta colour shift. This exceeds mild bounded correction and loses recoverable fish detail, making it unsuitable for professional reprocessing."
+    },
+    {
+      "level": "L1",
+      "output": {
+        "faithful_colours": false,
+        "full_fins": true,
+        "lighting_usable": false,
+        "no_identity_alteration": true,
+        "overall": "FAIL",
+        "reason": "The prepared image has a substantial exposure/contrast increase with clipped highlights on the fish and label, reducing recoverable detail and shifting the fish toward brighter pink/white beyond a mild bounded correction.",
+        "same_fish": true,
+        "tank_only": true
+      },
+      "prep_qa": "FAIL",
+      "reason": "The prepared image has a substantial exposure/contrast increase with clipped highlights on the fish and label, reducing recoverable detail and shifting the fish toward brighter pink/white beyond a mild bounded correction."
+    }
+  ],
+  "batch_id": "betta-20261015-110404-16gddf",
+  "identity_cross_check": {
+    "conflicts": [],
+    "identified": {
+      "photo_date": "2026-10-14",
+      "tank_id": "2BT23"
+    },
+    "preflight": {
+      "date_confidence": 0.93,
+      "photo_date": "2026-10-14",
+      "tank_confidence": 0.99,
+      "tank_id": "2BT23"
+    },
+    "status": "AGREES"
+  },
+  "reason": "prepared images were rejected; the untouched camera original is used",
+  "schema": "nta-betta-preparation-v1",
+  "source_identity": {
+    "path": "/private/var/folders/f0/ncwpvltd3_sfbjtbnct70dnm0000gn/T/opencode/incident-eval/probe/batches/betta-20261015-110404-16gddf/intake/incident-photo.png",
+    "sha256": "6e4a4f573f8cfc829218f798eeb5b45cd08803689d31d7db6fce4920cdca9ca9"
+  },
+  "status": "FALLBACK_RAW",
+  "tank_id": "2BT23",
+  "working_identity": {
+    "path": "/private/var/folders/f0/ncwpvltd3_sfbjtbnct70dnm0000gn/T/opencode/incident-eval/probe/batches/betta-20261015-110404-16gddf/evidence/working/2BT23-working-raw.png",
+    "raw_copy": true,
+    "sha256": "6e4a4f573f8cfc829218f798eeb5b45cd08803689d31d7db6fce4920cdca9ca9"
+  }
+}

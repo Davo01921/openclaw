@@ -1,0 +1,83 @@
+{
+  "attempts": [],
+  "batch_id": "betta-20261015-110404-16gddf",
+  "call_id": "probe-label",
+  "crop_identity": {
+    "detection": {
+      "clamped": false,
+      "confident": true,
+      "method": "card-band",
+      "output_dimensions": [
+        1512,
+        477
+      ],
+      "output_path": "/private/var/folders/f0/ncwpvltd3_sfbjtbnct70dnm0000gn/T/opencode/incident-eval/probe/batches/betta-20261015-110404-16gddf/evidence/label-crops/6e4a4f573f8cfc829218f798eeb5b45cd08803689d31d7db6fce4920cdca9ca9-label.png.part",
+      "output_sha256": "b6cbc02721b2071d01fe7e16f48cea2b043842bec7478d45ac8b5f80f12107f1",
+      "reason": "label card band detected",
+      "rect_px": [
+        0,
+        0,
+        1512,
+        477
+      ],
+      "source_dimensions": [
+        1512,
+        2688
+      ],
+      "source_path": "/private/var/folders/f0/ncwpvltd3_sfbjtbnct70dnm0000gn/T/opencode/incident-eval/probe/batches/betta-20261015-110404-16gddf/intake/incident-photo.png",
+      "source_sha256": "6e4a4f573f8cfc829218f798eeb5b45cd08803689d31d7db6fce4920cdca9ca9"
+    },
+    "helper": "betta_prepare.label_crop",
+    "path": "/private/var/folders/f0/ncwpvltd3_sfbjtbnct70dnm0000gn/T/opencode/incident-eval/probe/batches/betta-20261015-110404-16gddf/evidence/label-crops/6e4a4f573f8cfc829218f798eeb5b45cd08803689d31d7db6fce4920cdca9ca9-label.png",
+    "sha256": "b6cbc02721b2071d01fe7e16f48cea2b043842bec7478d45ac8b5f80f12107f1"
+  },
+  "crop_reading": {
+    "confident": true,
+    "photo_date": "2026-10-14",
+    "tank_id": "2BT23"
+  },
+  "full_read": {
+    "confident": true,
+    "photo_date": "2026-10-14",
+    "receipt_path": "/private/var/folders/f0/ncwpvltd3_sfbjtbnct70dnm0000gn/T/opencode/incident-eval/probe/batches/betta-20261015-110404-16gddf/evidence/catalogue/6e4a4f573f8cfc829218f798eeb5b45cd08803689d31d7db6fce4920cdca9ca9.json",
+    "receipt_sha256": "a6e2b50e20ca904a2dbe7e5fa894f31295075071909d42b3a5701da6762bdbf4",
+    "tank_id": "2BT23"
+  },
+  "input_hashes": [
+    "b6cbc02721b2071d01fe7e16f48cea2b043842bec7478d45ac8b5f80f12107f1"
+  ],
+  "model": "mock-vision",
+  "output": {
+    "date_confidence": 0.96,
+    "photo_date": "2026-10-14",
+    "reasons": [],
+    "tank_confidence": 0.99,
+    "tank_id": "2BT23",
+    "visible_price": "35"
+  },
+  "provider": "mock-router",
+  "reasons": [
+    "confident reads agree: tank=2BT23 date=2026-10-14"
+  ],
+  "routing": {
+    "actual_model": "mock-vision",
+    "actual_provider": "mock-router",
+    "authority": "adaptive-model-router/v2.1",
+    "class": "STANDARD",
+    "eligible_routes": [
+      "mock-router/mock-vision"
+    ],
+    "execution_attested": true,
+    "fallback_used": false,
+    "requested_route": "mock-router/mock-vision"
+  },
+  "schema": "nta-betta-label-corroboration-v1",
+  "source_identity": {
+    "path": "/private/var/folders/f0/ncwpvltd3_sfbjtbnct70dnm0000gn/T/opencode/incident-eval/probe/batches/betta-20261015-110404-16gddf/intake/incident-photo.png",
+    "sha256": "6e4a4f573f8cfc829218f798eeb5b45cd08803689d31d7db6fce4920cdca9ca9"
+  },
+  "status": "AGREE",
+  "timestamp": "2026-10-15T00:04:04.913027+00:00",
+  "usage": {},
+  "visible_price": "35"
+}

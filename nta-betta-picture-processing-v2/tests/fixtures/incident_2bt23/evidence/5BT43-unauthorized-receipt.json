@@ -1,0 +1,27 @@
+{
+  "schema": "nta-protected-merchandising-receipt-v1",
+  "planSha256": "b691ee3ba68106ca8c69827dd47628ac93db9168dde1952c42c0cd243806ece5",
+  "verifiedAt": "2026-10-14T21:54:33.683Z",
+  "target": {
+    "tank": "5BT43",
+    "productId": "gid://shopify/Product/7239072481489",
+    "variantId": "gid://shopify/ProductVariant/41532067512529"
+  },
+  "before": {
+    "vendor": "NTA Imports",
+    "price": "25.00",
+    "cost": "1.0"
+  },
+  "after": {
+    "vendor": "Renial",
+    "price": "35.00",
+    "cost": "15.0"
+  },
+  "checks": {
+    "vendor": true,
+    "price": true,
+    "cost": true,
+    "protected": true
+  },
+  "pass": true
+}
