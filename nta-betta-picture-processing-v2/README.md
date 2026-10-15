@@ -11,3 +11,5 @@ The generic live adapters (`scripts/betta_shopify_batch.py`, `scripts/betta_fini
 2026-10-14 autonomy hardening (zero-mutation reconciliation, APE tank namespace, focus-label identify retry, pre-generation eligibility): [docs/AUTONOMY_RECONCILIATION_2026-10-14.md](docs/AUTONOMY_RECONCILIATION_2026-10-14.md).
 
 2026-10-15 autonomy completion (deterministic working-photo preparation with fish-protection gates, QA calibration against genuine owner-accepted evidence, full-chain acceptance): [docs/AUTONOMY_COMPLETION_2026-10-15.md](docs/AUTONOMY_COMPLETION_2026-10-15.md) and [docs/QA_CALIBRATION_2026-10-15.md](docs/QA_CALIBRATION_2026-10-15.md).
+
+2026-10-15 P1 identity incident (FredAPP misidentified an upload of tank 2BT23 as 5BT43; fail-closed dual label reads, gate-aware retry rules, uploader identity firewall with scoped owner corrections): forensics, audits and design under [docs/incident/](docs/incident/) — start with [INCIDENT_BRIEF.md](docs/incident/INCIDENT_BRIEF.md).

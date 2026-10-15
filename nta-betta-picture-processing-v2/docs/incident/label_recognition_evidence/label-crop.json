@@ -1,0 +1,24 @@
+{
+  "clamped": false,
+  "confident": true,
+  "method": "card-band",
+  "output_dimensions": [
+    1512,
+    477
+  ],
+  "output_path": "docs/incident/label_recognition_evidence/label-crop.png",
+  "output_sha256": "b6cbc02721b2071d01fe7e16f48cea2b043842bec7478d45ac8b5f80f12107f1",
+  "reason": "label card band detected",
+  "rect_px": [
+    0,
+    0,
+    1512,
+    477
+  ],
+  "source_dimensions": [
+    1512,
+    2688
+  ],
+  "source_path": "tests/fixtures/incident_2bt23/incident-photo.png",
+  "source_sha256": "6e4a4f573f8cfc829218f798eeb5b45cd08803689d31d7db6fce4920cdca9ca9"
+}
