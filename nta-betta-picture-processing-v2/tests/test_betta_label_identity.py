@@ -21,9 +21,33 @@ class LabelIdentityTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 li.normalize_tank(bad)
 
+    def test_normalize_tank_variants(self):
+        # Handwritten spacing/case/separator variants normalise deterministically.
+        self.assertEqual(li.normalize_tank("2 BT 23"), "2BT23")
+        self.assertEqual(li.normalize_tank("2BT23"), "2BT23")
+        self.assertEqual(li.normalize_tank(" 2bt23 "), "2BT23")
+        self.assertEqual(li.normalize_tank("2-BT-23"), "2BT23")
+        self.assertEqual(li.normalize_tank("APE 16"), "APE16")
+        self.assertEqual(li.normalize_tank("ape16"), "APE16")
+        for bad in ("2BT23A", "A2BT23", "2 BT", "SBT23", "APE 1X", "2/23"):
+            with self.assertRaises(ValueError):
+                li.normalize_tank(bad)
+
     def test_normalize_date(self):
         self.assertEqual(li.normalize_date("21/8/2026"), "2026-08-21")
         for bad in ("2026-08-21", "21/8/26", "32/8/2026"):
+            with self.assertRaises(ValueError):
+                li.normalize_date(bad)
+
+    def test_normalize_date_handwritten_au_variants(self):
+        self.assertEqual(li.normalize_date("14/10/2026"), "2026-10-14")
+        self.assertEqual(li.normalize_date("4/10/2026"), "2026-10-04")
+        # A written space before the year is safely parseable AU handwriting.
+        self.assertEqual(li.normalize_date("14/10 2026"), "2026-10-14")
+        self.assertEqual(li.normalize_date("14/10  2026"), "2026-10-14")
+        # Incomplete or ambiguous dates are never guessed.
+        for bad in ("14/10", "14 10 2026", "14/10/26",
+                    "14.10.2026", "40/10/2026", "14/13/2026"):
             with self.assertRaises(ValueError):
                 li.normalize_date(bad)
 

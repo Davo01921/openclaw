@@ -410,6 +410,83 @@ class OrchestratorTests(unittest.TestCase):
         self.assertEqual(entry["notes"], ["focused label retry failed"])
         self.assertIn("label crop call failed", entry["identify_error"])
 
+    def test_label_read_disagreement_is_a_hard_quarantine_never_retried(self):
+        adapters = FakeAdapters(tanks=["2BT12"])
+        reads = {
+            "status": "DISAGREE",
+            "full": {"tank_id": "2BT23", "photo_date": "2026-10-14", "confident": True,
+                     "receipt_path": "/receipts/full.json", "receipt_sha256": "full-hash"},
+            "crop": {"tank_id": "5BT43", "photo_date": "2026-10-09", "confident": True,
+                     "receipt_path": "/receipts/crop.json", "receipt_sha256": "crop-hash"},
+            "reasons": ["tank mismatch"],
+        }
+
+        def identify(record, batch_dir):
+            return {"tank_id": "2BT23", "photo_date": "2026-10-14",
+                    "uncertain": True, "quarantine": True,
+                    "quarantine_reason": "label read disagreement: full=2BT23, crop=5BT43",
+                    "label_reads": reads, "label_price_visible": "$35",
+                    "catalogue_confidences": {"tank_id": 0.98, "photo_date": None}}
+
+        retry_calls = {"count": 0}
+
+        def retry(entry, batch_dir):
+            retry_calls["count"] += 1
+            return {"uncertain": False, "tank_id": "5BT43", "photo_date": "2026-10-09",
+                    "proposed_title": "5BT43 - Blue Halfmoon Male"}
+
+        adapters.identify = identify
+        adapters.retry_identify = retry
+        summary = self.drive(adapters, policy(), include=("retry_identify",))
+        self.assertEqual(retry_calls["count"], 0)  # no silent secondary re-evaluation
+        self.assertEqual(summary["status"], "PARTIAL")
+        self.assertEqual(summary["published"], 0)
+        self.assertEqual(summary["quarantined"], 1)
+        self.assertEqual(adapters.calls["generate"], 0)
+        self.assertEqual(adapters.calls["execute"], 0)
+        self.assertIsNone(summary["manifest_sha256"])
+        state = json.loads((self.batch_dir / "state" / "process.json").read_text())
+        entry = next(iter(state["fish"].values()))
+        self.assertEqual(entry["status"], bp.FISH_QUARANTINED)
+        self.assertEqual(entry["notes"],
+                         ["label read disagreement: full=2BT23, crop=5BT43"])
+        self.assertEqual(entry["identify_reason"],
+                         "label read disagreement: full=2BT23, crop=5BT43")
+        self.assertEqual(entry["label_reads"]["crop"]["tank_id"], "5BT43")
+        self.assertEqual(entry["label_reads"]["crop"]["receipt_path"],
+                         "/receipts/crop.json")
+        self.assertEqual(entry["label_price_visible"], "$35")
+        self.assertEqual(entry["catalogue_confidences"],
+                         {"tank_id": 0.98, "photo_date": None})
+        events = [item for item in state["log"]
+                  if item.get("event") == "label_read_disagreement"]
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0]["tank_id"], "2BT23")
+        self.assertEqual(events[0]["label_reads"]["full"]["tank_id"], "2BT23")
+        self.assertEqual(events[0]["label_reads"]["crop"]["tank_id"], "5BT43")
+
+    def test_focused_label_retry_conflict_stays_quarantined_with_its_reason(self):
+        adapters = FakeAdapters(tanks=["2BT12"], uncertain={"2BT12"})
+
+        def retry(entry, batch_dir):
+            return {"uncertain": True, "tank_id": None, "photo_date": None,
+                    "reason": ("focused label read contradicts the catalogue read: "
+                               "catalogue tank 2BT12 vs label tank 5BT43"),
+                    "label_reads": {"status": "RETRY_CONFLICT",
+                                    "full": {"tank_id": "2BT12", "confident": False},
+                                    "crop": {"tank_id": "5BT43", "confident": True},
+                                    "reasons": ["catalogue tank 2BT12 vs label tank 5BT43"]}}
+
+        adapters.retry_identify = retry
+        summary = self.drive(adapters, policy(), include=("retry_identify",))
+        self.assertEqual(summary["quarantined"], 1)
+        self.assertEqual(adapters.calls["generate"], 0)
+        state = json.loads((self.batch_dir / "state" / "process.json").read_text())
+        entry = next(iter(state["fish"].values()))
+        self.assertIn("contradicts the catalogue read", entry["notes"][0])
+        self.assertEqual(entry["label_reads"]["status"], "RETRY_CONFLICT")
+        self.assertEqual(entry["label_reads"]["crop"]["tank_id"], "5BT43")
+
     def test_automatic_eligibility_quarantines_ineligible_before_any_spend(self):
         adapters = AutomaticAdapters(
             tanks=["2BT12", "3BT21"],

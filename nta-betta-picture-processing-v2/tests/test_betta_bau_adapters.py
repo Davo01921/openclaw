@@ -44,6 +44,20 @@ def routing(provider="mock-router", model="mock-vision"):
     }
 
 
+def _reference_compare_reads(full, crop):
+    """Deterministic implementation of the pinned label_identity.compare_reads
+    contract, installed only while A2's own helper is absent."""
+    if not (full.get("confident") and crop.get("confident")):
+        return {"status": "INCOMPLETE", "tank": None, "date": None,
+                "reasons": ["unconfident read"]}
+    if (full.get("tank_id") == crop.get("tank_id")
+            and full.get("photo_date") == crop.get("photo_date")):
+        return {"status": "AGREE", "tank": full.get("tank_id"),
+                "date": full.get("photo_date"), "reasons": []}
+    return {"status": "DISAGREE", "tank": None, "date": None,
+            "reasons": ["confident readings differ"]}
+
+
 class StrictAdapterTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -51,7 +65,8 @@ class StrictAdapterTests(unittest.TestCase):
         self.intake = self.root / "intake"
         self.intake.mkdir()
         self.source = self.intake / "fish.png"
-        self.source.write_bytes(b"original-fish")
+        from PIL import Image
+        Image.new("RGB", (48, 64), (20, 30, 40)).save(self.source, format="PNG")
         os.utime(self.source, (1, 1))
         self.batch = self.root / "batches" / "betta-test-bau"
         for name in ("intake", "evidence", "manifest", "state", "reports", "receipts", "archive"):
@@ -69,8 +84,14 @@ class StrictAdapterTests(unittest.TestCase):
         self.budget = bud.GenerationBudget(
             self.batch / "state" / "gen-budget.json", batch_id="betta-test-bau")
         self.calls = {"generate": 0}
+        if not callable(getattr(strict_mod.label_mod, "compare_reads", None)):
+            # A2 lands the real comparator in parallel; until then every test in
+            # this module runs against the pinned-contract reference so the dual
+            # read wiring is exercised deterministically.
+            strict_mod.label_mod.compare_reads = _reference_compare_reads
         self.runners = {
             "catalogue": self.catalogue,
+            "label": self.label,
             "generate": self.generate,
             "render": lambda clean, final, tank, date: Path(final).write_bytes(
                 Path(clean).read_bytes() + b"|label|" + tank.encode()),
@@ -79,6 +100,42 @@ class StrictAdapterTests(unittest.TestCase):
             "execute": lambda entry, path, digest: {"status": "VERIFIED", "receipt": {}},
             "archive": lambda state, batch_dir: {"status": "ARCHIVED"},
         }
+
+    def use_reference_comparator(self):
+        """Force the pinned-contract reference comparator for one test."""
+        original = getattr(strict_mod.label_mod, "compare_reads", None)
+        strict_mod.label_mod.compare_reads = _reference_compare_reads
+        self.addCleanup(self._restore_comparator, original)
+
+    @staticmethod
+    def _restore_comparator(original):
+        if original is None:
+            if hasattr(strict_mod.label_mod, "compare_reads"):
+                del strict_mod.label_mod.compare_reads
+        else:
+            strict_mod.label_mod.compare_reads = original
+
+    def remove_comparator(self):
+        """Simulate A2's comparator not existing yet (must degrade safely)."""
+        original = getattr(strict_mod.label_mod, "compare_reads", None)
+        if hasattr(strict_mod.label_mod, "compare_reads"):
+            del strict_mod.label_mod.compare_reads
+        self.addCleanup(self._restore_comparator, original)
+
+    def remove_prepare_label_crop(self):
+        """Simulate A2's crop helper being unavailable (in-file fallback path)."""
+        original = getattr(strict_mod.prepare_mod, "label_crop", None)
+        if hasattr(strict_mod.prepare_mod, "label_crop"):
+            del strict_mod.prepare_mod.label_crop
+        self.addCleanup(self._restore_prepare_label_crop, original)
+
+    @staticmethod
+    def _restore_prepare_label_crop(original):
+        if original is None:
+            if hasattr(strict_mod.prepare_mod, "label_crop"):
+                del strict_mod.prepare_mod.label_crop
+        else:
+            strict_mod.prepare_mod.label_crop = original
 
     def tearDown(self):
         self.temp.cleanup()
@@ -96,6 +153,17 @@ class StrictAdapterTests(unittest.TestCase):
             },
         }
 
+    def label(self, files):
+        """Default focused label-crop read: agrees with the catalogue fixture."""
+        return {
+            "provider": "mock-router", "model": "mock-vision", "call_id": "label-1",
+            "timestamp": now(), "input_hashes": [sha(files[0])],
+            "routing": routing(), "usage": {"tokens_input": 5, "tokens_output": 3},
+            "output": {"tank_id": "2 BT 12", "tank_confidence": 0.97,
+                       "photo_date": "9/10/2026", "date_confidence": 0.96,
+                       "visible_price": "$35", "reasons": []},
+        }
+
     def generate(self, argv):
         self.calls["generate"] += 1
         source = Path(argv[argv.index("--source") + 1]).resolve()
@@ -111,11 +179,12 @@ class StrictAdapterTests(unittest.TestCase):
         })
 
     def qa(self, entry):
+        working = entry.get("working_input_sha256") or entry["source_sha256"]
         return {
             "provider": "mock-router", "model": "mock-vision", "call_id": "qa-1",
             "timestamp": now(),
             "routing": routing(), "usage": {"tokens_input": 13, "tokens_output": 5},
-            "input_hashes": [entry["source_sha256"], entry["hero_sha256"],
+            "input_hashes": [working, entry["hero_sha256"],
                              entry["source_sha256"]],
             "output": {"assertions": {name: "PASS" for name in strict_mod.QA_ASSERTIONS},
                        "overall": "PASS", "reasons": []},
@@ -196,7 +265,7 @@ class StrictAdapterTests(unittest.TestCase):
         self.assertIsInstance(bundle, strict_mod.StrictBAUAdapters)
         result = adapters["intake"](self.batch, {})
         self.assertEqual(len(result["fish"]), 1)
-        self.assertEqual(Path(result["fish"][0]["path"]).read_bytes(), b"original-fish")
+        self.assertEqual(Path(result["fish"][0]["path"]).read_bytes(), self.source.read_bytes())
         self.assertFalse((self.batch / "intake" / extra.name).exists())
 
     def test_catalogue_preserves_all_title_components_and_attestation(self):
@@ -231,7 +300,7 @@ class StrictAdapterTests(unittest.TestCase):
             "timestamp": now(), "input_hashes": [sha(files[0])],
             "routing": routing(), "usage": {"tokens_input": 5, "tokens_output": 3},
             "output": {"tank_id": "2 BT 12", "tank_confidence": 0.97,
-                       "photo_date": "14/10/2026", "date_confidence": 0.95, "reasons": []},
+                       "photo_date": "9/10/2026", "date_confidence": 0.95, "reasons": []},
         }
         adapters, _ = self.make()
         record = adapters["intake"](self.batch, {})["fish"][0]
@@ -245,7 +314,7 @@ class StrictAdapterTests(unittest.TestCase):
         retried = adapters["retry_identify"](entry, self.batch)
         self.assertFalse(retried["uncertain"])
         self.assertEqual(retried["tank_id"], "2BT12")
-        self.assertEqual(retried["photo_date"], "2026-10-14")
+        self.assertEqual(retried["photo_date"], "2026-10-09")
         self.assertEqual(retried["proposed_title"], "2BT12 - Blue Red Marble Halfmoon Male")
         receipt = json.loads(Path(retried["catalogue_evidence_path"]).read_text())
         self.assertFalse(receipt["uncertain"])
@@ -286,6 +355,456 @@ class StrictAdapterTests(unittest.TestCase):
         retried = adapters["retry_identify"](unsuitable, self.batch)
         self.assertTrue(retried["uncertain"])
         self.assertEqual(calls["label"], 0)
+
+    # -- dual label reads (full photo + focused crop) ---------------------- #
+    def test_dual_read_agreement_accepts_and_records_both_receipts(self):
+        self.use_reference_comparator()
+        adapters, _ = self.make()
+        record = adapters["intake"](self.batch, {})["fish"][0]
+        result = adapters["identify"](record, self.batch)
+        self.assertFalse(result["uncertain"])
+        self.assertFalse(result["quarantine"])
+        self.assertEqual(result["tank_id"], "2BT12")
+        self.assertEqual(result["photo_date"], "2026-10-09")
+        self.assertEqual(result["label_price_visible"], "35")
+        reads = result["label_reads"]
+        self.assertEqual(reads["status"], "AGREE")
+        self.assertEqual(reads["full"]["tank_id"], "2BT12")
+        self.assertEqual(reads["full"]["receipt_path"], result["catalogue_evidence_path"])
+        self.assertEqual(reads["crop"]["tank_id"], "2BT12")
+        self.assertEqual(reads["crop"]["photo_date"], "2026-10-09")
+        for side in ("full", "crop"):
+            path = Path(reads[side]["receipt_path"])
+            self.assertTrue(path.is_file())
+            self.assertEqual(reads[side]["receipt_sha256"], sha(path))
+        receipt = json.loads(Path(reads["crop"]["receipt_path"]).read_text())
+        self.assertEqual(receipt["schema"], "nta-betta-label-corroboration-v1")
+        self.assertEqual(receipt["status"], "AGREE")
+        self.assertEqual(receipt["batch_id"], "betta-test-bau")
+        self.assertEqual(receipt["input_hashes"], [reads["crop"]["crop_sha256"]])
+        self.assertEqual(receipt["visible_price"], "35")
+        self.assertEqual(receipt["full_read"]["tank_id"], "2BT12")
+        self.assertFalse(os.stat(reads["crop"]["receipt_path"]).st_mode & 0o222)
+        expected_helper = ("betta_prepare.label_crop"
+                           if callable(getattr(strict_mod.prepare_mod, "label_crop", None))
+                           else "in_file_top_band")
+        self.assertEqual(receipt["crop_identity"]["helper"], expected_helper)
+        if expected_helper == "betta_prepare.label_crop":
+            detection = receipt["crop_identity"]["detection"]
+            self.assertEqual(detection["source_sha256"], record["sha256"])
+            self.assertEqual(detection["output_sha256"], reads["crop"]["crop_sha256"])
+            # The helper commits onto the final crop path itself: the recorded
+            # detection must never name a staging ".part" sibling.
+            self.assertEqual(detection["output_path"], receipt["crop_identity"]["path"])
+            self.assertNotIn(".part", detection["output_path"])
+            self.assertNotIn(".part", receipt["crop_identity"]["path"])
+
+    def test_dual_read_uses_the_real_compare_reads_when_present(self):
+        """End-to-end wiring against A2's pinned comparator (skipped until it lands)."""
+        real = getattr(strict_mod.label_mod, "compare_reads", None)
+        if not callable(real):
+            self.skipTest("label_identity.compare_reads has not landed yet")
+        self.addCleanup(self._restore_comparator, real)
+        strict_mod.label_mod.compare_reads = real
+        self.runners["label"] = lambda files: {
+            "provider": "mock-router", "model": "mock-vision", "call_id": "label-real",
+            "timestamp": now(), "input_hashes": [sha(files[0])],
+            "routing": routing(), "usage": {},
+            "output": {"tank_id": "5 BT 43", "tank_confidence": 0.98,
+                       "photo_date": "9/10/2026", "date_confidence": 0.97, "reasons": []},
+        }
+        adapters, _ = self.make()
+        record = adapters["intake"](self.batch, {})["fish"][0]
+        result = adapters["identify"](record, self.batch)
+        self.assertTrue(result["quarantine"])
+        self.assertEqual(result["quarantine_reason"],
+                         "label read disagreement: full=2BT12, crop=5BT43")
+        self.assertEqual(result["label_reads"]["status"], "DISAGREE")
+
+    def test_dual_read_is_reused_without_a_second_label_call(self):
+        self.use_reference_comparator()
+        counts = {"label": 0}
+        original = self.label
+        self.runners["label"] = lambda files: (
+            counts.__setitem__("label", counts["label"] + 1) or original(files))
+        adapters, _ = self.make()
+        record = adapters["intake"](self.batch, {})["fish"][0]
+        first = adapters["identify"](record, self.batch)
+        second = adapters["identify"](record, self.batch)
+        self.assertEqual(counts["label"], 1)
+        self.assertEqual(first["label_reads"]["crop"]["receipt_sha256"],
+                         second["label_reads"]["crop"]["receipt_sha256"])
+        self.assertEqual(second["label_reads"]["status"], "AGREE")
+
+    def test_dual_read_tank_disagreement_quarantines_with_both_readings(self):
+        self.use_reference_comparator()
+        self.runners["label"] = lambda files: {
+            "provider": "mock-router", "model": "mock-vision", "call_id": "label-x",
+            "timestamp": now(), "input_hashes": [sha(files[0])],
+            "routing": routing(), "usage": {},
+            "output": {"tank_id": "5 BT 43", "tank_confidence": 0.98,
+                       "photo_date": "9/10/2026", "date_confidence": 0.97, "reasons": []},
+        }
+        adapters, _ = self.make()
+        record = adapters["intake"](self.batch, {})["fish"][0]
+        result = adapters["identify"](record, self.batch)
+        # The secondary read never redirects identity: the full read is retained
+        # for evidence but the fish is hard-quarantined.
+        self.assertEqual(result["tank_id"], "2BT12")
+        self.assertTrue(result["uncertain"])
+        self.assertTrue(result["quarantine"])
+        self.assertEqual(result["quarantine_reason"],
+                         "label read disagreement: full=2BT12, crop=5BT43")
+        reads = result["label_reads"]
+        self.assertEqual(reads["status"], "DISAGREE")
+        self.assertEqual(reads["full"]["tank_id"], "2BT12")
+        self.assertEqual(reads["crop"]["tank_id"], "5BT43")
+        for side in ("full", "crop"):
+            path = Path(reads[side]["receipt_path"])
+            self.assertTrue(path.is_file())
+            self.assertEqual(reads[side]["receipt_sha256"], sha(path))
+        crop_receipt = json.loads(Path(reads["crop"]["receipt_path"]).read_text())
+        self.assertEqual(crop_receipt["status"], "DISAGREE")
+        self.assertEqual(crop_receipt["full_read"]["tank_id"], "2BT12")
+        self.assertEqual(crop_receipt["crop_reading"]["tank_id"], "5BT43")
+        self.assertEqual(crop_receipt["visible_price"], None)
+        import sqlite3
+        con = sqlite3.connect(self.telemetry)
+        try:
+            row = con.execute(
+                "SELECT outcome FROM betta_call_telemetry WHERE batch_id=? AND tank_number=? "
+                "AND stage='identify_label_corroboration'",
+                ("betta-test-bau", "2BT12"),
+            ).fetchone()
+        finally:
+            con.close()
+        self.assertEqual(row, ("DISAGREE",))
+
+    def test_dual_read_date_only_disagreement_quarantines(self):
+        self.use_reference_comparator()
+        self.runners["label"] = lambda files: {
+            "provider": "mock-router", "model": "mock-vision", "call_id": "label-y",
+            "timestamp": now(), "input_hashes": [sha(files[0])],
+            "routing": routing(), "usage": {},
+            "output": {"tank_id": "2 BT 12", "tank_confidence": 0.98,
+                       "photo_date": "14/10/2026", "date_confidence": 0.97, "reasons": []},
+        }
+        adapters, _ = self.make()
+        record = adapters["intake"](self.batch, {})["fish"][0]
+        result = adapters["identify"](record, self.batch)
+        self.assertTrue(result["quarantine"])
+        self.assertEqual(
+            result["quarantine_reason"],
+            "label read disagreement: full=2BT12, crop=2BT12; "
+            "date full=2026-10-09, crop=2026-10-14")
+        self.assertEqual(result["label_reads"]["status"], "DISAGREE")
+
+    def test_dual_read_uncertain_crop_leaves_the_confident_full_read_in_force(self):
+        self.use_reference_comparator()
+        self.runners["label"] = lambda files: {
+            "provider": "mock-router", "model": "mock-vision", "call_id": "label-low",
+            "timestamp": now(), "input_hashes": [sha(files[0])],
+            "routing": routing(), "usage": {},
+            "output": {"tank_id": "2 BT 12", "tank_confidence": 0.80,
+                       "photo_date": "9/10/2026", "date_confidence": 0.95, "reasons": []},
+        }
+        adapters, _ = self.make()
+        record = adapters["intake"](self.batch, {})["fish"][0]
+        result = adapters["identify"](record, self.batch)
+        self.assertFalse(result["uncertain"])
+        self.assertFalse(result["quarantine"])
+        self.assertEqual(result["tank_id"], "2BT12")
+        self.assertEqual(result["label_reads"]["status"], "INCOMPLETE")
+        self.assertFalse(result["label_reads"]["crop"]["confident"])
+        receipt = json.loads(
+            Path(result["label_reads"]["crop"]["receipt_path"]).read_text())
+        self.assertEqual(receipt["status"], "INCOMPLETE")
+
+    def test_dual_read_transport_failure_retries_then_falls_back(self):
+        self.use_reference_comparator()
+        calls = {"label": 0}
+
+        def failing(files):
+            calls["label"] += 1
+            raise RuntimeError("provider unreachable")
+
+        self.runners["label"] = failing
+        self.runners["vision_retry_delay_seconds"] = 0
+        adapters, _ = self.make()
+        record = adapters["intake"](self.batch, {})["fish"][0]
+        result = adapters["identify"](record, self.batch)
+        self.assertEqual(calls["label"], 2)  # bounded retry inside _vision_call
+        # Documented fallback: the corroborating read could not run, so the
+        # already-validated confident full read remains the acceptance
+        # authority; the failure itself is recorded truthfully, never hidden.
+        self.assertFalse(result["uncertain"])
+        self.assertFalse(result["quarantine"])
+        self.assertEqual(result["tank_id"], "2BT12")
+        self.assertEqual(result["label_reads"]["status"], "UNAVAILABLE")
+        self.assertTrue(any("label corroboration read failed" in reason
+                            for reason in result["label_reads"]["reasons"]))
+
+    def test_dual_read_missing_comparator_degrades_to_incomplete(self):
+        # A2's comparator is not landed in this worktree yet: absence must be
+        # INCOMPLETE, never a fabricated verdict in either direction.
+        self.remove_comparator()
+        self.runners["label"] = lambda files: {
+            "provider": "mock-router", "model": "mock-vision", "call_id": "label-z",
+            "timestamp": now(), "input_hashes": [sha(files[0])],
+            "routing": routing(), "usage": {},
+            "output": {"tank_id": "5 BT 43", "tank_confidence": 0.98,
+                       "photo_date": "9/10/2026", "date_confidence": 0.97, "reasons": []},
+        }
+        adapters, _ = self.make()
+        record = adapters["intake"](self.batch, {})["fish"][0]
+        result = adapters["identify"](record, self.batch)
+        self.assertEqual(result["label_reads"]["status"], "INCOMPLETE")
+        self.assertTrue(any("compare_reads is unavailable" in reason
+                            for reason in result["label_reads"]["reasons"]))
+        self.assertFalse(result["quarantine"])
+        receipt = json.loads(
+            Path(result["label_reads"]["crop"]["receipt_path"]).read_text())
+        self.assertEqual(receipt["status"], "INCOMPLETE")
+
+    def test_retry_identify_refuses_a_contradicting_confident_crop_read(self):
+        original = self.runners["catalogue"]
+        self.runners["catalogue"] = lambda files: {
+            **original(files),
+            "output": {**original(files)["output"],
+                       "confidence": {name: (0.88 if name == "photo_date" else 0.99)
+                                      for name in strict_mod.CATALOGUE_FIELDS}},
+        }
+        self.runners["label"] = lambda files: {
+            "provider": "mock-router", "model": "mock-vision", "call_id": "label-c",
+            "timestamp": now(), "input_hashes": [sha(files[0])],
+            "routing": routing(), "usage": {},
+            "output": {"tank_id": "5 BT 43", "tank_confidence": 0.98,
+                       "photo_date": "9/10/2026", "date_confidence": 0.97, "reasons": []},
+        }
+        adapters, _ = self.make()
+        record = adapters["intake"](self.batch, {})["fish"][0]
+        decision = adapters["identify"](record, self.batch)
+        self.assertTrue(decision["uncertain"])  # below-gate catalogue date
+        self.assertFalse(decision["quarantine"])  # no dual compare: full read unsure
+        self.assertEqual(decision["catalogue_confidences"],
+                         {"tank_id": 0.99, "photo_date": None})
+        entry = {"source_path": record["path"], "source_sha256": record["sha256"],
+                 **decision}
+        retried = adapters["retry_identify"](entry, self.batch)
+        # The confident catalogue tank (gate passed) still vetoes the
+        # contradicting confident label read, even though the date is below gate.
+        self.assertTrue(retried["uncertain"])
+        self.assertIsNone(retried["tank_id"])
+        self.assertIn("contradicts the catalogue read", retried["reason"])
+        self.assertEqual(retried["label_reads"]["status"], "RETRY_CONFLICT")
+        receipt = json.loads(Path(retried["catalogue_evidence_path"]).read_text())
+        self.assertTrue(receipt["uncertain"])
+        self.assertEqual(receipt["contradiction"], "catalogue tank 2BT12 vs label tank 5BT43")
+        self.assertEqual(receipt["catalogue_reading"]["gate_passed"],
+                         {"tank_id": True, "photo_date": False})
+        self.assertEqual(receipt["catalogue_reading"]["confidences"],
+                         {"tank_id": 0.99, "photo_date": None})
+        self.assertEqual(receipt["catalogue_reading"]["disposition"], "REFUSED")
+        self.assertIn("confident catalogue field contradiction",
+                      receipt["catalogue_reading"]["disposition_reason"])
+        import sqlite3
+        con = sqlite3.connect(self.telemetry)
+        try:
+            row = con.execute(
+                "SELECT tank_number,outcome FROM betta_call_telemetry WHERE batch_id=? "
+                "AND stage='identify_label_retry'",
+                ("betta-test-bau",),
+            ).fetchone()
+        finally:
+            con.close()
+        self.assertEqual(row, ("5BT43", "CONFLICT"))
+
+    def test_retry_identify_recovers_an_uncertain_read_with_an_agreeing_crop(self):
+        original = self.runners["catalogue"]
+        self.runners["catalogue"] = lambda files: {
+            **original(files),
+            "output": {**original(files)["output"],
+                       "confidence": {name: (0.88 if name == "tank_id" else 0.99)
+                                      for name in strict_mod.CATALOGUE_FIELDS}},
+        }
+        adapters, _ = self.make()
+        record = adapters["intake"](self.batch, {})["fish"][0]
+        decision = adapters["identify"](record, self.batch)
+        self.assertTrue(decision["uncertain"])
+        entry = {"source_path": record["path"], "source_sha256": record["sha256"],
+                 **decision}
+        retried = adapters["retry_identify"](entry, self.batch)
+        self.assertFalse(retried["uncertain"])
+        self.assertEqual(retried["tank_id"], "2BT12")
+        self.assertEqual(retried["photo_date"], "2026-10-09")
+        self.assertEqual(retried["label_reads"]["status"], "RETRY_ACCEPTED")
+        receipt = json.loads(Path(retried["catalogue_evidence_path"]).read_text())
+        self.assertFalse(receipt["uncertain"])
+        self.assertIsNone(receipt["contradiction"])
+        self.assertEqual(receipt["visible_price"], "35")
+        self.assertEqual(receipt["catalogue_reading"]["gate_passed"],
+                         {"tank_id": False, "photo_date": True})
+        self.assertEqual(receipt["catalogue_reading"]["disposition"], "ACCEPTED")
+        self.assertIn("tank below gate",
+                      receipt["catalogue_reading"]["disposition_reason"])
+
+    def test_retry_accepts_a_confident_crop_over_a_below_gate_catalogue_date(self):
+        # Real evaluation shape: the catalogue tank is confident, the catalogue
+        # date is below gate (discarded, that is why the fish is in retry) and
+        # differs from the focused read.  The focused read must establish it.
+        original = self.runners["catalogue"]
+        self.runners["catalogue"] = lambda files: {
+            **original(files),
+            "output": {**original(files)["output"], "photo_date": "2026-04-10",
+                       "confidence": {name: (0.88 if name == "photo_date" else 0.99)
+                                      for name in strict_mod.CATALOGUE_FIELDS}},
+        }
+        self.runners["label"] = lambda files: {
+            "provider": "mock-router", "model": "mock-vision", "call_id": "label-real-shape",
+            "timestamp": now(), "input_hashes": [sha(files[0])],
+            "routing": routing(), "usage": {},
+            "output": {"tank_id": "2 BT 12", "tank_confidence": 0.99,
+                       "photo_date": "14/10/2026", "date_confidence": 0.95, "reasons": []},
+        }
+        adapters, _ = self.make()
+        record = adapters["intake"](self.batch, {})["fish"][0]
+        decision = adapters["identify"](record, self.batch)
+        self.assertTrue(decision["uncertain"])
+        self.assertFalse(decision["quarantine"])
+        self.assertEqual(decision["photo_date"], "2026-04-10")
+        self.assertEqual(decision["catalogue_confidences"],
+                         {"tank_id": 0.99, "photo_date": None})
+        catalogue_receipt = json.loads(Path(decision["catalogue_evidence_path"]).read_text())
+        self.assertEqual(catalogue_receipt["catalogue_confidence_gates"],
+                         {"tank_id": "PASS", "photo_date": "BELOW_GATE"})
+        self.assertEqual(catalogue_receipt["catalogue_confidence_raw"]["photo_date"], 0.88)
+        entry = {"source_path": record["path"], "source_sha256": record["sha256"],
+                 **decision}
+        retried = adapters["retry_identify"](entry, self.batch)
+        self.assertFalse(retried["uncertain"])
+        self.assertEqual(retried["tank_id"], "2BT12")
+        self.assertEqual(retried["photo_date"], "2026-10-14")
+        self.assertIsNone(retried["reason"])
+        self.assertEqual(retried["label_reads"]["status"], "RETRY_ACCEPTED")
+        receipt = json.loads(Path(retried["catalogue_evidence_path"]).read_text())
+        self.assertIsNone(receipt["contradiction"])
+        self.assertFalse(receipt["uncertain"])
+        self.assertEqual(receipt["catalogue_reading"]["gate_passed"],
+                         {"tank_id": True, "photo_date": False})
+        self.assertEqual(receipt["catalogue_reading"]["confidences"],
+                         {"tank_id": 0.99, "photo_date": None})
+        self.assertEqual(receipt["catalogue_reading"]["disposition"], "ACCEPTED")
+        self.assertIn("date below gate",
+                      receipt["catalogue_reading"]["disposition_reason"])
+        if callable(getattr(strict_mod.prepare_mod, "label_crop", None)):
+            crop_identity = receipt["crop_identity"]
+            self.assertEqual(crop_identity["helper"], "betta_prepare.label_crop")
+            detection = crop_identity["detection"]
+            self.assertEqual(detection["output_path"], crop_identity["path"])
+            self.assertNotIn(".part", detection["output_path"])
+            self.assertNotIn(".part", crop_identity["path"])
+            self.assertEqual(detection["source_sha256"], record["sha256"])
+            self.assertEqual(detection["output_sha256"], crop_identity["sha256"])
+
+    def test_label_crop_falls_back_to_the_in_file_top_band(self):
+        # With A2's helper unavailable the in-file top-band crop must still be
+        # produced, recorded with its own provenance and no helper detection.
+        self.remove_prepare_label_crop()
+        original = self.runners["catalogue"]
+        self.runners["catalogue"] = lambda files: {
+            **original(files),
+            "output": {**original(files)["output"],
+                       "confidence": {name: (0.88 if name == "tank_id" else 0.99)
+                                      for name in strict_mod.CATALOGUE_FIELDS}},
+        }
+        adapters, _ = self.make()
+        record = adapters["intake"](self.batch, {})["fish"][0]
+        decision = adapters["identify"](record, self.batch)
+        self.assertTrue(decision["uncertain"])
+        entry = {"source_path": record["path"], "source_sha256": record["sha256"],
+                 **decision}
+        retried = adapters["retry_identify"](entry, self.batch)
+        self.assertFalse(retried["uncertain"])
+        self.assertEqual(retried["tank_id"], "2BT12")
+        receipt = json.loads(Path(retried["catalogue_evidence_path"]).read_text())
+        crop_identity = receipt["crop_identity"]
+        self.assertEqual(crop_identity["helper"], "in_file_top_band")
+        self.assertIsNone(crop_identity["detection"])
+        self.assertNotIn(".part", crop_identity["path"])
+        crop_path = Path(crop_identity["path"])
+        self.assertTrue(crop_path.is_file())
+        self.assertEqual(crop_identity["sha256"], sha(crop_path))
+        from PIL import Image as _Image
+        with _Image.open(crop_path) as image:
+            # The fixture source is 48x64; the top-band fallback keeps full width
+            # and the 30% band height.
+            self.assertEqual(image.size, (48, 19))
+
+    def test_retry_refuses_a_confident_catalogue_date_contradiction(self):
+        # Per-field independence: the below-gate tank cannot veto, but a
+        # gate-passed date that contradicts the focused read still refuses.
+        original = self.runners["catalogue"]
+        self.runners["catalogue"] = lambda files: {
+            **original(files),
+            "output": {**original(files)["output"],
+                       "confidence": {name: (0.88 if name == "tank_id" else 0.99)
+                                      for name in strict_mod.CATALOGUE_FIELDS}},
+        }
+        self.runners["label"] = lambda files: {
+            "provider": "mock-router", "model": "mock-vision", "call_id": "label-date-c",
+            "timestamp": now(), "input_hashes": [sha(files[0])],
+            "routing": routing(), "usage": {},
+            "output": {"tank_id": "2 BT 12", "tank_confidence": 0.98,
+                       "photo_date": "14/10/2026", "date_confidence": 0.97, "reasons": []},
+        }
+        adapters, _ = self.make()
+        record = adapters["intake"](self.batch, {})["fish"][0]
+        decision = adapters["identify"](record, self.batch)
+        self.assertTrue(decision["uncertain"])
+        entry = {"source_path": record["path"], "source_sha256": record["sha256"],
+                 **decision}
+        retried = adapters["retry_identify"](entry, self.batch)
+        self.assertTrue(retried["uncertain"])
+        self.assertIsNone(retried["tank_id"])
+        self.assertIn("catalogue date 2026-10-09 vs label date 2026-10-14",
+                      retried["reason"])
+        self.assertEqual(retried["label_reads"]["status"], "RETRY_CONFLICT")
+        receipt = json.loads(Path(retried["catalogue_evidence_path"]).read_text())
+        self.assertEqual(receipt["contradiction"],
+                         "catalogue date 2026-10-09 vs label date 2026-10-14")
+        self.assertEqual(receipt["catalogue_reading"]["gate_passed"],
+                         {"tank_id": False, "photo_date": True})
+        self.assertEqual(receipt["catalogue_reading"]["disposition"], "REFUSED")
+
+    def test_retry_accepts_when_the_catalogue_tank_is_below_gate(self):
+        # A below-gate catalogue tank value (even one that differs) cannot veto
+        # the confident focused read; the focused read establishes the tank.
+        original = self.runners["catalogue"]
+        self.runners["catalogue"] = lambda files: {
+            **original(files),
+            "output": {**original(files)["output"], "tank_id": "5 BT 43",
+                       "confidence": {name: (0.85 if name == "tank_id" else 0.99)
+                                      for name in strict_mod.CATALOGUE_FIELDS}},
+        }
+        adapters, _ = self.make()
+        record = adapters["intake"](self.batch, {})["fish"][0]
+        decision = adapters["identify"](record, self.batch)
+        self.assertTrue(decision["uncertain"])
+        self.assertEqual(decision["tank_id"], "5BT43")  # retained as evidence, gate failed
+        self.assertEqual(decision["catalogue_confidences"],
+                         {"tank_id": None, "photo_date": 0.99})
+        entry = {"source_path": record["path"], "source_sha256": record["sha256"],
+                 **decision}
+        retried = adapters["retry_identify"](entry, self.batch)
+        self.assertFalse(retried["uncertain"])
+        self.assertEqual(retried["tank_id"], "2BT12")
+        self.assertEqual(retried["photo_date"], "2026-10-09")
+        self.assertEqual(retried["label_reads"]["status"], "RETRY_ACCEPTED")
+        receipt = json.loads(Path(retried["catalogue_evidence_path"]).read_text())
+        self.assertIsNone(receipt["contradiction"])
+        self.assertEqual(receipt["catalogue_reading"]["gate_passed"],
+                         {"tank_id": False, "photo_date": True})
+        self.assertEqual(receipt["catalogue_reading"]["disposition"], "ACCEPTED")
 
     def test_catalogue_rejects_unattested_unknown_or_predating_evidence(self):
         original = self.runners["catalogue"]
@@ -486,6 +1005,25 @@ class StrictAdapterTests(unittest.TestCase):
         self.assertEqual(built["manifest_sha256"], sha(path))
         self.assertTrue(loaded.raw["shopify_write_authorised"])
         self.assertIsNone(loaded.raw["items"][0]["image_qa"]["exception"])
+
+    def test_build_manifest_populates_the_pinned_identity_block(self):
+        adapters, _bundle, entry = self.prepared_entry()
+        built = adapters["build_manifest"]({"fish": {"source": entry}}, self.batch)
+        item = built["manifest"]["items"][0]
+        self.assertEqual(item["identity"], {
+            "source_sha256": entry["source_sha256"],
+            "detected_tank": "2BT12", "requested_tank": "2BT12",
+            "accepted_tank": "2BT12", "correction_sha256": None,
+        })
+        loaded = bsb.ManifestBundle(Path(built["manifest_path"]))
+        self.assertEqual(loaded.raw["items"][0]["identity"]["accepted_tank"], "2BT12")
+
+    def test_build_manifest_refuses_a_quarantined_label_disagreement(self):
+        adapters, _bundle, entry = self.prepared_entry()
+        entry["label_reads"] = {"status": "DISAGREE"}
+        with self.assertRaisesRegex(strict_mod.StrictAdapterError,
+                                    "must never reach a manifest"):
+            adapters["build_manifest"]({"fish": {"source": entry}}, self.batch)
 
     def test_telemetry_upserts_fish_and_exports_both_ledgers(self):
         adapters, _bundle, entry = self.prepared_entry()

@@ -19,9 +19,15 @@ def resolve_route(agent="fred", *, config_path=None, inspect=None):
     if len(routes) != 3 or [str(x).split("/", 1)[0] for x in routes] != ["openai", "qwen-token-plan", "qwen"]:
         raise ValueError("vision route must preserve OpenAI, Qwen Token Plan, Qwen API order")
     def inspect_live(route):
+        # The OpenClaw CLI is a node script; harden PATH so minimal contexts
+        # (launchd-adjacent shells, test runners) can still execute it.
+        child_env = os.environ.copy()
+        preferred = ["/opt/homebrew/opt/node/bin", "/opt/homebrew/bin"]
+        child_env["PATH"] = os.pathsep.join(
+            preferred + child_env.get("PATH", "").split(os.pathsep))
         result = subprocess.run([os.getenv("BETTA_OPENCLAW", "/opt/homebrew/bin/openclaw"),
                                  "infer", "model", "inspect", "--model", route, "--json"],
-                                capture_output=True, text=True, timeout=30)
+                                capture_output=True, text=True, timeout=30, env=child_env)
         if result.returncode:
             raise ValueError("vision model catalogue unavailable")
         return json.loads(result.stdout)

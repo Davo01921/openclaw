@@ -209,11 +209,30 @@ class BatchProcessor:
                     }
                     for field in ("catalogue", "catalogue_path", "catalogue_sha256", "approved_title", "title",
                                   "catalogue_evidence_path", "catalogue_evidence_sha256",
-                                  "fish_name", "tail_type", "sex", "date_entered", "source_reference"):
+                                  "fish_name", "tail_type", "sex", "date_entered", "source_reference",
+                                  "label_reads", "label_price_visible", "catalogue_confidences",
+                                  "uncertain", "uncertain_reason"):
                         if field in decision:
                             entry[field] = decision[field]
                     entry.setdefault("date_entered", detection.get("date_entered") or self.clock())
-                    if not decision.get("tank_id") or decision.get("uncertain") is not False:
+                    if decision.get("quarantine") is True:
+                        # A confident-confident label read disagreement is a hard
+                        # identity quarantine: the note is the only note, so the
+                        # bounded focused retry (which exists to upgrade genuine
+                        # uncertainty) never silently re-evaluates it.
+                        entry["status"] = FISH_QUARANTINED
+                        reason = str(decision.get("quarantine_reason")
+                                     or "identity disagreement quarantine")
+                        entry["notes"].append(reason)
+                        entry["identify_reason"] = reason[:300]
+                        d.setdefault("log", []).append({
+                            "at": self.clock(), "stage": "IDENTIFIED",
+                            "event": "label_read_disagreement",
+                            "tank_id": decision.get("tank_id"),
+                            "note": reason,
+                            "label_reads": decision.get("label_reads"),
+                        })
+                    elif not decision.get("tank_id") or decision.get("uncertain") is not False:
                         entry["status"] = FISH_QUARANTINED
                         if decision.get("error"):
                             entry["notes"].append("identification failed")
@@ -273,11 +292,20 @@ class BatchProcessor:
                             "proposed_title": decision.get("proposed_title"),
                             "catalogue_evidence_path": decision.get("catalogue_evidence_path"),
                             "catalogue_evidence_sha256": decision.get("catalogue_evidence_sha256"),
+                            "label_reads": decision.get("label_reads"),
+                            "label_price_visible": decision.get("label_price_visible"),
+                            "uncertain": False,
+                            "uncertain_reason": None,
                             "status": "PENDING",
                             "notes": ["focused label retry accepted"],
                         })
                     else:
-                        entry["notes"] = ["focused label retry uncertain"]
+                        entry["notes"] = [str(decision.get("reason")
+                                              or "focused label retry uncertain")]
+                        if decision.get("label_reads") is not None:
+                            entry["label_reads"] = decision["label_reads"]
+                        if decision.get("label_price_visible") is not None:
+                            entry["label_price_visible"] = decision["label_price_visible"]
                 # re-check duplicate tank ids among the pending fish
                 seen = {}
                 for key, entry in d["fish"].items():

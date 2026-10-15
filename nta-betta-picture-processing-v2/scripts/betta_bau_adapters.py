@@ -134,6 +134,77 @@ def _mime(path: Path) -> str:
     return value
 
 
+LABEL_CORROBORATION_SCHEMA = "nta-betta-label-corroboration-v1"
+
+
+def _reads_match(full: Mapping[str, Any], crop: Mapping[str, Any]) -> bool:
+    """The pinned compare_reads AGREE condition, evaluated defensively.
+
+    AGREE requires BOTH reads confident with normalized tank AND date present
+    and equal.  Never treat two readings as agreeing on partial values.
+    """
+    return bool(
+        full.get("confident") and crop.get("confident")
+        and full.get("tank_id") is not None and crop.get("tank_id") is not None
+        and full.get("photo_date") is not None and crop.get("photo_date") is not None
+        and full.get("tank_id") == crop.get("tank_id")
+        and full.get("photo_date") == crop.get("photo_date")
+    )
+
+
+def _compare_label_reads(full: Mapping[str, Any], crop: Mapping[str, Any]) -> dict:
+    """Run A2's pinned ``label_identity.compare_reads`` against the contract.
+
+    The comparator is imported lazily so this module keeps working while A2
+    lands the helper.  A missing, raising or contract-violating comparator
+    degrades to INCOMPLETE and can never fabricate agreement: INCOMPLETE
+    leaves the already-validated confident full read as the sole acceptance
+    authority (the pre-incident behaviour), while a comparator that claims
+    AGREE/DISAGREE outside the pinned contract is never trusted.
+    """
+    helper = getattr(label_mod, "compare_reads", None)
+    if not callable(helper):
+        return {"status": "INCOMPLETE", "tank": None, "date": None,
+                "reasons": ["label_identity.compare_reads is unavailable"]}
+    try:
+        verdict = helper(
+            {"tank_id": full.get("tank_id"), "photo_date": full.get("photo_date"),
+             "confident": bool(full.get("confident"))},
+            {"tank_id": crop.get("tank_id"), "photo_date": crop.get("photo_date"),
+             "confident": bool(crop.get("confident"))},
+        )
+    except Exception as exc:  # never let a broken comparator accept an identity
+        return {"status": "INCOMPLETE", "tank": None, "date": None,
+                "reasons": [f"label_identity.compare_reads failed: {exc}"]}
+    if not isinstance(verdict, dict) or verdict.get("status") not in {
+            "AGREE", "DISAGREE", "INCOMPLETE"}:
+        return {"status": "INCOMPLETE", "tank": None, "date": None,
+                "reasons": ["label_identity.compare_reads returned an invalid verdict"]}
+    status = verdict["status"]
+    reasons = verdict.get("reasons")
+    reasons = [str(reason)[:400] for reason in reasons] if isinstance(reasons, list) else []
+    matches = _reads_match(full, crop)
+    if status == "AGREE" and not matches:
+        status = "INCOMPLETE"
+        reasons.append("comparator AGREE did not satisfy the pinned contract")
+    if status == "DISAGREE" and matches:
+        status = "INCOMPLETE"
+        reasons.append("comparator DISAGREE did not satisfy the pinned contract")
+    return {"status": status, "tank": verdict.get("tank"),
+            "date": verdict.get("date"), "reasons": reasons}
+
+
+def _disagreement_note(full: Mapping[str, Any], crop: Mapping[str, Any]) -> str:
+    """The explicit quarantine note for a confident-confident contradiction."""
+    note = (f"label read disagreement: full={full.get('tank_id') or 'unreadable'}, "
+            f"crop={crop.get('tank_id') or 'unreadable'}")
+    if (full.get("tank_id") == crop.get("tank_id")
+            and full.get("photo_date") != crop.get("photo_date")):
+        note += (f"; date full={full.get('photo_date') or 'unreadable'}, "
+                 f"crop={crop.get('photo_date') or 'unreadable'}")
+    return note
+
+
 class StrictBAUAdapters(base.Adapters):
     """Production evidence adapter for one dispatcher-owned immutable batch."""
 
@@ -287,6 +358,217 @@ class StrictBAUAdapters(base.Adapters):
         raise StrictAdapterError(
             f"{mode} call failed after {attempts} attempts: {last_error}") from last_error
 
+    # -- dual label reads (full photo + focused label crop) --------------- #
+    def _label_crop(self, source: Path, digest: str, batch_dir) -> tuple[Path, str, Optional[dict]]:
+        """Deterministic focused top-label crop, shared by both label reads.
+
+        Prefers ``betta_prepare.label_crop`` (A2's deterministic detector).  The
+        helper owns its own atomic commit: it is called with the FINAL crop path
+        directly and the result is never renamed afterwards, so the returned
+        detection's ``output_path`` stays identical to the receipt-bound crop.
+        When the helper is unavailable or fails, falls back to the in-file
+        top-band crop (which stages through its own sibling temp and replaces).
+        An existing crop is never overwritten so receipt-bound bytes stay stable
+        on resume.  Returns the crop path, the helper used, and the helper's
+        detection record when available.
+        """
+        crop_dir = Path(batch_dir) / "evidence" / "label-crops"
+        crop_dir.mkdir(parents=True, exist_ok=True)
+        crop = crop_dir / f"{digest}-label.png"
+        if crop.is_file():
+            return crop, "cached", None
+        temporary = crop_dir / (crop.name + ".part")
+        helper = getattr(prepare_mod, "label_crop", None)
+        if callable(helper):
+            for attempt in (
+                lambda: helper(source_path=source, output_path=crop),
+                lambda: helper(source, crop),
+            ):
+                try:
+                    produced = attempt()
+                except Exception:
+                    continue
+                if crop.is_file() and crop.stat().st_size > 0:
+                    detection = produced if isinstance(produced, dict) else None
+                    if detection and detection.get("source_sha256") not in (None, digest):
+                        raise StrictAdapterError(
+                            "label crop helper derived from a different source")
+                    return crop, "betta_prepare.label_crop", detection
+            if temporary.exists():
+                temporary.unlink()
+        try:
+            from PIL import Image  # local import: only needed for the crop
+            with Image.open(source) as image:
+                width, height = image.size
+                upper = image.convert("RGB").crop(
+                    (0, 0, width, max(1, int(height * 0.30))))
+                upper.save(temporary, format="PNG")
+            os.replace(temporary, crop)
+        except Exception as exc:
+            if temporary.exists():
+                temporary.unlink()
+            raise StrictAdapterError(
+                f"label crop could not be created: {exc}") from exc
+        return crop, "in_file_top_band", None
+
+    @staticmethod
+    def _label_read_values(output: Mapping[str, Any]) -> dict:
+        """Normalise a label-mode output into the pinned compare_reads input."""
+        tank = None
+        photo_date = None
+        try:
+            tank = (label_mod.normalize_tank(output.get("tank_id"))
+                    if output.get("tank_id") else None)
+            photo_date = output.get("photo_date")
+            if photo_date is None:
+                photo_date = None
+            elif re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(photo_date)):
+                photo_date = str(photo_date)
+            else:
+                photo_date = label_mod.normalize_date(str(photo_date))
+        except (TypeError, ValueError):
+            tank, photo_date = None, None
+        confident = bool(tank and photo_date)
+        for value in (output.get("tank_confidence"), output.get("date_confidence")):
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                confident = False
+            elif not math.isfinite(float(value)) or float(value) < 0.90:
+                confident = False
+        return {"tank_id": tank, "photo_date": photo_date, "confident": confident}
+
+    @staticmethod
+    def _visible_price(output: Mapping[str, Any]) -> Optional[str]:
+        """Record the label's visible price strictly as an observation.
+
+        The label output contract canonicalises ``visible_price`` through A2's
+        strict parser; when that parser is present it is applied again so both
+        reads record one canonical representation.  It is never used for any
+        operational decision or mutation.
+        """
+        value = output.get("visible_price")
+        if value is None:
+            return None
+        parser = getattr(label_mod, "parse_visible_price", None)
+        if callable(parser):
+            try:
+                return parser(value)
+            except Exception:
+                pass  # fall through to the raw observation
+        text = str(value).strip()
+        return text or None
+
+    def _corroborate_label(self, source: Path, record: Mapping[str, Any], batch_dir,
+                           *, full_reading: dict, full_receipt_path: Path) -> dict:
+        """Focused label-crop cross-read for an already-confident full read.
+
+        Returns the entry evidence block (status AGREE / DISAGREE / INCOMPLETE
+        / UNAVAILABLE, both readings and both receipt paths).  The crop read can
+        never change the accepted tank/date; it can only corroborate (AGREE) or
+        raise a contradiction (DISAGREE).  A crop read that cannot corroborate
+        is recorded truthfully and leaves the validated full read as the sole
+        acceptance authority, exactly as before dual reads existed.
+        """
+        digest = record["sha256"]
+        evidence = {
+            "status": "UNAVAILABLE",
+            "full": {**full_reading, "receipt_path": str(full_receipt_path),
+                     "receipt_sha256": _sha(full_receipt_path)},
+            "crop": None, "reasons": [], "visible_price": None,
+        }
+        try:
+            crop, crop_helper, crop_detection = self._label_crop(source, digest, batch_dir)
+        except StrictAdapterError as exc:
+            evidence["reasons"].append(f"label crop unavailable: {exc}")
+            return evidence
+        crop_sha = _sha(crop)
+        receipt_path = (Path(batch_dir) / "evidence" / "catalogue" /
+                        f"{digest}-label-corroboration.json")
+        if receipt_path.is_file():
+            try:
+                receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+            except (OSError, ValueError) as exc:
+                raise StrictAdapterError(
+                    "label corroboration receipt is unreadable") from exc
+            expected_source = {"path": str(source.resolve()), "sha256": digest}
+            if (receipt.get("schema") != LABEL_CORROBORATION_SCHEMA
+                    or receipt.get("batch_id") != self.batch_id
+                    or receipt.get("source_identity") != expected_source
+                    or receipt.get("status") not in {"AGREE", "DISAGREE", "INCOMPLETE"}):
+                raise StrictAdapterError(
+                    "label corroboration receipt does not bind this batch/source")
+            stored_crop = receipt.get("crop_identity") or {}
+            if stored_crop.get("sha256") != crop_sha:
+                raise StrictAdapterError(
+                    "label crop changed since its corroboration receipt")
+            status = receipt["status"]
+            crop_reading = (receipt.get("crop_reading")
+                            if isinstance(receipt.get("crop_reading"), dict) else None)
+            reasons = receipt.get("reasons") if isinstance(receipt.get("reasons"), list) else []
+            crop_price = receipt.get("visible_price")
+            crop_helper = stored_crop.get("helper") or crop_helper
+            crop_detection = stored_crop.get("detection")
+        else:
+            started = time.monotonic()
+            try:
+                vision = self._vision_call([crop], "label")
+            except StrictAdapterError as exc:
+                try:
+                    self._record("identify_label_corroboration", "ERROR",
+                                 tank=full_reading.get("tank_id"), started=started,
+                                 error=str(exc))
+                except Exception:  # never mask the corroboration failure
+                    pass
+                evidence["reasons"].append(f"label corroboration read failed: {exc}")
+                return evidence
+            _attested_call(vision, [crop_sha], "label corroboration",
+                           not_before=self.evidence_not_before)
+            output = vision.get("output")
+            if not isinstance(output, dict):
+                raise StrictAdapterError("label corroboration output object missing")
+            crop_reading = self._label_read_values(output)
+            crop_price = self._visible_price(output)
+            verdict = _compare_label_reads(full_reading, crop_reading)
+            status = verdict["status"]
+            reasons = verdict["reasons"]
+            receipt = {
+                "schema": LABEL_CORROBORATION_SCHEMA, "batch_id": self.batch_id,
+                "source_identity": {"path": str(source.resolve()), "sha256": digest},
+                "crop_identity": {"path": str(crop), "sha256": crop_sha,
+                                  "helper": crop_helper,
+                                  "detection": crop_detection},
+                "provider": vision["provider"], "model": vision["model"],
+                "call_id": vision["call_id"], "timestamp": vision["timestamp"],
+                "input_hashes": [crop_sha],
+                "output": {**output, "tank_id": crop_reading["tank_id"],
+                           "photo_date": crop_reading["photo_date"]},
+                "visible_price": crop_price, "crop_reading": crop_reading,
+                "status": status, "reasons": reasons,
+                "full_read": {"tank_id": full_reading.get("tank_id"),
+                              "photo_date": full_reading.get("photo_date"),
+                              "confident": True,
+                              "confidences": full_reading.get("confidences"),
+                              "receipt_path": str(full_receipt_path),
+                              "receipt_sha256": _sha(full_receipt_path)},
+                "routing": vision.get("routing"), "usage": vision.get("usage"),
+                "attempts": vision.get("attempts") or [],
+            }
+            _write_immutable_json(receipt_path, receipt)
+            self._record("identify_label_corroboration",
+                         "OK" if status == "AGREE" else status,
+                         tank=full_reading.get("tank_id") or source.stem,
+                         started=started, provider=vision.get("provider"),
+                         model=vision.get("model"),
+                         detail={"status": status, "call_id": vision.get("call_id")})
+        evidence["status"] = status
+        evidence["crop"] = {**(crop_reading or {}), "crop_path": str(crop),
+                            "crop_sha256": crop_sha, "crop_helper": crop_helper,
+                            "crop_detection": crop_detection,
+                            "receipt_path": str(receipt_path),
+                            "receipt_sha256": _sha(receipt_path)}
+        evidence["reasons"] = reasons
+        evidence["visible_price"] = crop_price
+        return evidence
+
     def identify(self, record, batch_dir):
         source = Path(record["path"])
         started = time.monotonic()
@@ -343,6 +625,38 @@ class StrictBAUAdapters(base.Adapters):
                 confidence_values[field] = _confidence(confidence_output, field)
             except StrictAdapterError:
                 confidence_values[field] = None
+
+        # Per-field confidence evidence.  ``catalogue_confidences`` records only
+        # the values the gates actually accepted (None when a field failed its
+        # gate): a below-gate value was already discarded and must never veto a
+        # later confident focused label read.  The raw values and gate outcomes
+        # are preserved on the receipt for audit.
+        def _raw_confidence(field: str):
+            confidence = output.get("confidence")
+            value = confidence.get(field) if isinstance(confidence, Mapping) else None
+            if value is None:
+                value = output.get(f"{field}_confidence")
+            return value
+
+        raw_confidences = {field: _raw_confidence(field)
+                           for field in ("tank_id", "photo_date")}
+
+        def _gate_outcome(field: str) -> str:
+            if confidence_values[field] is not None:
+                return "PASS"
+            raw = raw_confidences[field]
+            if raw is None:
+                return "MISSING"
+            if isinstance(raw, bool) or not isinstance(raw, (int, float)):
+                return "INVALID"
+            value = float(raw)
+            if not math.isfinite(value):
+                return "INVALID"
+            return "BELOW_GATE" if value < 0.90 else "INVALID"
+
+        catalogue_confidences = dict(confidence_values)
+        catalogue_confidence_gates = {field: _gate_outcome(field)
+                                      for field in ("tank_id", "photo_date")}
         if output.get("one_fish_visible") is not True:
             uncertain_reason = "one fish not confirmed visible"
         elif confidence_values["tank_id"] is None or confidence_values["photo_date"] is None:
@@ -373,6 +687,9 @@ class StrictBAUAdapters(base.Adapters):
             },
             "uncertain": uncertain_reason is not None,
             "uncertain_reason": uncertain_reason,
+            "catalogue_confidences": catalogue_confidences,
+            "catalogue_confidence_raw": raw_confidences,
+            "catalogue_confidence_gates": catalogue_confidence_gates,
             "routing": evidence.get("routing"), "usage": evidence.get("usage"),
             "attempts": evidence.get("attempts") or [],
         }
@@ -380,14 +697,38 @@ class StrictBAUAdapters(base.Adapters):
                         f"{record['sha256']}.json")
         if not reused:
             _write_immutable_json(receipt_path, receipt)
-        if not reused:
             self._record_vision_evidence(
                 "identify", tank or source.stem, evidence, started)
+
+        # Dual label read: every confident full read is cross-read against the
+        # focused label crop.  AGREE accepts; a confident-confident
+        # contradiction quarantines with both readings and both receipts
+        # recorded; a crop read that cannot corroborate leaves the validated
+        # full read as the acceptance authority and is recorded truthfully.
+        label_reads = None
+        label_price_visible = None
+        quarantine_reason = None
+        if uncertain_reason is None:
+            label_reads = self._corroborate_label(
+                source, record, batch_dir,
+                full_reading={"tank_id": tank, "photo_date": photo_date,
+                              "confident": True,
+                              "confidences": catalogue_confidences},
+                full_receipt_path=receipt_path)
+            label_price_visible = label_reads.get("visible_price")
+            if label_reads.get("status") == "DISAGREE":
+                quarantine_reason = _disagreement_note(
+                    label_reads["full"], label_reads.get("crop") or {})
         result = {
             "tank_id": tank, "photo_date": photo_date, "fish_name": fish_name,
             "tail_type": tail_type, "sex": sex, "title": title,
-            "uncertain": uncertain_reason is not None,
-            "uncertain_reason": uncertain_reason,
+            "uncertain": uncertain_reason is not None or quarantine_reason is not None,
+            "uncertain_reason": uncertain_reason or quarantine_reason,
+            "quarantine": quarantine_reason is not None,
+            "quarantine_reason": quarantine_reason,
+            "label_reads": label_reads,
+            "label_price_visible": label_price_visible,
+            "catalogue_confidences": catalogue_confidences,
             "catalogue_evidence_path": str(receipt_path),
             "catalogue_evidence_sha256": _sha(receipt_path),
             "date_entered": record.get("date_entered"),
@@ -400,6 +741,10 @@ class StrictBAUAdapters(base.Adapters):
         The crop covers the physical tank card only; a confident reading binds
         the same source hash and must pass the same attestation and confidence
         gates as the catalogue read before it can replace an uncertain result.
+        The focused read may upgrade uncertainty; it may never redirect an
+        identity: a confident label read is refused only when it contradicts a
+        catalogue field whose own confidence gate PASSED (below-gate values
+        were already discarded and cannot veto the focused read).
         """
         source = Path(entry["source_path"]).resolve()
         digest = entry.get("source_sha256")
@@ -414,24 +759,7 @@ class StrictBAUAdapters(base.Adapters):
             return {"tank_id": None, "photo_date": None, "uncertain": True,
                     "proposed_title": None,
                     "uncertain_reason": "fish components unsuitable for label retry"}
-        crop_dir = Path(batch_dir) / "evidence" / "label-crops"
-        crop_dir.mkdir(parents=True, exist_ok=True)
-        crop = crop_dir / f"{digest}-label.png"
-        if not crop.is_file():
-            temporary = crop_dir / (crop.name + ".part")
-            try:
-                from PIL import Image  # local import: only needed for the crop
-                with Image.open(source) as image:
-                    width, height = image.size
-                    upper = image.convert("RGB").crop(
-                        (0, 0, width, max(1, int(height * 0.30))))
-                    upper.save(temporary, format="PNG")
-                os.replace(temporary, crop)
-            except Exception as exc:
-                if temporary.exists():
-                    temporary.unlink()
-                raise StrictAdapterError(
-                    f"label crop could not be created: {exc}") from exc
+        crop, crop_helper, crop_detection = self._label_crop(source, digest, batch_dir)
         crop_sha = _sha(crop)
         started = time.monotonic()
         try:
@@ -449,22 +777,43 @@ class StrictBAUAdapters(base.Adapters):
         output = evidence.get("output")
         if not isinstance(output, dict):
             raise StrictAdapterError("catalogue label retry output object missing")
-        tank = None
-        photo_date = None
-        try:
-            tank = label_mod.normalize_tank(output.get("tank_id")) if output.get("tank_id") else None
-            photo_date = output.get("photo_date")
-            if photo_date is not None and not re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(photo_date)):
-                photo_date = label_mod.normalize_date(photo_date)
-        except (TypeError, ValueError):
-            tank, photo_date = None, None
+        crop_reading = self._label_read_values(output)
+        visible_price = self._visible_price(output)
+        tank = crop_reading["tank_id"]
+        photo_date = crop_reading["photo_date"]
         tank_confidence = output.get("tank_confidence")
         date_confidence = output.get("date_confidence")
-        uncertain = not tank or not photo_date
-        for value in (tank_confidence, date_confidence):
+        uncertain = not crop_reading["confident"]
+        catalogue_tank = entry.get("tank_id")
+        catalogue_date = entry.get("photo_date")
+        catalogue_confidences = entry.get("catalogue_confidences")
+        if not isinstance(catalogue_confidences, Mapping):
+            catalogue_confidences = {}
+        recorded_confidences = {field: catalogue_confidences.get(field)
+                                for field in ("tank_id", "photo_date")}
+
+        def gate_passed(field: str) -> bool:
+            """A catalogue field may veto only when its own confidence gate passed.
+
+            Below-gate and missing values were already discarded by the
+            catalogue gates (that is why this fish is in retry); they must not
+            veto the confident focused label read that exists to establish the
+            uncertain fields.
+            """
+            value = catalogue_confidences.get(field)
             if isinstance(value, bool) or not isinstance(value, (int, float)):
-                uncertain = True
-            elif not math.isfinite(float(value)) or float(value) < 0.90:
+                return False
+            return math.isfinite(float(value)) and float(value) >= 0.90
+
+        conflict = None
+        if not uncertain:
+            if (gate_passed("tank_id") and catalogue_tank and tank
+                    and tank != catalogue_tank):
+                conflict = f"catalogue tank {catalogue_tank} vs label tank {tank}"
+            elif (gate_passed("photo_date") and catalogue_date and photo_date
+                    and photo_date != catalogue_date):
+                conflict = f"catalogue date {catalogue_date} vs label date {photo_date}"
+            if conflict:
                 uncertain = True
         title = None
         if not uncertain:
@@ -475,15 +824,55 @@ class StrictBAUAdapters(base.Adapters):
                 })
             except (TypeError, ValueError):
                 uncertain = True
+        if conflict:
+            disposition = "REFUSED"
+            disposition_reason = "confident catalogue field contradiction: " + conflict
+        elif uncertain:
+            disposition = "REFUSED"
+            if crop_reading["confident"]:
+                disposition_reason = ("focused label read passed its gates but the "
+                                      "deterministic title could not be composed")
+            else:
+                disposition_reason = "focused label read did not pass its confidence gates"
+        else:
+            parts = []
+            for name, field, catalogue_value in (
+                ("tank", "tank_id", catalogue_tank),
+                ("date", "photo_date", catalogue_date),
+            ):
+                if not gate_passed(field):
+                    parts.append(f"{name} below gate")
+                elif catalogue_value:
+                    parts.append(f"{name} agrees")
+                else:
+                    parts.append(f"{name} unreadable")
+            disposition = "ACCEPTED"
+            disposition_reason = ("focused label read accepted; catalogue "
+                                  + ", ".join(parts))
         receipt = {
             "batch_id": self.batch_id,
             "source_identity": {"path": str(source), "sha256": digest},
-            "crop_identity": {"path": str(crop), "sha256": crop_sha},
+            "crop_identity": {"path": str(crop), "sha256": crop_sha,
+                              "helper": crop_helper,
+                              "detection": crop_detection},
             "provider": evidence["provider"], "model": evidence["model"],
             "call_id": evidence["call_id"], "timestamp": evidence["timestamp"],
             "input_hashes": [crop_sha],
             "output": {**output, "tank_id": tank, "photo_date": photo_date,
                        "title": title if not uncertain else None},
+            "visible_price": visible_price,
+            "crop_reading": crop_reading,
+            "catalogue_reading": {
+                "tank_id": catalogue_tank,
+                "photo_date": catalogue_date,
+                "confident": False,
+                "confidences": recorded_confidences,
+                "gate_passed": {"tank_id": gate_passed("tank_id"),
+                                "photo_date": gate_passed("photo_date")},
+                "disposition": disposition,
+                "disposition_reason": disposition_reason,
+            },
+            "contradiction": conflict,
             "uncertain": uncertain,
             "routing": evidence.get("routing"), "usage": evidence.get("usage"),
             "attempts": evidence.get("attempts") or [],
@@ -491,13 +880,34 @@ class StrictBAUAdapters(base.Adapters):
         receipt_path = (Path(batch_dir) / "evidence" / "catalogue" /
                         f"{digest}-label-retry.json")
         _write_immutable_json(receipt_path, receipt)
-        self._record("identify_label_retry", "UNCERTAIN" if uncertain else "OK",
+        self._record("identify_label_retry",
+                     "CONFLICT" if conflict else ("UNCERTAIN" if uncertain else "OK"),
                      tank=tank or entry.get("tank_id") or source.stem, started=started,
                      provider=evidence.get("provider"), model=evidence.get("model"))
+        label_reads = {
+            "status": ("RETRY_CONFLICT" if conflict
+                       else ("RETRY_UNCERTAIN" if uncertain else "RETRY_ACCEPTED")),
+            "full": {"tank_id": catalogue_tank, "photo_date": catalogue_date,
+                     "confident": False,
+                     "confidences": recorded_confidences,
+                     "gate_passed": {"tank_id": gate_passed("tank_id"),
+                                     "photo_date": gate_passed("photo_date")},
+                     "receipt_path": entry.get("catalogue_evidence_path"),
+                     "receipt_sha256": entry.get("catalogue_evidence_sha256")},
+            "crop": {**crop_reading, "crop_path": str(crop), "crop_sha256": crop_sha,
+                     "crop_helper": crop_helper, "receipt_path": str(receipt_path),
+                     "receipt_sha256": _sha(receipt_path)},
+            "reasons": [conflict] if conflict else ([disposition_reason] if uncertain else []),
+            "visible_price": visible_price,
+        }
         return {
             "tank_id": tank if not uncertain else None,
             "photo_date": photo_date if not uncertain else None,
             "uncertain": uncertain, "proposed_title": title,
+            "reason": (f"focused label read contradicts the catalogue read: {conflict}"
+                       if conflict else None),
+            "label_reads": label_reads,
+            "label_price_visible": visible_price,
             "tank_confidence": tank_confidence, "date_confidence": date_confidence,
             "catalogue_evidence_path": str(receipt_path),
             "catalogue_evidence_sha256": _sha(receipt_path),
@@ -1080,6 +1490,12 @@ class StrictBAUAdapters(base.Adapters):
         approval_items, snapshots, details, labels, authorities, items = [], [], [], [], [], []
         for entry in sorted(entries, key=lambda value: value["tank_id"]):
             tank = entry["tank_id"]
+            label_reads = entry.get("label_reads")
+            if isinstance(label_reads, dict) and label_reads.get("status") == "DISAGREE":
+                # Defence in depth: a quarantined disagreement can never be
+                # manifest-bound even if a future caller mishandles status.
+                raise StrictAdapterError(
+                    f"{tank}: label read disagreement must never reach a manifest")
             product = entry.get("product") or {}
             before = product.get("before") or {}
             raw_product = copy.deepcopy(product.get("raw_snapshot"))
@@ -1146,6 +1562,13 @@ class StrictBAUAdapters(base.Adapters):
                 "approved_title": title, "arrival_date": entry["photo_date"],
                 "quantity": 1, "inventory_reason": "received",
                 "source_reference": source_reference,
+                "identity": {
+                    "source_sha256": entry["source_sha256"],
+                    "detected_tank": tank,
+                    "requested_tank": tank,
+                    "accepted_tank": tank,
+                    "correction_sha256": None,
+                },
                 "hero": {"path": str(hero), "sha256": entry["hero_sha256"],
                          "mime_type": _mime(hero)},
                 "original": {"path": str(original), "sha256": entry["source_sha256"],

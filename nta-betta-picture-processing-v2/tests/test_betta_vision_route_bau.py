@@ -70,3 +70,41 @@ class VisionRouteBAUTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class VisionRoutePathHardeningTests(unittest.TestCase):
+    def test_inspect_live_spawns_with_hardened_path(self):
+        import json
+        import tempfile
+        from unittest import mock
+
+        config = {"agents": {"entries": {"fred": {"model": {
+            "primary": "openai/gpt-5.6-sol",
+            "fallbacks": ["qwen-token-plan/qwen3.8-flash", "qwen/qwen3.8-max"],
+        }}}}}
+        with tempfile.TemporaryDirectory() as tmp:
+            config_path = Path(tmp) / "openclaw.json"
+            config_path.write_text(json.dumps(config))
+            captured = []
+
+            def fake_run(argv, **kwargs):
+                captured.append(kwargs.get("env") or {})
+
+                class Result:
+                    returncode = 0
+                    stdout = '{"status":"available","input":["image","text"]}'
+
+                return Result()
+
+            with mock.patch.object(route_mod.subprocess, "run", fake_run):
+                resolved = route_mod.resolve_route("fred", config_path=config_path)
+            self.assertEqual(resolved["requested_route"], "openai/gpt-5.6-sol")
+            self.assertEqual(len(captured), 3)
+            for env in captured:
+                parts = env.get("PATH", "").split(":")
+                self.assertEqual(parts[0], "/opt/homebrew/opt/node/bin")
+                self.assertIn("/opt/homebrew/bin", parts)
+
+
+if __name__ == "__main__":
+    unittest.main()

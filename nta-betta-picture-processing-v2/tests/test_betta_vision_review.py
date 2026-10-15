@@ -56,6 +56,34 @@ class VisionReviewTests(unittest.TestCase):
         self.assertIn("no_identity_alteration", vision.PREP_QA_PROMPT)
         self.assertIn("BT", vision.LABEL_PROMPT)
 
+    def test_label_prompt_requests_strict_visible_price(self):
+        prompt = vision.LABEL_PROMPT
+        self.assertIn("\"visible_price\"", prompt)
+        self.assertIn("digits only", prompt)
+        self.assertIn("empty string", prompt)
+        self.assertIn("Never invent a price", prompt)
+        # The existing tank/date guidance is preserved.
+        self.assertIn("2BT14", prompt)
+        self.assertIn("APE16", prompt)
+        self.assertIn("day/month/year", prompt)
+        self.assertIn("never infer from adjacent tanks", prompt.lower())
+
+    def test_label_output_contract_canonicalises_visible_price(self):
+        output = vision.normalize_label_output({
+            "tank_id": "2 BT 23", "tank_confidence": 0.95,
+            "photo_date": "14/10/2026", "date_confidence": 0.95,
+            "visible_price": "$35.00", "reasons": [],
+        })
+        self.assertEqual(output["visible_price"], "35")
+        self.assertEqual(output["tank_id"], "2 BT 23")  # caller normalises tank/date
+        absent = vision.normalize_label_output({"tank_id": "", "visible_price": ""})
+        self.assertIsNone(absent["visible_price"])
+        self.assertIn("visible_price", absent)
+        invalid = vision.normalize_label_output({"visible_price": "about 35"})
+        self.assertIsNone(invalid["visible_price"])
+        with self.assertRaises(ValueError):
+            vision.normalize_label_output(["not", "an", "object"])
+
 
 if __name__ == "__main__":
     unittest.main()

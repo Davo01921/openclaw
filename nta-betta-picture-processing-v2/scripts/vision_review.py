@@ -13,6 +13,12 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
+_SCRIPT_DIR = Path(__file__).resolve().parent
+if str(_SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPT_DIR))
+
+import label_identity  # noqa: E402
+
 # Empty means adaptive-model-router resolves the live general inference route.
 # BETTA_VISION_MODELS/--models is an explicit one-off operator override.
 DEFAULT_MODELS = ""
@@ -147,12 +153,32 @@ def categorise_assertions(assertions: dict) -> dict:
 LABEL_PROMPT = (
     "JSON only. This is a crop of an Australian handwritten Betta tank card. "
     "Return {\"tank_id\":\"\",\"tank_confidence\":0.0,"
-    "\"photo_date\":\"D/M/YYYY\",\"date_confidence\":0.0,\"reasons\":[]}. "
+    "\"photo_date\":\"D/M/YYYY\",\"date_confidence\":0.0,"
+    "\"visible_price\":\"\",\"reasons\":[]}. "
     "Tank IDs are digits then BT then digits (for example 2BT14), or APE then "
     "digits (for example APE16); do not turn a handwritten 5 into S. Dates are "
     "Australian day/month/year, so 9/10/2026 means 9 October 2026. "
+    "visible_price is the price actually written on the card as digits only "
+    "(for example 35), with no currency symbol; return an empty string when no "
+    "price is clearly visible on the card. Never invent a price and never copy "
+    "a price from anywhere other than the physical card. "
     "Read only the physical card. Never infer from adjacent tanks."
 )
+
+
+def normalize_label_output(output: dict) -> dict:
+    """Canonicalise the focused label-mode output contract.
+
+    ``visible_price`` is parsed strictly (digits/decimal only, never invented)
+    and returned as a canonical string or ``None``.  Tank/date values are left
+    untouched for the caller's own normalisation gates.
+    """
+    if not isinstance(output, dict):
+        raise ValueError("label output must be a JSON object")
+    result = dict(output)
+    result["visible_price"] = label_identity.parse_visible_price(
+        result.get("visible_price"))
+    return result
 
 
 def digest(path: Path) -> str:
@@ -281,6 +307,8 @@ def run_review(files: list[Path], mode: str, agent: str, models: list[str],
                 output = json.loads(envelope["outputs"][0]["text"])
                 if mode == "catalogue":
                     output = compose_title(output)
+                elif mode == "label":
+                    output = normalize_label_output(output)
             except (KeyError, json.JSONDecodeError, TypeError, ValueError) as exc:
                 errors.extend(envelope_failures)
                 errors.append({

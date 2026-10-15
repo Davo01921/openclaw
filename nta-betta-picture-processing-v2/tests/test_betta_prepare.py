@@ -189,6 +189,87 @@ class PreparationTests(unittest.TestCase):
         self.assertIn("conservative fallback must not crop",
                       prepare.verify_preparation(l1_with_crop))
 
+    # -- focused label-crop helper (incident repair 2026-10-15) ------------- #
+
+    def make_label_frame(self, width=300, height=400, *, card_rows=(0, 60)):
+        image = Image.new("RGB", (width, height), (8, 12, 16))
+        draw = ImageDraw.Draw(image)
+        if card_rows:
+            draw.rectangle((0, card_rows[0], width - 1, card_rows[1]),
+                           fill=(238, 236, 230))
+        return image
+
+    def test_label_crop_detects_card_band_and_keeps_full_width(self):
+        raw = self.write_raw(self.make_label_frame(), name="label.png")
+        out = self.root / "label-crop.png"
+        record = prepare.label_crop(raw, out)
+        self.assertEqual(record["method"], "card-band")
+        self.assertTrue(record["confident"])
+        x0, y0, x1, y1 = record["rect_px"]
+        self.assertEqual([x0, y0, x1], [0, 0, 300])
+        # The crop contains the whole card (ends at row 60) but excludes most of
+        # the tank below the card (never extending to the 35% search limit).
+        self.assertGreater(y1, 60)
+        self.assertLess(y1, prepare.LABEL_SEARCH_FRACTION * 400)
+        self.assertEqual(record["output_dimensions"], [300, y1])
+        self.assertTrue(out.is_file())
+
+    def test_label_crop_falls_back_to_full_width_top_30_percent_band(self):
+        # No card-like band at all: conservative fallback, never a guess.
+        raw = self.write_raw(self.make_label_frame(card_rows=None), name="plain.png")
+        out = self.root / "plain-crop.png"
+        record = prepare.label_crop(raw, out)
+        self.assertEqual(record["method"], "fallback-top-band")
+        self.assertFalse(record["confident"])
+        self.assertEqual(record["rect_px"], [0, 0, 300, 120])
+
+        # A card that only starts far down the frame is not trusted either.
+        raw = self.write_raw(self.make_label_frame(card_rows=(100, 160)),
+                             name="low.png")
+        out = self.root / "low-crop.png"
+        record = prepare.label_crop(raw, out)
+        self.assertEqual(record["method"], "fallback-top-band")
+        self.assertFalse(record["confident"])
+        self.assertEqual(record["rect_px"], [0, 0, 300, 120])
+
+    def test_label_crop_clamps_when_card_reaches_the_search_limit(self):
+        raw = self.write_raw(self.make_label_frame(card_rows=(0, 399)),
+                             name="carded.png")
+        out = self.root / "carded-crop.png"
+        record = prepare.label_crop(raw, out)
+        self.assertEqual(record["method"], "card-band")
+        self.assertTrue(record["clamped"])
+        self.assertEqual(record["rect_px"], [0, 0, 300, 140])
+
+    def test_label_crop_refuses_to_replace_the_raw_original(self):
+        raw = self.write_raw(self.make_label_frame(), name="safe.png")
+        with self.assertRaises(ValueError):
+            prepare.label_crop(raw, raw)
+
+    def test_label_crop_records_the_final_path_and_leaves_no_temp_artifacts(self):
+        raw = self.write_raw(self.make_label_frame(), name="atomic.png")
+        out = self.root / "crops" / "atomic-crop.png"
+        record = prepare.label_crop(raw, out)
+        # The persisted record references only the final crop path, never a
+        # `.part` intermediate.
+        self.assertEqual(record["output_path"], str(out))
+        self.assertNotIn(".part", record["output_path"])
+        self.assertTrue(out.is_file())
+        self.assertEqual(record["output_sha256"], sha(out))
+        # After a successful commit no staging artifact remains anywhere.
+        self.assertEqual(list(self.root.rglob("*.part")), [])
+        self.assertEqual(sorted(path.name for path in (self.root / "crops").iterdir()),
+                         ["atomic-crop.png"])
+
+    def test_label_crop_failure_cleans_up_its_temp_file(self):
+        raw = self.write_raw(self.make_label_frame(), name="failing.png")
+        target = self.root / "already-a-directory"
+        target.mkdir()
+        with self.assertRaises(OSError):
+            prepare.label_crop(raw, target)
+        self.assertEqual(list(self.root.rglob("*.part")), [])
+        self.assertTrue(target.is_dir())  # the failed target is left untouched
+
 
 if __name__ == "__main__":
     unittest.main()

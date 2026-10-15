@@ -19,6 +19,7 @@ evidence; the deterministic gate here is what makes the receipt auditable.
 from __future__ import annotations
 
 import hashlib
+import os
 from collections import deque
 from pathlib import Path
 from typing import Optional
@@ -38,6 +39,22 @@ DEBRIS_MASK_BOX_LIMIT = 64
 WB_GAIN_MIN, WB_GAIN_MAX = 0.94, 1.06
 WB_NEUTRAL_TOLERANCE = 0.02
 SEVERE_DARK_MEDIAN, SEVERE_BRIGHT_MEDIAN = 15.0, 248.0
+
+# Focused label-crop detection (incident repair 2026-10-15).  The handwritten
+# card is the bright, low-chroma band at the top of the frame; the crop keeps
+# the full width and trims the tank/glare below the card.  Detection is
+# deterministic and falls back to the conservative full-width top-30% band
+# whenever it is uncertain.
+LABEL_SEARCH_FRACTION = 0.35
+LABEL_FALLBACK_FRACTION = 0.30
+LABEL_PAD_FRACTION = 0.02
+LABEL_SAMPLE_WIDTH = 320
+LABEL_PAPER_MIN_LEVEL = 130
+LABEL_PAPER_MAX_CHROMA = 70
+LABEL_ROW_PAPER_THRESHOLD = 0.42
+LABEL_ROW_GAP_FRACTION = 0.006
+LABEL_MIN_BAND_FRACTION = 0.05
+LABEL_MAX_START_FRACTION = 0.12
 
 
 def sha256_file(path: Path) -> str:
@@ -261,6 +278,149 @@ def _clean_isolated_bright_debris(
         op[x, y] = med[x, y]
     out = out.resize((w, h), Image.Resampling.LANCZOS)
     return out, len(replace) * 4, boxes
+
+
+def _label_row_paper_fractions(sample: Image.Image, rows: int) -> list[float]:
+    """Fraction of card-like (bright, low-chroma) pixels per sampled row."""
+    pix = sample.load()
+    width = sample.width
+    fractions = []
+    for y in range(rows):
+        paper = 0
+        for x in range(width):
+            r, g, b = pix[x, y]
+            if ((r * 54 + g * 183 + b * 19) // 256 >= LABEL_PAPER_MIN_LEVEL
+                    and max(r, g, b) - min(r, g, b) <= LABEL_PAPER_MAX_CHROMA):
+                paper += 1
+        fractions.append(paper / width)
+    return fractions
+
+
+def detect_label_band(image: Image.Image) -> dict:
+    """Deterministically locate the handwritten label band at the top of the frame.
+
+    The detection samples the top ``LABEL_SEARCH_FRACTION`` of the frame, scores
+    each sampled row by the fraction of card-like pixels (bright and low
+    chroma) and keeps the contiguous card run with a small gap tolerance.
+
+    Returns ``{"rect_px": [x0, y0, x1, y1], "method": "card-band"|"fallback-top-band",
+    "confident": bool, "clamped": bool, "reason": str}`` in the input image's
+    pixel space.  The rectangle always spans the full width and starts at the
+    top of the frame.  When detection is uncertain the conservative full-width
+    top-30% band is returned instead.
+    """
+    width, height = image.size
+    if width < 16 or height < 16:
+        return {"rect_px": [0, 0, max(width, 1), max(height, 1)],
+                "method": "fallback-top-band", "confident": False,
+                "clamped": False, "reason": "image too small for label detection"}
+
+    sample_width = min(LABEL_SAMPLE_WIDTH, width)
+    sample_height = max(1, round(height * sample_width / width))
+    sample = image.convert("RGB").resize((sample_width, sample_height),
+                                         Image.Resampling.BILINEAR)
+    search_rows = max(1, int(round(sample_height * LABEL_SEARCH_FRACTION)))
+    fractions = _label_row_paper_fractions(sample, search_rows)
+
+    threshold = LABEL_ROW_PAPER_THRESHOLD
+    gap_rows = max(1, int(round(sample_height * LABEL_ROW_GAP_FRACTION)))
+    start = next((y for y in range(search_rows) if fractions[y] >= threshold), None)
+    end = None
+    if start is not None:
+        end = start
+        gap = 0
+        for y in range(start + 1, search_rows):
+            if fractions[y] >= threshold:
+                end = y
+                gap = 0
+            else:
+                gap += 1
+                if gap > gap_rows:
+                    break
+
+    confident = True
+    clamped = False
+    reason = "label card band detected"
+    if start is None:
+        confident = False
+        reason = "no label card band detected in the top of the frame"
+    elif start > max(1, int(round(search_rows * LABEL_MAX_START_FRACTION))):
+        confident = False
+        reason = "detected label band starts too far down the frame"
+    elif end - start + 1 < max(2, int(round(search_rows * LABEL_MIN_BAND_FRACTION))):
+        confident = False
+        reason = "detected label band is too short to trust"
+
+    if confident:
+        pad_rows = max(2, int(round(sample_height * LABEL_PAD_FRACTION)))
+        band_end = end + 1 + pad_rows
+        if band_end >= search_rows:
+            band_end = search_rows
+            clamped = True
+            reason = "card band reaches the search limit; kept the full search band"
+        scale = height / sample_height
+        y1 = min(height, max(1, int(round(band_end * scale))))
+        method = "card-band"
+    else:
+        y1 = min(height, max(1, int(round(height * LABEL_FALLBACK_FRACTION))))
+        method = "fallback-top-band"
+
+    return {"rect_px": [0, 0, width, y1], "method": method,
+            "confident": confident, "clamped": clamped, "reason": reason}
+
+
+def label_crop(image_path: Path, output_path: Path) -> dict:
+    """Produce an independent high-resolution label crop from the RAW image.
+
+    The crop keeps the full frame width and covers the detected label card band
+    at the top of the frame (see ``detect_label_band``), excluding as much of
+    the tank/glare below the card as the detection can justify, and falling back
+    to the conservative full-width top-30% band when detection is uncertain.
+
+    ``output_path`` is the final destination: the helper commits the crop
+    itself with an atomic write (an explicitly named ``<name>.part`` sibling is
+    used as an intermediate and is renamed onto ``output_path``; it is never
+    left behind, on success or on failure, and it is never recorded).  Callers
+    must pass the final crop path and must not rename the result afterwards.
+
+    Returns the crop rectangle plus the exact crop-to-source lineage
+    (source sha256 and dimensions, output sha256 and dimensions, detection
+    method and confidence) for evidence receipts.  The record references only
+    the final output path.  Deterministic: identical source bytes always
+    produce identical output bytes.  The rectangle refers to the
+    exif-transposed image orientation used for vision.
+    """
+    source = Path(image_path)
+    output_path = Path(output_path)
+    if source.resolve() == output_path.resolve():
+        raise ValueError("label crop output cannot replace the raw original")
+    with Image.open(source) as opened:
+        image = ImageOps.exif_transpose(opened).convert("RGB")
+    detection = detect_label_band(image)
+    x0, y0, x1, y1 = detection["rect_px"]
+    crop = image.crop((x0, y0, x1, y1))
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    intermediate = output_path.with_name(output_path.name + ".part")
+    try:
+        crop.save(intermediate, format="PNG")
+        os.replace(intermediate, output_path)
+    except Exception:
+        if intermediate.exists():
+            intermediate.unlink()
+        raise
+    return {
+        "source_path": str(source),
+        "source_sha256": sha256_file(source),
+        "source_dimensions": [image.width, image.height],
+        "output_path": str(output_path),
+        "output_sha256": sha256_file(output_path),
+        "output_dimensions": [crop.width, crop.height],
+        "rect_px": [x0, y0, x1, y1],
+        "method": detection["method"],
+        "confident": detection["confident"],
+        "clamped": detection["clamped"],
+        "reason": detection["reason"],
+    }
 
 
 def prepare_image(
