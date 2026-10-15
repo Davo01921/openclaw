@@ -1,0 +1,29 @@
+[
+  {
+    "detail_json": "{\"sha256\": \"6e4a4f573f8cfc829218f798eeb5b45cd08803689d31d7db6fce4920cdca9ca9\"}",
+    "error": null,
+    "model": null,
+    "outcome": "OK",
+    "provider": null,
+    "stage": "intake",
+    "timestamp": "2026-10-15T04:39:32.605113+00:00"
+  },
+  {
+    "detail_json": "{\"attempt\": 1, \"call_id\": \"fe034231-3c87-4b00-8a83-f5ef528fc5c8\"}",
+    "error": null,
+    "model": "gpt-5.6-sol",
+    "outcome": "OK",
+    "provider": "openai",
+    "stage": "identify",
+    "timestamp": "2026-10-15T04:40:00.505408+00:00"
+  },
+  {
+    "detail_json": "{\"call_id\": \"c0f8bfed-1f9d-4ae0-bba7-3918c2f655e7\", \"status\": \"DISAGREE\"}",
+    "error": null,
+    "model": "gpt-5.6-sol",
+    "outcome": "DISAGREE",
+    "provider": "openai",
+    "stage": "identify_label_corroboration",
+    "timestamp": "2026-10-15T04:40:20.887092+00:00"
+  }
+]

@@ -622,6 +622,13 @@ class ManifestTests(unittest.TestCase):
         with self.assertRaisesRegex(bsb.ManifestError, "source_sha256_mismatch"):
             bsb.ManifestBundle(fixture.manifest_path)
 
+    def test_correction_for_wrong_variant_refused(self):
+        fixture = Fixture(self.root)
+        fixture.install_correction(
+            "1BT1", variant_id="gid://shopify/ProductVariant/999")
+        with self.assertRaisesRegex(bsb.ManifestError, "variant_id_mismatch"):
+            bsb.ManifestBundle(fixture.manifest_path)
+
     def test_correction_scope_must_cover_betta_operations(self):
         fixture = Fixture(self.root)
         fixture.install_correction(

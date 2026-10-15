@@ -25,11 +25,13 @@ field set fails validation.
 - ``schema_mismatch`` / ``schema_fields_mismatch``
 - ``invalid_field:<name>`` (field format)
 - ``self_hash_missing_or_invalid`` / ``self_hash_mismatch``
+- ``no_op_correction`` (``original_model_tank`` equals ``corrected_tank``)
 - ``invalid_operation_scope``
 - ``source_sha256_mismatch``
 - ``corrected_tank_mismatch`` (record target != accepted tank)
 - ``requested_tank_mismatch`` (owner request != record target)
 - ``product_id_mismatch``
+- ``variant_id_mismatch`` (when the caller binds a variant)
 - ``operation_scope_mismatch`` (requested fields not covered)
 - ``invalid_requested_operation_fields``
 """
@@ -204,6 +206,8 @@ def _validate_record_shape(data: Mapping[str, Any]) -> str | None:
             check(data.get(key), key)
         except CorrectionError:
             return f"invalid_field:{key}"
+    if data["original_model_tank"] == data["corrected_tank"]:
+        return "no_op_correction"
     variant = data.get("variant_id")
     if variant is not None and (not isinstance(variant, str) or not variant.strip()):
         return "invalid_field:variant_id"
@@ -221,15 +225,18 @@ def validate_correction(
     requested_tank: Any,
     accepted_tank: Any,
     product_id: Any,
+    variant_id: Any = None,
     operation_fields: Iterable[str] | None,
 ) -> dict[str, Any]:
     """Validate one correction record against an exact intended operation.
 
     The record is valid ONLY when it binds exactly: the same source SHA-256,
     ``corrected_tank == accepted_tank``, ``requested_tank == corrected_tank``
-    (the owner target), the same product, and a recorded operation scope that
-    covers every requested operation field. Reuse for a different source,
-    product, tank or operation set fails.
+    (the owner target), the same product, and — when the caller binds one — the
+    same ``variant_id``; the recorded operation scope must cover every requested
+    operation field, and a no-op correction (``original_model_tank ==
+    corrected_tank``) is never valid. Reuse for a different source, product,
+    variant, tank or operation set fails.
     """
     if isinstance(record_path_or_dict, (str, Path)):
         path = Path(record_path_or_dict).expanduser()
@@ -272,6 +279,8 @@ def validate_correction(
         return {"valid": False, "reason": "requested_tank_mismatch"}
     if data["product_id"] != product_id:
         return {"valid": False, "reason": "product_id_mismatch"}
+    if variant_id is not None and data["variant_id"] != variant_id:
+        return {"valid": False, "reason": "variant_id_mismatch"}
     recorded_scope = set(scope_fields(data["operation"]))
     if not set(requested_fields).issubset(recorded_scope):
         return {"valid": False, "reason": "operation_scope_mismatch"}
@@ -314,6 +323,11 @@ def record(
             created_at if created_at is not None else utc_now(), "created_at"
         ),
     }
+    if core["original_model_tank"] == core["corrected_tank"]:
+        raise CorrectionError(
+            "original_model_tank and corrected_tank must differ; "
+            "a no-op correction is invalid"
+        )
     digest = json_sha256(core)
     payload = {**core, "correction_sha256": digest}
     base = Path(directory).expanduser() if directory else default_directory()
@@ -382,6 +396,10 @@ def main(argv: list[str] | None = None) -> int:
     validate_parser.add_argument("--accepted-tank", required=True)
     validate_parser.add_argument("--product-id", required=True)
     validate_parser.add_argument(
+        "--variant-id",
+        help="when provided, the record's variant_id must match exactly",
+    )
+    validate_parser.add_argument(
         "--operation-fields", required=True, type=_split_fields,
         help="comma-separated fields the intended operation will change",
     )
@@ -418,6 +436,7 @@ def main(argv: list[str] | None = None) -> int:
             requested_tank=args.requested_tank,
             accepted_tank=args.accepted_tank,
             product_id=args.product_id,
+            variant_id=args.variant_id,
             operation_fields=args.operation_fields,
         )
         print(json.dumps(verdict, indent=2))

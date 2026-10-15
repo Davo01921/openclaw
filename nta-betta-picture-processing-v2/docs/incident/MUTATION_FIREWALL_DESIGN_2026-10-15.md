@@ -88,9 +88,12 @@ is on the single manifest-loading path shared by `preflight`, `dry-run`,
 - with `correction_sha256` (lowercase 64-hex): the immutable record at
   `<corrections_dir>/correction-<sha>.json` must pass
   `betta_corrections.validate_correction(…, source_sha256, requested_tank,
-  accepted_tank=item.tank_id, product_id, operation_fields=IDENTITY_OPERATION_FIELDS)`.
-  Refusal happens at load time, i.e. **before any write capability is
-  constructed** (no bridge for live writes, no state store).
+  accepted_tank=item.tank_id, product_id, variant_id=item.variant_id,
+  operation_fields=IDENTITY_OPERATION_FIELDS)`. The record's `variant_id` must
+  match the item's exactly (when the caller binds one), and a no-op record
+  (`original_model_tank == corrected_tank`) is never valid — neither at record
+  creation nor at validation. Refusal happens at load time, i.e. **before any
+  write capability is constructed** (no bridge for live writes, no state store).
 
 Refusal matrix:
 
@@ -102,7 +105,8 @@ Refusal matrix:
 | `detected_tank` ≠ `requested_tank`, no correction | refuse |
 | `requested_tank` ≠ item tank, no correction | refuse |
 | correction sha malformed | refuse |
-| correction file missing / tampered / wrong source / wrong product / wrong target tank / scope not covering this manifest's fields | refuse |
+| correction file missing / tampered / wrong source / wrong product / wrong target tank / wrong variant / scope not covering this manifest's fields | refuse |
+| correction is a no-op (`original_model_tank == corrected_tank`) | refuse (`no_op_correction`) |
 | all bound, correction absent (vision agreed) | allowed (unchanged behavior) |
 | all bound, correction valid and covering | allowed |
 
@@ -152,14 +156,18 @@ Immutable JSON, schema `nta-betta-owner-correction-v1`:
 
 - `record(...)` / CLI `record` writes exactly one file
   `correction-<correction_sha256>.json` (mode 0444, `O_EXCL` — duplicates can
-  never overwrite). CLI `validate` validates a record against an intended
-  operation and exits nonzero when invalid; JSON on stdout.
+  never overwrite; a no-op correction is rejected at creation). CLI `validate`
+  validates a record against an intended operation and exits nonzero when
+  invalid; JSON on stdout. `validate_correction(..., variant_id=None)` binds the
+  exact variant when the caller supplies one (the uploader always does).
 - `validate_correction(record, source_sha256, requested_tank, accepted_tank,
-  product_id, operation_fields)` is valid ONLY when it binds exactly the same
-  source sha, `corrected_tank == accepted_tank`, `requested_tank == recorded
-  target`, the same product, and every requested operation field is covered by
-  the recorded scope. Reuse for a different source / product / tank / field set
-  fails. Tampered bytes fail the self-hash.
+  product_id, variant_id, operation_fields)` is valid ONLY when it binds exactly
+  the same source sha, `corrected_tank == accepted_tank`, `requested_tank ==
+  recorded target`, the same product (and, when bound, the same variant), and
+  every requested operation field is covered by the recorded scope. Reuse for a
+  different source / product / variant / tank / field set fails. Tampered bytes
+  fail the self-hash; a record whose `original_model_tank` equals its
+  `corrected_tank` fails as `no_op_correction`.
 - This is the **authorization-record pattern** the Fred path lacks: a durable,
   hash-pinned, non-overwritable binding of *(photo bytes → corrected target →
   product → fields)*, created only for an explicit owner instruction with an
@@ -211,12 +219,31 @@ files on 2026-10-15: canonical → `verified`; Fred's copy → `bridge_not_canon
    never allow the agent to select the product; route owner-directed edits to a
    checker that consumes the correction record instead of an ad-hoc script.
 
+### 4.5 Deployment prerequisites (owner-gated — not implemented in this change)
+
+Independent review item M2: correction-record authenticity is a deployment
+prerequisite, not a property this code can enforce alone.
+
+- **Owner-only corrections directory.** The directory holding
+  `nta-betta-owner-correction-v1` records must be owner-writable only (OS
+  permissions; not in any agent-writable tree). Production wiring must NOT trust
+  a manifest-declared `corrections_dir` — that override exists for hermetic
+  tests/batch isolation; production callers must use the owner-controlled fixed
+  location (or an owner-supplied path), not a value from the manifest.
+- **Owner authentication for correction records.** `operator` and
+  `evidence_reference` are advisory audit fields; `record()` authenticates
+  nothing. Until records are created through an owner-authenticated channel,
+  any actor who can write into the corrections directory (or the manifest) can
+  self-mint a self-hashed record. This is the same trust boundary as manifest
+  authorship — not a new bypass, but it must be closed for deployment.
+- Both items are deployment-gated and intentionally untouched by this change.
+
 ## 5. Implemented tonight vs owner-gated
 
 | Item | State |
 |---|---|
-| Identity block contract + uploader gate (`betta_shopify_batch.py`, all commands, load-time refusal) | **Implemented**; 15 new uploader tests; full suite green (468 tests) |
-| Owner-correction records + CLI + validation (`betta_corrections.py`) | **Implemented**; 19 tests; default dir `<repo>/references/corrections/` |
+| Identity block contract + uploader gate (`betta_shopify_batch.py`, all commands, load-time refusal) | **Implemented**; 16 new uploader tests; full suite green apart from A6's two `OwnerOverrideScoping` helpers that still construct no-op records (see §7 note) |
+| Owner-correction records + CLI + validation (`betta_corrections.py`) | **Implemented**; 23 tests; default dir `<repo>/references/corrections/` |
 | Bridge integrity pinning + checker + index | **Implemented as detection** (canonical + Fred copy checked); 8 tests |
 | Bridge-integrity wiring into production write paths | **Owner-gated** — needs owner decision + deployment |
 | Canonical bridge scope-config redesign (§4.1) and correction-record enforcement in the Fred path (§4.2) | **Owner-gated** — requires editing `~/.openclaw` surfaces; deliberately untouched |
@@ -231,9 +258,24 @@ files on 2026-10-15: canonical → `verified`; Fred's copy → `bridge_not_canon
   be invoked.
 - A correction record is only as strong as the owner-instruction evidence
   reference it cites; the schema records it for audit but does not verify the
-  channel.
+  channel (see deployment prerequisites §4.5).
 - The identity block's `detected_tank` is asserted by the manifest producer
   (A4 runs the dual reads); the gate binds `requested==accepted==item tank` and
   the source sha, but cannot independently re-run vision at upload time. The
   dual-read quarantine machinery (A2/A4) is the upstream control; this gate is
   the last deterministic line before a write.
+
+## 7. Note for the adversarial-suite owner (post-review hardening)
+
+The 2026-10-15 review hardening (variant binding + no-op refusal) rejects
+`record()` calls where `original_model_tank == corrected_tank`. Two adversarial
+tests still construct such records through their helper:
+
+- `OwnerOverrideScoping.test_merch_scope_cannot_authorise_betta_operation`
+- `OwnerOverrideScoping.test_partial_scope_refused`
+
+Both call `record_correction("5BT43", ...)` whose default
+`original_model_tank` is also `"5BT43"`. Minimal fix (in that file): pass a
+differing tank, e.g. `original_model_tank="1BT99"` — the existing
+`operation_scope_mismatch` assertions then hold unchanged. (If the no-op shape
+is itself asserted, expect reason `no_op_correction`.)

@@ -1,0 +1,184 @@
+{
+  "batch_id": "betta-20261015-153932-unirxk",
+  "executed": [],
+  "fish": {
+    "/private/var/folders/f0/ncwpvltd3_sfbjtbnct70dnm0000gn/T/opencode/incident-eval-v2/batches/betta-20261015-153932-unirxk/intake/incident-photo.png": {
+      "catalogue_confidences": {
+        "photo_date": 0.93,
+        "tank_id": 0.91
+      },
+      "catalogue_evidence_path": "/private/var/folders/f0/ncwpvltd3_sfbjtbnct70dnm0000gn/T/opencode/incident-eval-v2/batches/betta-20261015-153932-unirxk/evidence/catalogue/6e4a4f573f8cfc829218f798eeb5b45cd08803689d31d7db6fce4920cdca9ca9.json",
+      "catalogue_evidence_sha256": "2c484415ee37f3b754c1cbe470be460919345b73a410e537a879c74603b48b6d",
+      "date_entered": "2026-10-15T04:39:32.594978+00:00",
+      "fish_name": "Pastel Pink",
+      "identify_reason": "label read disagreement: full=2BT23, crop=2BT23; date full=2026-04-10, crop=2026-10-14",
+      "label_price_visible": "35",
+      "label_reads": {
+        "crop": {
+          "confident": true,
+          "crop_detection": {
+            "clamped": false,
+            "confident": true,
+            "method": "card-band",
+            "output_dimensions": [
+              1512,
+              477
+            ],
+            "output_path": "/private/var/folders/f0/ncwpvltd3_sfbjtbnct70dnm0000gn/T/opencode/incident-eval-v2/batches/betta-20261015-153932-unirxk/evidence/label-crops/6e4a4f573f8cfc829218f798eeb5b45cd08803689d31d7db6fce4920cdca9ca9-label.png",
+            "output_sha256": "b6cbc02721b2071d01fe7e16f48cea2b043842bec7478d45ac8b5f80f12107f1",
+            "reason": "label card band detected",
+            "rect_px": [
+              0,
+              0,
+              1512,
+              477
+            ],
+            "source_dimensions": [
+              1512,
+              2688
+            ],
+            "source_path": "/private/var/folders/f0/ncwpvltd3_sfbjtbnct70dnm0000gn/T/opencode/incident-eval-v2/batches/betta-20261015-153932-unirxk/intake/incident-photo.png",
+            "source_sha256": "6e4a4f573f8cfc829218f798eeb5b45cd08803689d31d7db6fce4920cdca9ca9"
+          },
+          "crop_helper": "betta_prepare.label_crop",
+          "crop_path": "/private/var/folders/f0/ncwpvltd3_sfbjtbnct70dnm0000gn/T/opencode/incident-eval-v2/batches/betta-20261015-153932-unirxk/evidence/label-crops/6e4a4f573f8cfc829218f798eeb5b45cd08803689d31d7db6fce4920cdca9ca9-label.png",
+          "crop_sha256": "b6cbc02721b2071d01fe7e16f48cea2b043842bec7478d45ac8b5f80f12107f1",
+          "photo_date": "2026-10-14",
+          "receipt_path": "/private/var/folders/f0/ncwpvltd3_sfbjtbnct70dnm0000gn/T/opencode/incident-eval-v2/batches/betta-20261015-153932-unirxk/evidence/catalogue/6e4a4f573f8cfc829218f798eeb5b45cd08803689d31d7db6fce4920cdca9ca9-label-corroboration.json",
+          "receipt_sha256": "7c7505bf62725779bfbfba1e00eb8e26e686875202dbedfa17517c1a3af802c0",
+          "tank_id": "2BT23"
+        },
+        "full": {
+          "confidences": {
+            "photo_date": 0.93,
+            "tank_id": 0.91
+          },
+          "confident": true,
+          "photo_date": "2026-04-10",
+          "receipt_path": "/private/var/folders/f0/ncwpvltd3_sfbjtbnct70dnm0000gn/T/opencode/incident-eval-v2/batches/betta-20261015-153932-unirxk/evidence/catalogue/6e4a4f573f8cfc829218f798eeb5b45cd08803689d31d7db6fce4920cdca9ca9.json",
+          "receipt_sha256": "2c484415ee37f3b754c1cbe470be460919345b73a410e537a879c74603b48b6d",
+          "tank_id": "2BT23"
+        },
+        "reasons": [
+          "date mismatch: full=2026-04-10 label-crop=2026-10-14"
+        ],
+        "status": "DISAGREE",
+        "visible_price": "35"
+      },
+      "notes": [
+        "label read disagreement: full=2BT23, crop=2BT23; date full=2026-04-10, crop=2026-10-14"
+      ],
+      "photo_date": "2026-04-10",
+      "sex": "Male",
+      "source_path": "/private/var/folders/f0/ncwpvltd3_sfbjtbnct70dnm0000gn/T/opencode/incident-eval-v2/batches/betta-20261015-153932-unirxk/intake/incident-photo.png",
+      "source_sha256": "6e4a4f573f8cfc829218f798eeb5b45cd08803689d31d7db6fce4920cdca9ca9",
+      "status": "QUARANTINED",
+      "tail_type": "Halfmoon Plakat",
+      "tank_id": "2BT23",
+      "title": "2BT23 - Pastel Pink Halfmoon Plakat Male",
+      "uncertain": true,
+      "uncertain_reason": "label read disagreement: full=2BT23, crop=2BT23; date full=2026-04-10, crop=2026-10-14"
+    }
+  },
+  "generated": [],
+  "intake": {
+    "fish": [
+      {
+        "date_entered": "2026-10-15T04:39:32.594978+00:00",
+        "path": "/private/var/folders/f0/ncwpvltd3_sfbjtbnct70dnm0000gn/T/opencode/incident-eval-v2/batches/betta-20261015-153932-unirxk/intake/incident-photo.png",
+        "sha256": "6e4a4f573f8cfc829218f798eeb5b45cd08803689d31d7db6fce4920cdca9ca9",
+        "size": 2936221
+      }
+    ],
+    "selected_source_count": 1
+  },
+  "log": [
+    {
+      "at": "2026-10-15T15:39:32.608859+11:00",
+      "stage": "INTAKE_VERIFIED"
+    },
+    {
+      "at": "2026-10-15T15:40:20.888993+11:00",
+      "event": "label_read_disagreement",
+      "label_reads": {
+        "crop": {
+          "confident": true,
+          "crop_detection": {
+            "clamped": false,
+            "confident": true,
+            "method": "card-band",
+            "output_dimensions": [
+              1512,
+              477
+            ],
+            "output_path": "/private/var/folders/f0/ncwpvltd3_sfbjtbnct70dnm0000gn/T/opencode/incident-eval-v2/batches/betta-20261015-153932-unirxk/evidence/label-crops/6e4a4f573f8cfc829218f798eeb5b45cd08803689d31d7db6fce4920cdca9ca9-label.png",
+            "output_sha256": "b6cbc02721b2071d01fe7e16f48cea2b043842bec7478d45ac8b5f80f12107f1",
+            "reason": "label card band detected",
+            "rect_px": [
+              0,
+              0,
+              1512,
+              477
+            ],
+            "source_dimensions": [
+              1512,
+              2688
+            ],
+            "source_path": "/private/var/folders/f0/ncwpvltd3_sfbjtbnct70dnm0000gn/T/opencode/incident-eval-v2/batches/betta-20261015-153932-unirxk/intake/incident-photo.png",
+            "source_sha256": "6e4a4f573f8cfc829218f798eeb5b45cd08803689d31d7db6fce4920cdca9ca9"
+          },
+          "crop_helper": "betta_prepare.label_crop",
+          "crop_path": "/private/var/folders/f0/ncwpvltd3_sfbjtbnct70dnm0000gn/T/opencode/incident-eval-v2/batches/betta-20261015-153932-unirxk/evidence/label-crops/6e4a4f573f8cfc829218f798eeb5b45cd08803689d31d7db6fce4920cdca9ca9-label.png",
+          "crop_sha256": "b6cbc02721b2071d01fe7e16f48cea2b043842bec7478d45ac8b5f80f12107f1",
+          "photo_date": "2026-10-14",
+          "receipt_path": "/private/var/folders/f0/ncwpvltd3_sfbjtbnct70dnm0000gn/T/opencode/incident-eval-v2/batches/betta-20261015-153932-unirxk/evidence/catalogue/6e4a4f573f8cfc829218f798eeb5b45cd08803689d31d7db6fce4920cdca9ca9-label-corroboration.json",
+          "receipt_sha256": "7c7505bf62725779bfbfba1e00eb8e26e686875202dbedfa17517c1a3af802c0",
+          "tank_id": "2BT23"
+        },
+        "full": {
+          "confidences": {
+            "photo_date": 0.93,
+            "tank_id": 0.91
+          },
+          "confident": true,
+          "photo_date": "2026-04-10",
+          "receipt_path": "/private/var/folders/f0/ncwpvltd3_sfbjtbnct70dnm0000gn/T/opencode/incident-eval-v2/batches/betta-20261015-153932-unirxk/evidence/catalogue/6e4a4f573f8cfc829218f798eeb5b45cd08803689d31d7db6fce4920cdca9ca9.json",
+          "receipt_sha256": "2c484415ee37f3b754c1cbe470be460919345b73a410e537a879c74603b48b6d",
+          "tank_id": "2BT23"
+        },
+        "reasons": [
+          "date mismatch: full=2026-04-10 label-crop=2026-10-14"
+        ],
+        "status": "DISAGREE",
+        "visible_price": "35"
+      },
+      "note": "label read disagreement: full=2BT23, crop=2BT23; date full=2026-04-10, crop=2026-10-14",
+      "stage": "IDENTIFIED",
+      "tank_id": "2BT23"
+    },
+    {
+      "at": "2026-10-15T15:40:20.889004+11:00",
+      "stage": "IDENTIFIED"
+    },
+    {
+      "at": "2026-10-15T15:40:20.890424+11:00",
+      "stage": "PREPARED"
+    },
+    {
+      "at": "2026-10-15T15:40:20.891672+11:00",
+      "stage": "GENERATED"
+    },
+    {
+      "at": "2026-10-15T15:40:20.892963+11:00",
+      "stage": "QA_VERIFIED"
+    },
+    {
+      "at": "2026-10-15T15:40:20.894078+11:00",
+      "stage": "SHOPIFY_RESOLVED"
+    }
+  ],
+  "manifest_sha256": null,
+  "schema": "nta-betta-process-v1",
+  "stage": "SHOPIFY_RESOLVED",
+  "status": "PARTIAL"
+}

@@ -1,0 +1,98 @@
+{
+  "batch_id": "betta-20261015-155106-t135kd",
+  "executed": [],
+  "fish": {
+    "/private/var/folders/f0/ncwpvltd3_sfbjtbnct70dnm0000gn/T/opencode/incident-eval-v2/probe2/batches/betta-20261015-155106-t135kd/intake/incident-photo.png": {
+      "catalogue_confidences": {
+        "photo_date": null,
+        "tank_id": 0.94
+      },
+      "catalogue_evidence_path": "/private/var/folders/f0/ncwpvltd3_sfbjtbnct70dnm0000gn/T/opencode/incident-eval-v2/probe2/batches/betta-20261015-155106-t135kd/evidence/catalogue/6e4a4f573f8cfc829218f798eeb5b45cd08803689d31d7db6fce4920cdca9ca9-label-retry.json",
+      "catalogue_evidence_sha256": "63e00595af04eb11727eb3d2be77d3f48dcf501b0aef4a227dbeaa04384fc215",
+      "date_entered": "2026-10-15T04:51:06.986207+00:00",
+      "fish_name": "Pastel Pink",
+      "identify_reason": "catalogue confidence below 0.90",
+      "label_price_visible": "35",
+      "label_reads": {
+        "crop": {
+          "confident": true,
+          "crop_helper": "betta_prepare.label_crop",
+          "crop_path": "/private/var/folders/f0/ncwpvltd3_sfbjtbnct70dnm0000gn/T/opencode/incident-eval-v2/probe2/batches/betta-20261015-155106-t135kd/evidence/label-crops/6e4a4f573f8cfc829218f798eeb5b45cd08803689d31d7db6fce4920cdca9ca9-label.png",
+          "crop_sha256": "b6cbc02721b2071d01fe7e16f48cea2b043842bec7478d45ac8b5f80f12107f1",
+          "photo_date": "2026-10-14",
+          "receipt_path": "/private/var/folders/f0/ncwpvltd3_sfbjtbnct70dnm0000gn/T/opencode/incident-eval-v2/probe2/batches/betta-20261015-155106-t135kd/evidence/catalogue/6e4a4f573f8cfc829218f798eeb5b45cd08803689d31d7db6fce4920cdca9ca9-label-retry.json",
+          "receipt_sha256": "63e00595af04eb11727eb3d2be77d3f48dcf501b0aef4a227dbeaa04384fc215",
+          "tank_id": "2BT23"
+        },
+        "full": {
+          "confidences": {
+            "photo_date": null,
+            "tank_id": 0.94
+          },
+          "confident": false,
+          "gate_passed": {
+            "photo_date": false,
+            "tank_id": true
+          },
+          "photo_date": "2026-04-10",
+          "receipt_path": "/private/var/folders/f0/ncwpvltd3_sfbjtbnct70dnm0000gn/T/opencode/incident-eval-v2/probe2/batches/betta-20261015-155106-t135kd/evidence/catalogue/6e4a4f573f8cfc829218f798eeb5b45cd08803689d31d7db6fce4920cdca9ca9.json",
+          "receipt_sha256": "c942e5ed8058d5715d8fd399d41047bcc21a863db8310af0c9343f3a8aaee77a",
+          "tank_id": "2BT23"
+        },
+        "reasons": [],
+        "status": "RETRY_ACCEPTED",
+        "visible_price": "35"
+      },
+      "notes": [
+        "focused label retry accepted"
+      ],
+      "photo_date": "2026-10-14",
+      "prep_status": "PREPARED",
+      "proposed_title": "2BT23 - Pastel Pink Halfmoon Plakat Male",
+      "sex": "Male",
+      "source_path": "/private/var/folders/f0/ncwpvltd3_sfbjtbnct70dnm0000gn/T/opencode/incident-eval-v2/probe2/batches/betta-20261015-155106-t135kd/intake/incident-photo.png",
+      "source_sha256": "6e4a4f573f8cfc829218f798eeb5b45cd08803689d31d7db6fce4920cdca9ca9",
+      "status": "PENDING",
+      "tail_type": "Halfmoon Plakat",
+      "tank_id": "2BT23",
+      "title": "2BT23 - Pastel Pink Halfmoon Plakat Male",
+      "uncertain": false,
+      "uncertain_reason": null,
+      "working_input_path": "/private/var/folders/f0/ncwpvltd3_sfbjtbnct70dnm0000gn/T/opencode/incident-eval-v2/probe2/batches/betta-20261015-155106-t135kd/evidence/working/2BT23-working-full.png",
+      "working_input_sha256": "69a1dcc99fd664d6c63fb85afaeffa725c4288a2a94b68e0f996eee4ebf2b269",
+      "working_receipt_path": "/private/var/folders/f0/ncwpvltd3_sfbjtbnct70dnm0000gn/T/opencode/incident-eval-v2/probe2/batches/betta-20261015-155106-t135kd/evidence/working/2BT23.json",
+      "working_receipt_sha256": "c25bc647575c01e659ff19fe6d37fdcc348639d11428bd58a443d0e54d91793a"
+    }
+  },
+  "generated": [],
+  "identification_retry_complete": true,
+  "intake": {
+    "fish": [
+      {
+        "date_entered": "2026-10-15T04:51:06.986207+00:00",
+        "path": "/private/var/folders/f0/ncwpvltd3_sfbjtbnct70dnm0000gn/T/opencode/incident-eval-v2/probe2/batches/betta-20261015-155106-t135kd/intake/incident-photo.png",
+        "sha256": "6e4a4f573f8cfc829218f798eeb5b45cd08803689d31d7db6fce4920cdca9ca9",
+        "size": 2936221
+      }
+    ],
+    "selected_source_count": 1
+  },
+  "log": [
+    {
+      "at": "2026-10-15T15:51:06.997298+11:00",
+      "stage": "INTAKE_VERIFIED"
+    },
+    {
+      "at": "2026-10-15T15:51:42.789528+11:00",
+      "stage": "IDENTIFIED"
+    },
+    {
+      "at": "2026-10-15T15:52:11.882090+11:00",
+      "stage": "PREPARED"
+    }
+  ],
+  "manifest_sha256": null,
+  "schema": "nta-betta-process-v1",
+  "stage": "PREPARED",
+  "status": "AWAITING_AUTHORISATION"
+}

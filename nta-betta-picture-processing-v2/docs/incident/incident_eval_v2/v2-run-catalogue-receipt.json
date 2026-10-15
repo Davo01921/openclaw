@@ -1,0 +1,70 @@
+{
+  "attempts": [],
+  "batch_id": "betta-20261015-153932-unirxk",
+  "call_id": "fe034231-3c87-4b00-8a83-f5ef528fc5c8",
+  "catalogue_confidence_gates": {
+    "photo_date": "PASS",
+    "tank_id": "PASS"
+  },
+  "catalogue_confidence_raw": {
+    "photo_date": 0.93,
+    "tank_id": 0.91
+  },
+  "catalogue_confidences": {
+    "photo_date": 0.93,
+    "tank_id": 0.91
+  },
+  "input_hashes": [
+    "6e4a4f573f8cfc829218f798eeb5b45cd08803689d31d7db6fce4920cdca9ca9"
+  ],
+  "model": "gpt-5.6-sol",
+  "output": {
+    "date_confidence": 0.93,
+    "fish_name": "Pastel Pink",
+    "one_fish_visible": true,
+    "photo_date": "2026-04-10",
+    "proposed_title": "2BT23 - Pastel Pink Halfmoon Plakat Male",
+    "sex": "Male",
+    "sex_confidence": 0.0,
+    "tail_type": "Halfmoon Plakat",
+    "tank_confidence": 0.91,
+    "tank_id": "2BT23",
+    "title": "2BT23 - Pastel Pink Halfmoon Plakat Male",
+    "uncertainty_reasons": [
+      "Tank ID handwriting is slightly ambiguous.",
+      "Sex cannot be confidently determined from visible evidence."
+    ]
+  },
+  "provider": "openai",
+  "routing": {
+    "actual_model": "gpt-5.6-sol",
+    "actual_provider": "openai",
+    "agent": "fred",
+    "authority": "adaptive-model-router/v2.1",
+    "capability_requirements": [
+      "image",
+      "structured_output"
+    ],
+    "class": "STANDARD",
+    "eligible_routes": [
+      "openai/gpt-5.6-sol",
+      "qwen-token-plan/qwen3.8-flash",
+      "qwen/qwen3.8-max"
+    ],
+    "execution_attested": true,
+    "fallback_used": false,
+    "requested_route": "openai/gpt-5.6-sol"
+  },
+  "source_identity": {
+    "path": "/private/var/folders/f0/ncwpvltd3_sfbjtbnct70dnm0000gn/T/opencode/incident-eval-v2/batches/betta-20261015-153932-unirxk/intake/incident-photo.png",
+    "sha256": "6e4a4f573f8cfc829218f798eeb5b45cd08803689d31d7db6fce4920cdca9ca9"
+  },
+  "timestamp": "2026-10-15T04:40:00.488962+00:00",
+  "uncertain": false,
+  "uncertain_reason": null,
+  "usage": {
+    "token_usage_reported": false,
+    "tokens_input": 0,
+    "tokens_output": 0
+  }
+}

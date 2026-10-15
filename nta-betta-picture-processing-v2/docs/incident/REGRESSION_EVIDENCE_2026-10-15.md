@@ -114,44 +114,46 @@ immutability. A mocked successful read is never presented as OCR evidence
 - No network, no Shopify, no Grok in the automated suite (vision is mocked and
   keyed by input hash so every mocked reading binds the file it claims to).
 
-## Bugs / defects found (NOT fixed — reported for the orchestrator)
+## Bugs / defects found (status as of 2026-10-15 evening — see the post-refinement addendum)
 
-1. **`betta_vision_route.inspect_live` does not harden `PATH` for route
+1. **[FIXED at HEAD by the master in `cba92e2` — verified in code]**
+   **`betta_vision_route.inspect_live` did not harden `PATH` for route
    resolution** (`scripts/betta_vision_route.py`, line ~22). `openclaw` is a
    node script; `vision_review.run_review` hardens the child `PATH` for the
-   actual inference call but calls `resolve_route()` *before* setting it. In a
-   minimal-`PATH` execution context the inspect subprocess fails
-   (`env: node: No such file or directory`), prod-module identification fails
-   closed with `"vision model catalogue unavailable"`, and a legitimate batch is
-   quarantined (reproduced once during the real evaluation; the same run
-   succeeded once `PATH` included `/opt/homebrew/bin`). Suggested fix: set the
-   same preferred `PATH` before `inspect_live` (and honour
-   `BETTA_OPENCLAW`/`BETTA_NODE` overrides). Severity: operationally medium,
-   safety-neutral (fail-closed), but it wastes the identification stage.
-2. **Label-crop detection receipt records a stale `.part` path**
-   (`scripts/betta_bau_adapters.py::_label_crop`). The helper is invoked with
-   `output_path=<final>.part`; its returned detection record stores that `.part`
-   path, then the adapter `os.replace`s the file to the final name. The stored
-   `crop_detection.output_path` therefore points at a path that no longer
-   exists, while the authoritative `crop_identity.sha256` /
-   `output_sha256` are correct and bound. Purely an evidence-hygiene wart
-   (forensic readers may chase a dead path). Suggested fix: pass the final path
-   to the helper, or rewrite `detection["output_path"]` before persisting.
-   Severity: low.
-3. **Prep image-tone calibration vs prep-QA strictness (observation).** On the
-   incident photo the real prep-QA rejected both deterministic levels (`FULL`
-   and `L1`) for exposure/contrast increase with clipped highlights and a pink
-   cast; the pipeline correctly fell back to the raw. This is safe but means the
-   prepared-image value is lost for this photo class; the tone curve in
-   `betta_prepare` and/or the prep-QA threshold may deserve owner review.
-   Severity: informational (no acceptance loosening detected — the opposite).
+   actual inference call but called `resolve_route()` *before* setting it. In a
+   minimal-`PATH` execution context the inspect subprocess failed
+   (`env: node: No such file or directory`), prod-module identification failed
+   closed with `"vision model catalogue unavailable"`, and a legitimate batch
+   was quarantined (reproduced once during the real evaluation). Resolution:
+   `inspect_live` now builds a hardened child environment (`env=child_env`)
+   before invoking the CLI, covered by
+   `tests/test_betta_vision_route_bau.py`.
+2. **[FIXED at HEAD by A2 — verified in code and in the live v2 receipt]**
+   **Label-crop detection receipt recorded a stale `.part` path**
+   (`scripts/betta_bau_adapters.py::_label_crop`). The helper was invoked with
+   `output_path=<final>.part`; its returned detection record stored that `.part`
+   path, then the adapter `os.replace`d the file to the final name.
+   Resolution: the helper is now invoked with the FINAL crop path; the live
+   `docs/incident/incident_eval_v2/v2-probe2-label-retry-receipt.json` records
+   `crop_identity.detection.output_path` as `…/<sha>-label.png` (no `.part`).
+3. **[REMAINS OPEN — owner attention]** **Prep image-tone calibration vs prep-QA
+   strictness (observation).** On the incident photo the real prep-QA rejected
+   both deterministic levels (`FULL` and `L1`) for exposure/contrast increase
+   with clipped highlights and a pink cast; the pipeline correctly fell back to
+   the raw. This is safe but means the prepared-image value is lost for this
+   photo class; the tone curve in `betta_prepare` and/or the prep-QA threshold
+   may deserve owner review. Severity: informational (no acceptance loosening
+   detected — the opposite). The v2 re-runs did not re-exercise live prep-QA
+   (prepared-image stage mocked there; see the addendum).
 
 ## Residual gaps / risks
 
-- The real evaluation is single-sample (n=1 photo, 5 calls) by design; model
-  variance (e.g. the date confidence moving above 0.90 on some run) would change
-  the read's confident flag. The suite therefore asserts the *gate/comparator*
-  outcome and the recorded values, not future model behaviour.
+- The real evaluation is single-photo in each archive (v1: n=1, 5 live calls; v2:
+  three artefacts, 4 live calls — see the post-refinement addendum); model
+  variance in the confidence numbers (e.g. the date confidence moving across the
+  0.90 gate between live samples) changes which safe path runs. The suite
+  therefore asserts the *gate/comparator* outcome and the recorded values, not
+  future model behaviour.
 - The strict pipeline's manifest identity block sets
   `detected_tank == requested_tank == accepted_tank`; there is no pipeline-level
   field for a separately owner-requested tank (the uploader manifest contract
@@ -164,3 +166,108 @@ immutability. A mocked successful read is never presented as OCR evidence
 - The archived drivers in `docs/incident/incident_eval/` are exact copies of
   what ran; re-running them makes new live calls and overwrites the scratch
   evidence (not the archived copies).
+
+## Post-refinement addendum (2026-10-15 evening, A5)
+
+### (a) The v1 archive is the pre-refinement historical record
+
+The v1 archive (`docs/incident/incident_eval/`, batch
+`betta-20261015-105638-vccnto`, 10:56 AEDT) was produced ~2 h before commit
+`cba92e2` (12:58 AEDT) introduced the gate-aware retry refinement. On that
+revision the genuine reads (full: tank `2BT23` @0.98 pass / date `2026-04-10`
+@0.88 **below gate**; focused crop: `2BT23` @0.99 / `2026-10-14` @0.95) hit the
+retry contradiction rule in which the below-gate catalogue date could still veto
+the confident focused read, so the run recorded `RETRY_CONFLICT` + QUARANTINE.
+That outcome is not reproducible at HEAD; the v1 receipts are kept verbatim,
+unchanged, as the historical record (independently flagged by the review as
+finding M1). All v1 SHA-256s were re-verified unchanged after the v2 runs.
+
+### (b) Current-code re-run (v2) — `docs/incident/incident_eval_v2/`
+
+Drivers + verbatim evidence + `summary.md` are archived in the new
+`docs/incident/incident_eval_v2/` directory (v1 untouched). Three artefacts,
+same sandbox method as v1, default policy (`paid_generation_authorised()` false)
+so accepted fish stop at `AWAITING_AUTHORISATION`:
+
+1. **Live full run** (batch `betta-20261015-153932-unirxk`, 2 real calls):
+   the fresh sample's confidences differed from v1 — tank `2BT23` @0.91 and date
+   `2026-04-10` @**0.93 (both gates PASS this time)** — so the pinned
+   confident-contradiction rule applied: the real focused corroboration read
+   (`2BT23` @0.99 / `2026-10-14` @0.96) produced `DISAGREE`
+   (`date mismatch: full=2026-04-10 label-crop=2026-10-14`) and the run
+   quarantined (`PARTIAL`, `quarantined: 1`). Safe, but it exercises the
+   confident-contradiction rule rather than the gate-aware retry; recorded
+   verbatim as fresh-sample model variance.
+2. **Live identification probe** (batch `betta-20261015-155106-t135kd`, 2 real
+   calls; prepared-image stage mocked — documented): the catalogue date came back
+   `2026-04-10` @**0.88 BELOW_GATE** → real focused retry (call
+   `d6b950b7-…`) → receipt `gate_passed {tank_id: true, photo_date: false}`,
+   `disposition: "ACCEPTED"` (reason *“focused label read accepted; catalogue
+   tank agrees, date below gate”*) → **`RETRY_ACCEPTED`**, entry `2BT23` /
+   `2026-10-14`, run stopped at `AWAITING_AUTHORISATION` (`stage: PREPARED`).
+3. **Deterministic replay of the recorded v1 genuine reads** (0 model calls;
+   mocked runners return the verbatim archived v1 outputs, rebinding only input
+   hashes; batch selection context set to the recorded call window): identify
+   `uncertain_reason: "catalogue confidence below 0.90"`, gates
+   `{tank_id: PASS 0.98, photo_date: BELOW_GATE 0.88}` → retry
+   `disposition: ACCEPTED`, `contradiction: null`,
+   `label_reads.status: RETRY_ACCEPTED`, entry `2BT23` / `2026-10-14`,
+   `AWAITING_AUTHORISATION`.
+
+**The M1 expectation therefore holds:** with the recorded genuine reads, current
+code accepts via the focused read (`2BT23` / `2026-10-14`); the below-gate
+catalogue date cannot veto; the misread `2026-04-10` is never accepted. The one
+difference from the review's expected narrative is the *fresh live sample* in
+(1), whose confidences crossed the gate this time — an observed model-variance
+effect, recorded verbatim and noted above.
+
+### (c) Bug status corrections
+
+- **Bug 1 (vision-route PATH) — FIXED at HEAD** by the master in `cba92e2`:
+  `betta_vision_route.inspect_live` now builds a hardened child environment
+  before invoking the node-based `openclaw` CLI, covered by
+  `tests/test_betta_vision_route_bau.py`.
+- **Bug 2 (`.part` crop path) — FIXED at HEAD** by A2: `_label_crop` now invokes
+  the helper with the FINAL crop path; the live v2 probe2 receipt records
+  `crop_identity.detection.output_path` as `…/<sha>-label.png` (no `.part`).
+- **Bug 3 (prep-QA strictness observation) — REMAINS OPEN** for owner attention;
+  the v2 re-runs did not re-exercise live prep-QA (prepared-image stage mocked
+  in probe2/replay; run 1 quarantined before preparation).
+
+### (d) v2 live-call inventory and attestations
+
+Four real vision calls total (≤ 6 bound), all `openai / gpt-5.6-sol`
+(`execution_attested: true`, `fallback_used: false`; from
+`v2-run-call-inventory.json` / `v2-probe2-call-inventory.json`):
+
+| Run | Stage | call_id |
+|---|---|---|
+| full run | catalogue | `fe034231-3c87-4b00-8a83-f5ef528fc5c8` |
+| full run | focused corroboration | `c0f8bfed-1f9d-4ae0-bba7-3918c2f655e7` |
+| probe2 | catalogue | `7fb0c7d9-b8d3-4eec-910d-c3f587f5b263` |
+| probe2 | focused retry | `d6b950b7-4b31-4247-a39d-1221ef395dce` |
+
+The replay made no model call (its telemetry rows reproduce the recorded
+envelopes' call ids). No Shopify call, no Grok/generation call; the raw fixture
+SHA `6e4a4f…9ca9ca9` was unchanged before/after all three batches. One archiving
+fix was applied to the probe2 evidence without any new model call (after a
+retry, the process entry's `catalogue_evidence_path` points at the retry
+receipt; the archived catalogue receipt was re-copied from
+`label_reads.full.receipt_path`); it is recorded as `archive_fix` in
+`v2-probe2-summary.json`.
+
+### Suite state at addendum time (2026-10-15 evening)
+
+Re-run for this addendum on the working tree: this module
+(`tests/test_betta_incident_2bt23.py`) ran **53 tests, OK**; full `discover`
+ran **606 tests** with **4 issues, all in A6's
+`tests/test_betta_firewall_adversarial.py`** and none in this suite — they are
+stale expectations relative to other agents' fresh uncommitted guards:
+`OwnerOverrideScoping.test_merch_scope_cannot_authorise_betta_operation` and
+`test_partial_scope_refused` (A3's new no-op-correction guard rejects A6's
+fixture record), `TrustBoundaryDocumentation.test_documentation_manifest_guard_covers_disagree_but_not_retry_conflict`
+(`build_manifest` now refuses `RETRY_CONFLICT` too) and
+`DualReadFalseConfidence.test_documentation_confidence_audit_fields_miss_real_key_names`
+(receipts now record `BELOW_GATE` instead of `MISSING`, i.e. the audit-field
+defect was fixed after the test). Flagged to the orchestrator; not touched by
+this workstream.

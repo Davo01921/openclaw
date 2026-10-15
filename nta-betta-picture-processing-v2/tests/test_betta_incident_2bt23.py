@@ -56,6 +56,7 @@ ROOT = Path(__file__).parents[1]
 SCRIPTS = ROOT / "scripts"
 FIXTURES = ROOT / "tests" / "fixtures" / "incident_2bt23"
 EVAL_DIR = ROOT / "docs" / "incident" / "incident_eval"
+EVAL_V2_DIR = ROOT / "docs" / "incident" / "incident_eval_v2"
 A2_EVIDENCE_DIR = ROOT / "docs" / "incident" / "label_recognition_evidence"
 
 INCIDENT_PHOTO = FIXTURES / "incident-photo.png"
@@ -410,6 +411,12 @@ class Category01OriginalImageIdentification(unittest.TestCase):
             self.skipTest(f"real-evaluation evidence missing: {path}")
         return json.loads(path.read_text())
 
+    def load_v2(self, name):
+        path = EVAL_V2_DIR / name
+        if not path.is_file():
+            self.skipTest(f"post-refinement evaluation evidence missing: {path}")
+        return json.loads(path.read_text())
+
     def test_1_fixture_is_byte_immutable_and_bound_to_recorded_shas(self):
         self.assertTrue(INCIDENT_PHOTO.is_file())
         self.assertEqual(sha256(INCIDENT_PHOTO), INCIDENT_SHA)
@@ -437,23 +444,99 @@ class Category01OriginalImageIdentification(unittest.TestCase):
         self.assertEqual(receipt["uncertain"], True)
         self.assertEqual(receipt["uncertain_reason"], "catalogue confidence below 0.90")
 
-    def test_1_recorded_real_run_quarantined_instead_of_accepting_the_misread(self):
-        summary = self.load("real-run-summary.json")
+    def test_1_recorded_reads_replay_accepts_via_below_gate_refinement(self):
+        """Post-refinement (gate-aware retry) outcome for the recorded v1 reads.
+
+        The v1 archive (``incident_eval/``) is the historical pre-refinement
+        record where this shape quarantined (RETRY_CONFLICT).  The v2 replay
+        feeds those same recorded reads through CURRENT code; this test asserts
+        the current expectation: the below-gate catalogue date cannot veto the
+        confident focused read, so the correct identity proceeds.
+        """
+        summary = self.load_v2("v2-replay-summary.json")
+        result = summary["result"]
+        self.assertEqual(result["status"], "AWAITING_AUTHORISATION")
+        self.assertEqual(result["stage"], "PREPARED")
+        self.assertEqual(result["published"], 0)
+        self.assertEqual(result["quarantined"], 0)
+        self.assertIsNone(result["manifest_sha256"])
+        state = self.load_v2("v2-replay-process-state.json")
+        entry = next(iter(state["fish"].values()))
+        self.assertEqual(entry["tank_id"], "2BT23")
+        self.assertEqual(entry["photo_date"], "2026-10-14")
+        self.assertEqual(entry["status"], "PENDING")
+        self.assertIs(entry["uncertain"], False)
+        self.assertEqual(entry["notes"], ["focused label retry accepted"])
+        self.assertEqual(state["executed"], [])
+        reads = entry["label_reads"]
+        self.assertEqual(reads["status"], "RETRY_ACCEPTED")
+        self.assertEqual(reads["full"]["gate_passed"],
+                         {"tank_id": True, "photo_date": False})
+        self.assertEqual(reads["full"]["photo_date"], "2026-04-10")
+        self.assertIsNone(reads["full"]["confidences"]["photo_date"])
+        self.assertEqual(reads["crop"]["tank_id"], "2BT23")
+        self.assertEqual(reads["crop"]["photo_date"], "2026-10-14")
+        # Provenance: the replay consumed the verbatim recorded v1 receipts
+        # (sha-pinned) and reused their recorded call ids - no invented values.
+        provenance = summary["recorded_read_provenance"]
+        v1_catalogue = EVAL_DIR / "real-run-catalogue-receipt.json"
+        v1_label = EVAL_DIR / "real-run-label-retry-receipt.json"
+        self.assertEqual(provenance["catalogue"]["sha256"], sha256(v1_catalogue))
+        self.assertEqual(provenance["label"]["sha256"], sha256(v1_label))
+        identify_receipt = self.load_v2("v2-replay-catalogue-receipt.json")
+        self.assertEqual(identify_receipt["call_id"],
+                         json.loads(v1_catalogue.read_text())["call_id"])
+        self.assertIs(identify_receipt["uncertain"], True)
+        self.assertEqual(identify_receipt["uncertain_reason"],
+                         "catalogue confidence below 0.90")
+        self.assertEqual(identify_receipt["catalogue_confidence_raw"],
+                         {"tank_id": 0.98, "photo_date": 0.88})
+        self.assertEqual(identify_receipt["catalogue_confidence_gates"],
+                         {"tank_id": "PASS", "photo_date": "BELOW_GATE"})
+        retry_receipt = self.load_v2("v2-replay-label-retry-receipt.json")
+        self.assertEqual(retry_receipt["catalogue_reading"]["gate_passed"],
+                         {"tank_id": True, "photo_date": False})
+        self.assertEqual(retry_receipt["catalogue_reading"]["disposition"],
+                         "ACCEPTED")
+        self.assertIsNone(retry_receipt["contradiction"])
+        self.assertEqual(retry_receipt["call_id"],
+                         json.loads(v1_label.read_text())["call_id"])
+
+    def test_1_fresh_v2_live_sample_confidence_variance_quarantined_safely(self):
+        """Fresh live run under current code, recorded verbatim.
+
+        This sample's catalogue confidences crossed the gates (date 0.93), so
+        the pinned confident-contradiction rule (not the gate-aware retry)
+        applied and the run quarantined.  That is safe and is NOT the
+        pre-refinement retry bug: the misread date was never accepted and
+        nothing was published.
+        """
+        summary = self.load_v2("v2-run-summary.json")
         result = summary["result"]
         self.assertEqual(result["status"], "PARTIAL")
         self.assertEqual(result["published"], 0)
         self.assertEqual(result["quarantined"], 1)
         self.assertIsNone(result["manifest_sha256"])
-        state = self.load("real-run-process-state.json")
+        state = self.load_v2("v2-run-process-state.json")
         entry = next(iter(state["fish"].values()))
         self.assertEqual(entry["tank_id"], "2BT23")
-        self.assertEqual(entry["source_sha256"], INCIDENT_SHA)
         self.assertEqual(entry["status"], "QUARANTINED")
         self.assertEqual(state["executed"], [])
-        self.assertEqual(entry["notes"], [
-            "focused label read contradicts the catalogue read: "
-            "catalogue date 2026-04-10 vs label date 2026-10-14",
-        ])
+        self.assertEqual(entry["label_reads"]["status"], "DISAGREE")
+        # Recorded fresh confidences: both fields passed their gates.
+        self.assertGreaterEqual(entry["catalogue_confidences"]["tank_id"], 0.90)
+        self.assertGreaterEqual(entry["catalogue_confidences"]["photo_date"], 0.90)
+        catalogue = self.load_v2("v2-run-catalogue-receipt.json")
+        self.assertIs(catalogue["uncertain"], False)
+        self.assertEqual(catalogue["catalogue_confidence_gates"],
+                         {"tank_id": "PASS", "photo_date": "PASS"})
+        self.assertEqual(label_identity.normalize_tank(
+            catalogue["output"]["tank_id"]), "2BT23")
+        crop = self.load_v2("v2-run-label-corroboration-receipt.json")
+        self.assertEqual(crop["status"], "DISAGREE")
+        self.assertEqual(crop["crop_reading"]["tank_id"], "2BT23")
+        self.assertEqual(crop["crop_reading"]["photo_date"], "2026-10-14")
+        self.assertTrue(any("date mismatch" in reason for reason in crop["reasons"]))
 
 
 # --------------------------------------------------------------------------- #

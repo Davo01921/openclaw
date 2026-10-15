@@ -1,0 +1,192 @@
+{
+  "batch_dir": "/private/var/folders/f0/ncwpvltd3_sfbjtbnct70dnm0000gn/T/opencode/incident-eval-v2/replay/batches/betta-20261015-160037-h0afdk",
+  "batch_id": "betta-20261015-160037-h0afdk",
+  "budget_after": {
+    "batch_id": "betta-20261015-160037-h0afdk",
+    "batch_reserved": 0.0,
+    "batch_spent": 0.0,
+    "blocked": false,
+    "blocked_reason": null,
+    "fish": {},
+    "limits": {
+      "fallback_cost_usd": 0.07,
+      "max_attempts_per_fish": 2,
+      "max_fish_per_batch": 20,
+      "max_retries_per_fish": 1,
+      "per_batch_usd": 2.8,
+      "per_fish_usd": 0.14
+    }
+  },
+  "calls": [
+    {
+      "detail_json": "{\"sha256\": \"6e4a4f573f8cfc829218f798eeb5b45cd08803689d31d7db6fce4920cdca9ca9\"}",
+      "error": null,
+      "model": null,
+      "outcome": "OK",
+      "provider": null,
+      "stage": "intake",
+      "timestamp": "2026-10-15T05:00:37.555092+00:00"
+    },
+    {
+      "detail_json": "{\"attempt\": 1, \"call_id\": \"7bd0c9e7-e995-4969-a132-06454958d278\"}",
+      "error": null,
+      "model": "gpt-5.6-sol",
+      "outcome": "OK",
+      "provider": "openai",
+      "stage": "identify",
+      "timestamp": "2026-10-15T05:00:37.563963+00:00"
+    },
+    {
+      "detail_json": null,
+      "error": null,
+      "model": "gpt-5.6-sol",
+      "outcome": "OK",
+      "provider": "openai",
+      "stage": "identify_label_retry",
+      "timestamp": "2026-10-15T05:00:37.794996+00:00"
+    },
+    {
+      "detail_json": "{\"attempt\": 1, \"call_id\": \"replay-preflight\"}",
+      "error": null,
+      "model": "mock-vision",
+      "outcome": "OK",
+      "provider": "mock-router",
+      "stage": "prepare_preflight",
+      "timestamp": "2026-10-15T05:00:37.801972+00:00"
+    },
+    {
+      "detail_json": "{\"attempt\": 1, \"call_id\": \"replay-prepqa\"}",
+      "error": null,
+      "model": "mock-vision",
+      "outcome": "OK",
+      "provider": "mock-router",
+      "stage": "prepare_qa",
+      "timestamp": "2026-10-15T05:00:43.796824+00:00"
+    }
+  ],
+  "entries": [
+    {
+      "catalogue_confidences": {
+        "photo_date": null,
+        "tank_id": 0.98
+      },
+      "catalogue_evidence_path": "/private/var/folders/f0/ncwpvltd3_sfbjtbnct70dnm0000gn/T/opencode/incident-eval-v2/replay/batches/betta-20261015-160037-h0afdk/evidence/catalogue/6e4a4f573f8cfc829218f798eeb5b45cd08803689d31d7db6fce4920cdca9ca9-label-retry.json",
+      "identify_reason": "catalogue confidence below 0.90",
+      "key": "/private/var/folders/f0/ncwpvltd3_sfbjtbnct70dnm0000gn/T/opencode/incident-eval-v2/replay/batches/betta-20261015-160037-h0afdk/intake/incident-photo.png",
+      "label_price_visible": "35",
+      "label_reads": {
+        "crop": {
+          "confident": true,
+          "crop_helper": "betta_prepare.label_crop",
+          "crop_path": "/private/var/folders/f0/ncwpvltd3_sfbjtbnct70dnm0000gn/T/opencode/incident-eval-v2/replay/batches/betta-20261015-160037-h0afdk/evidence/label-crops/6e4a4f573f8cfc829218f798eeb5b45cd08803689d31d7db6fce4920cdca9ca9-label.png",
+          "crop_sha256": "b6cbc02721b2071d01fe7e16f48cea2b043842bec7478d45ac8b5f80f12107f1",
+          "photo_date": "2026-10-14",
+          "receipt_path": "/private/var/folders/f0/ncwpvltd3_sfbjtbnct70dnm0000gn/T/opencode/incident-eval-v2/replay/batches/betta-20261015-160037-h0afdk/evidence/catalogue/6e4a4f573f8cfc829218f798eeb5b45cd08803689d31d7db6fce4920cdca9ca9-label-retry.json",
+          "receipt_sha256": "cbcb72c19e96e4a729db205811654b1b8119c76c6ee8e8056c8e58788bd0c6b0",
+          "tank_id": "2BT23"
+        },
+        "full": {
+          "confidences": {
+            "photo_date": null,
+            "tank_id": 0.98
+          },
+          "confident": false,
+          "gate_passed": {
+            "photo_date": false,
+            "tank_id": true
+          },
+          "photo_date": "2026-04-10",
+          "receipt_path": "/private/var/folders/f0/ncwpvltd3_sfbjtbnct70dnm0000gn/T/opencode/incident-eval-v2/replay/batches/betta-20261015-160037-h0afdk/evidence/catalogue/6e4a4f573f8cfc829218f798eeb5b45cd08803689d31d7db6fce4920cdca9ca9.json",
+          "receipt_sha256": "99307d35c9fbfc2c24c5de3daeee6e7ca17c526a89c27832c8eff6e717167b96",
+          "tank_id": "2BT23"
+        },
+        "reasons": [],
+        "status": "RETRY_ACCEPTED",
+        "visible_price": "35"
+      },
+      "notes": [
+        "focused label retry accepted"
+      ],
+      "photo_date": "2026-10-14",
+      "prep_status": "PREPARED",
+      "source_sha256": "6e4a4f573f8cfc829218f798eeb5b45cd08803689d31d7db6fce4920cdca9ca9",
+      "status": "PENDING",
+      "tank_id": "2BT23",
+      "uncertain": false,
+      "uncertain_reason": null,
+      "working_input_sha256": "69a1dcc99fd664d6c63fb85afaeffa725c4288a2a94b68e0f996eee4ebf2b269"
+    }
+  ],
+  "raw_source": {
+    "path": "/private/var/folders/f0/ncwpvltd3_sfbjtbnct70dnm0000gn/T/opencode/incident-eval-v2/replay/intake/incident-photo.png",
+    "sha256_after": "6e4a4f573f8cfc829218f798eeb5b45cd08803689d31d7db6fce4920cdca9ca9",
+    "sha256_before": "6e4a4f573f8cfc829218f798eeb5b45cd08803689d31d7db6fce4920cdca9ca9",
+    "unchanged": true
+  },
+  "receipt_copies": {
+    "catalogue": {
+      "copy": "/private/var/folders/f0/ncwpvltd3_sfbjtbnct70dnm0000gn/T/opencode/incident-eval-v2/replay/evidence/catalogue-receipt.json",
+      "sha256": "99307d35c9fbfc2c24c5de3daeee6e7ca17c526a89c27832c8eff6e717167b96",
+      "source": "/private/var/folders/f0/ncwpvltd3_sfbjtbnct70dnm0000gn/T/opencode/incident-eval-v2/replay/batches/betta-20261015-160037-h0afdk/evidence/catalogue/6e4a4f573f8cfc829218f798eeb5b45cd08803689d31d7db6fce4920cdca9ca9.json"
+    },
+    "label": {
+      "copy": "/private/var/folders/f0/ncwpvltd3_sfbjtbnct70dnm0000gn/T/opencode/incident-eval-v2/replay/evidence/label-receipt.json",
+      "sha256": "cbcb72c19e96e4a729db205811654b1b8119c76c6ee8e8056c8e58788bd0c6b0",
+      "source": "/private/var/folders/f0/ncwpvltd3_sfbjtbnct70dnm0000gn/T/opencode/incident-eval-v2/replay/batches/betta-20261015-160037-h0afdk/evidence/catalogue/6e4a4f573f8cfc829218f798eeb5b45cd08803689d31d7db6fce4920cdca9ca9-label-retry.json"
+    },
+    "label_crop": {
+      "sha256": "b6cbc02721b2071d01fe7e16f48cea2b043842bec7478d45ac8b5f80f12107f1",
+      "source": "/private/var/folders/f0/ncwpvltd3_sfbjtbnct70dnm0000gn/T/opencode/incident-eval-v2/replay/batches/betta-20261015-160037-h0afdk/evidence/label-crops/6e4a4f573f8cfc829218f798eeb5b45cd08803689d31d7db6fce4920cdca9ca9-label.png"
+    }
+  },
+  "recorded_read_provenance": {
+    "catalogue": {
+      "path": "/Users/davidlo/openclaw-skills-incident-repair/nta-betta-picture-processing-v2/docs/incident/incident_eval/real-run-catalogue-receipt.json",
+      "recorded_output": {
+        "date_confidence": 0.88,
+        "fish_name": "Pastel Pink",
+        "one_fish_visible": true,
+        "photo_date": "2026-04-10",
+        "proposed_title": "2BT23 - Pastel Pink Halfmoon Plakat Male",
+        "sex": "Male",
+        "sex_confidence": 0.0,
+        "tail_type": "Halfmoon Plakat",
+        "tank_confidence": 0.98,
+        "tank_id": "2BT23",
+        "title": null,
+        "uncertainty_reasons": [
+          "Handwritten date could be interpreted as 4/10/2026 or 14/10/2026.",
+          "Sex is not confidently supported by visible anatomy."
+        ]
+      },
+      "sha256": "0965651c9543e492efd6fdf358de4cf84f709800392a452981296ec957dfd1ca"
+    },
+    "label": {
+      "path": "/Users/davidlo/openclaw-skills-incident-repair/nta-betta-picture-processing-v2/docs/incident/incident_eval/real-run-label-retry-receipt.json",
+      "recorded_output": {
+        "date_confidence": 0.95,
+        "photo_date": "2026-10-14",
+        "reasons": [
+          "Tank ID is clearly handwritten as 2BT23.",
+          "Date is handwritten as 14/10/2026 in Australian day/month/year format.",
+          "Price is clearly written on the physical card as $35."
+        ],
+        "tank_confidence": 0.99,
+        "tank_id": "2BT23",
+        "title": null,
+        "visible_price": "35"
+      },
+      "sha256": "e9825988256242f9b88298c68fc8f7a8f6a283cee153b92b5ee3dcb49f4865a8"
+    }
+  },
+  "replay_note": "NO model call: mocked runners replay the verbatim recorded outputs of the v1 real calls; prepared-image stage mocked; selection context set to the recorded call window",
+  "replay_selected_at": "2026-10-14T23:56:00+00:00",
+  "result": {
+    "batch_id": "betta-20261015-160037-h0afdk",
+    "manifest_sha256": null,
+    "published": 0,
+    "quarantined": 0,
+    "stage": "PREPARED",
+    "status": "AWAITING_AUTHORISATION"
+  }
+}

@@ -1,0 +1,47 @@
+[
+  {
+    "detail_json": "{\"sha256\": \"6e4a4f573f8cfc829218f798eeb5b45cd08803689d31d7db6fce4920cdca9ca9\"}",
+    "error": null,
+    "model": null,
+    "outcome": "OK",
+    "provider": null,
+    "stage": "intake",
+    "timestamp": "2026-10-15T05:00:37.555092+00:00"
+  },
+  {
+    "detail_json": "{\"attempt\": 1, \"call_id\": \"7bd0c9e7-e995-4969-a132-06454958d278\"}",
+    "error": null,
+    "model": "gpt-5.6-sol",
+    "outcome": "OK",
+    "provider": "openai",
+    "stage": "identify",
+    "timestamp": "2026-10-15T05:00:37.563963+00:00"
+  },
+  {
+    "detail_json": null,
+    "error": null,
+    "model": "gpt-5.6-sol",
+    "outcome": "OK",
+    "provider": "openai",
+    "stage": "identify_label_retry",
+    "timestamp": "2026-10-15T05:00:37.794996+00:00"
+  },
+  {
+    "detail_json": "{\"attempt\": 1, \"call_id\": \"replay-preflight\"}",
+    "error": null,
+    "model": "mock-vision",
+    "outcome": "OK",
+    "provider": "mock-router",
+    "stage": "prepare_preflight",
+    "timestamp": "2026-10-15T05:00:37.801972+00:00"
+  },
+  {
+    "detail_json": "{\"attempt\": 1, \"call_id\": \"replay-prepqa\"}",
+    "error": null,
+    "model": "mock-vision",
+    "outcome": "OK",
+    "provider": "mock-router",
+    "stage": "prepare_qa",
+    "timestamp": "2026-10-15T05:00:43.796824+00:00"
+  }
+]

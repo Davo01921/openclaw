@@ -1,0 +1,102 @@
+{
+  "attempts": [],
+  "batch_id": "betta-20261015-153932-unirxk",
+  "call_id": "c0f8bfed-1f9d-4ae0-bba7-3918c2f655e7",
+  "crop_identity": {
+    "detection": {
+      "clamped": false,
+      "confident": true,
+      "method": "card-band",
+      "output_dimensions": [
+        1512,
+        477
+      ],
+      "output_path": "/private/var/folders/f0/ncwpvltd3_sfbjtbnct70dnm0000gn/T/opencode/incident-eval-v2/batches/betta-20261015-153932-unirxk/evidence/label-crops/6e4a4f573f8cfc829218f798eeb5b45cd08803689d31d7db6fce4920cdca9ca9-label.png",
+      "output_sha256": "b6cbc02721b2071d01fe7e16f48cea2b043842bec7478d45ac8b5f80f12107f1",
+      "reason": "label card band detected",
+      "rect_px": [
+        0,
+        0,
+        1512,
+        477
+      ],
+      "source_dimensions": [
+        1512,
+        2688
+      ],
+      "source_path": "/private/var/folders/f0/ncwpvltd3_sfbjtbnct70dnm0000gn/T/opencode/incident-eval-v2/batches/betta-20261015-153932-unirxk/intake/incident-photo.png",
+      "source_sha256": "6e4a4f573f8cfc829218f798eeb5b45cd08803689d31d7db6fce4920cdca9ca9"
+    },
+    "helper": "betta_prepare.label_crop",
+    "path": "/private/var/folders/f0/ncwpvltd3_sfbjtbnct70dnm0000gn/T/opencode/incident-eval-v2/batches/betta-20261015-153932-unirxk/evidence/label-crops/6e4a4f573f8cfc829218f798eeb5b45cd08803689d31d7db6fce4920cdca9ca9-label.png",
+    "sha256": "b6cbc02721b2071d01fe7e16f48cea2b043842bec7478d45ac8b5f80f12107f1"
+  },
+  "crop_reading": {
+    "confident": true,
+    "photo_date": "2026-10-14",
+    "tank_id": "2BT23"
+  },
+  "full_read": {
+    "confidences": {
+      "photo_date": 0.93,
+      "tank_id": 0.91
+    },
+    "confident": true,
+    "photo_date": "2026-04-10",
+    "receipt_path": "/private/var/folders/f0/ncwpvltd3_sfbjtbnct70dnm0000gn/T/opencode/incident-eval-v2/batches/betta-20261015-153932-unirxk/evidence/catalogue/6e4a4f573f8cfc829218f798eeb5b45cd08803689d31d7db6fce4920cdca9ca9.json",
+    "receipt_sha256": "2c484415ee37f3b754c1cbe470be460919345b73a410e537a879c74603b48b6d",
+    "tank_id": "2BT23"
+  },
+  "input_hashes": [
+    "b6cbc02721b2071d01fe7e16f48cea2b043842bec7478d45ac8b5f80f12107f1"
+  ],
+  "model": "gpt-5.6-sol",
+  "output": {
+    "date_confidence": 0.95,
+    "photo_date": "2026-10-14",
+    "reasons": [
+      "Tank ID is clearly handwritten as 2BT23.",
+      "Date is handwritten as 14/10/2026 in Australian day/month/year format.",
+      "Price is clearly written as $35 on the physical card."
+    ],
+    "tank_confidence": 0.99,
+    "tank_id": "2BT23",
+    "visible_price": "35"
+  },
+  "provider": "openai",
+  "reasons": [
+    "date mismatch: full=2026-04-10 label-crop=2026-10-14"
+  ],
+  "routing": {
+    "actual_model": "gpt-5.6-sol",
+    "actual_provider": "openai",
+    "agent": "fred",
+    "authority": "adaptive-model-router/v2.1",
+    "capability_requirements": [
+      "image",
+      "structured_output"
+    ],
+    "class": "STANDARD",
+    "eligible_routes": [
+      "openai/gpt-5.6-sol",
+      "qwen-token-plan/qwen3.8-flash",
+      "qwen/qwen3.8-max"
+    ],
+    "execution_attested": true,
+    "fallback_used": false,
+    "requested_route": "openai/gpt-5.6-sol"
+  },
+  "schema": "nta-betta-label-corroboration-v1",
+  "source_identity": {
+    "path": "/private/var/folders/f0/ncwpvltd3_sfbjtbnct70dnm0000gn/T/opencode/incident-eval-v2/batches/betta-20261015-153932-unirxk/intake/incident-photo.png",
+    "sha256": "6e4a4f573f8cfc829218f798eeb5b45cd08803689d31d7db6fce4920cdca9ca9"
+  },
+  "status": "DISAGREE",
+  "timestamp": "2026-10-15T04:40:20.873683+00:00",
+  "usage": {
+    "token_usage_reported": false,
+    "tokens_input": 0,
+    "tokens_output": 0
+  },
+  "visible_price": "35"
+}

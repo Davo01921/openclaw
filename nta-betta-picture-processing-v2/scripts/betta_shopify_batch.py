@@ -510,6 +510,7 @@ class ManifestBundle:
             requested_tank=requested,
             accepted_tank=accepted,
             product_id=raw["product_id"],
+            variant_id=raw["variant_id"],
             operation_fields=list(IDENTITY_OPERATION_FIELDS),
         )
         require(verdict.get("valid") is True,

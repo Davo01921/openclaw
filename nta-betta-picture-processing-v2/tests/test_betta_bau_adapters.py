@@ -706,6 +706,33 @@ class StrictAdapterTests(unittest.TestCase):
             self.assertEqual(detection["source_sha256"], record["sha256"])
             self.assertEqual(detection["output_sha256"], crop_identity["sha256"])
 
+    def test_identify_receipt_audits_flat_confidence_keys_without_mislabeling(self):
+        # Real catalogue outputs carry flat tank_confidence/date_confidence
+        # keys (no `confidence` mapping).  The audit fields must read the exact
+        # values the gates read: a present 0.88 date is BELOW_GATE, never MISSING.
+        original = self.runners["catalogue"]
+
+        def flat(files):
+            evidence = original(files)
+            output = {key: value for key, value in evidence["output"].items()
+                      if key != "confidence"}
+            output.update({"tank_confidence": 0.99, "date_confidence": 0.88})
+            return {**evidence, "output": output}
+
+        self.runners["catalogue"] = flat
+        adapters, _ = self.make()
+        record = adapters["intake"](self.batch, {})["fish"][0]
+        decision = adapters["identify"](record, self.batch)
+        self.assertTrue(decision["uncertain"])
+        self.assertEqual(decision["uncertain_reason"], "catalogue confidence below 0.90")
+        self.assertEqual(decision["catalogue_confidences"],
+                         {"tank_id": 0.99, "photo_date": None})
+        receipt = json.loads(Path(decision["catalogue_evidence_path"]).read_text())
+        self.assertEqual(receipt["catalogue_confidence_gates"],
+                         {"tank_id": "PASS", "photo_date": "BELOW_GATE"})
+        self.assertEqual(receipt["catalogue_confidence_raw"],
+                         {"tank_id": 0.99, "photo_date": 0.88})
+
     def test_label_crop_falls_back_to_the_in_file_top_band(self):
         # With A2's helper unavailable the in-file top-band crop must still be
         # produced, recorded with its own provenance and no helper detection.
@@ -1023,6 +1050,18 @@ class StrictAdapterTests(unittest.TestCase):
         entry["label_reads"] = {"status": "DISAGREE"}
         with self.assertRaisesRegex(strict_mod.StrictAdapterError,
                                     "must never reach a manifest"):
+            adapters["build_manifest"]({"fish": {"source": entry}}, self.batch)
+
+    def test_build_manifest_refuses_a_refused_retry_contradiction(self):
+        adapters, _bundle, entry = self.prepared_entry()
+        entry["label_reads"] = {
+            "status": "RETRY_CONFLICT",
+            "full": {"tank_id": "2BT12", "confident": False},
+            "crop": {"tank_id": "5BT43", "confident": True},
+            "reasons": ["catalogue tank 2BT12 vs label tank 5BT43"],
+        }
+        with self.assertRaisesRegex(strict_mod.StrictAdapterError,
+                                    r"RETRY_CONFLICT.*must never reach a manifest"):
             adapters["build_manifest"]({"fish": {"source": entry}}, self.batch)
 
     def test_telemetry_upserts_fish_and_exports_both_ledgers(self):

@@ -227,6 +227,94 @@ class CorrectionRecordTests(unittest.TestCase):
             {"valid": False, "reason": "invalid_requested_operation_fields"},
             validate(path, operation_fields="title"))
 
+    def test_variant_match_accepted_and_mismatch_refused(self):
+        path = corrections.record(**record_kwargs(), directory=self.root)
+        self.assertEqual(
+            {"valid": True, "reason": "ok"}, validate(path, variant_id=VARIANT))
+        self.assertEqual(
+            {"valid": False, "reason": "variant_id_mismatch"},
+            validate(path, variant_id="gid://shopify/ProductVariant/1"))
+        # A record without a variant cannot satisfy a caller that binds one.
+        bare = corrections.record(
+            **record_kwargs(variant_id=None), directory=self.root)
+        self.assertEqual(
+            {"valid": False, "reason": "variant_id_mismatch"},
+            validate(bare, variant_id=VARIANT))
+        # Omitting the caller-side variant keeps the previous behaviour.
+        self.assertEqual(
+            {"valid": True, "reason": "ok"},
+            corrections.validate_correction(
+                bare, source_sha256=SOURCE_SHA, requested_tank="2BT23",
+                accepted_tank="2BT23", product_id=PRODUCT,
+                operation_fields=list(BETTA_FIELDS)))
+
+    def test_no_op_correction_refused_at_record_and_validate(self):
+        with self.assertRaisesRegex(corrections.CorrectionError, "must differ"):
+            corrections.record(
+                **record_kwargs(original_model_tank="2BT23"),
+                directory=self.root)
+        path = corrections.record(**record_kwargs(), directory=self.root)
+        data = json.loads(path.read_text())
+        data["original_model_tank"] = data["corrected_tank"]
+        core = {key: value for key, value in data.items()
+                if key != "correction_sha256"}
+        data["correction_sha256"] = corrections.json_sha256(core)
+        self.assertEqual(
+            {"valid": False, "reason": "no_op_correction"}, validate(data))
+
+    def test_cli_record_refuses_no_op_correction(self):
+        stdout = io.StringIO()
+        with contextlib.redirect_stdout(stdout):
+            code = corrections.main([
+                "record", "--source-sha256", SOURCE_SHA,
+                "--original-model-tank", "2BT23", "--corrected-tank", "2BT23",
+                "--product-id", PRODUCT, "--operation-fields", "media",
+                "--reason", "r", "--evidence-reference", "e", "--operator", "owner",
+                "--directory", str(self.root),
+                "--created-at", "2026-10-15T09:00:00+11:00",
+            ])
+        self.assertEqual(2, code)
+        self.assertFalse(json.loads(stdout.getvalue())["ok"])
+
+    def test_cli_validate_variant_binding(self):
+        stdout = io.StringIO()
+        with contextlib.redirect_stdout(stdout):
+            corrections.main([
+                "record", "--source-sha256", SOURCE_SHA,
+                "--original-model-tank", "5BT43", "--corrected-tank", "2BT23",
+                "--product-id", PRODUCT, "--variant-id", VARIANT,
+                "--operation-fields", ",".join(BETTA_FIELDS),
+                "--reason", "r", "--evidence-reference", "e", "--operator", "owner",
+                "--directory", str(self.root),
+                "--created-at", "2026-10-15T09:00:00+11:00",
+            ])
+        record_path = json.loads(stdout.getvalue())["path"]
+        stdout = io.StringIO()
+        with contextlib.redirect_stdout(stdout):
+            code = corrections.main([
+                "validate", "--record", record_path,
+                "--source-sha256", SOURCE_SHA,
+                "--requested-tank", "2BT23", "--accepted-tank", "2BT23",
+                "--product-id", PRODUCT, "--variant-id", VARIANT,
+                "--operation-fields", ",".join(BETTA_FIELDS),
+            ])
+        self.assertEqual(0, code)
+        self.assertEqual({"valid": True, "reason": "ok"}, json.loads(stdout.getvalue()))
+        stdout = io.StringIO()
+        with contextlib.redirect_stdout(stdout):
+            code = corrections.main([
+                "validate", "--record", record_path,
+                "--source-sha256", SOURCE_SHA,
+                "--requested-tank", "2BT23", "--accepted-tank", "2BT23",
+                "--product-id", PRODUCT,
+                "--variant-id", "gid://shopify/ProductVariant/1",
+                "--operation-fields", ",".join(BETTA_FIELDS),
+            ])
+        self.assertEqual(2, code)
+        self.assertEqual(
+            {"valid": False, "reason": "variant_id_mismatch"},
+            json.loads(stdout.getvalue()))
+
     def test_cli_record_and_validate_round_trip(self):
         stdout = io.StringIO()
         with contextlib.redirect_stdout(stdout):

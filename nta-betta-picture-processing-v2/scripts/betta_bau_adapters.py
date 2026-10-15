@@ -112,11 +112,23 @@ def _attested_call(evidence: Mapping[str, Any], source_hashes: list[str], label:
         raise StrictAdapterError(f"{label} route attestation invalid: {exc}") from exc
 
 
-def _confidence(output: Mapping[str, Any], field: str) -> float:
+def _confidence_value(output: Mapping[str, Any], field: str):
+    """The raw confidence value the catalogue gates read for one field.
+
+    Mirrors the lookup inside ``_confidence`` exactly (mapping key first, then
+    the ``<field>_confidence`` flat key, which is what real catalogue outputs
+    carry via ``tank_confidence`` / ``date_confidence``) so audit evidence can
+    never diverge from the decision it documents.
+    """
     confidence = output.get("confidence")
     value = confidence.get(field) if isinstance(confidence, Mapping) else None
     if value is None:
         value = output.get(f"{field}_confidence")
+    return value
+
+
+def _confidence(output: Mapping[str, Any], field: str) -> float:
+    value = _confidence_value(output, field)
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise StrictAdapterError(f"catalogue confidence missing for {field}")
     result = float(value)
@@ -380,20 +392,17 @@ class StrictBAUAdapters(base.Adapters):
         temporary = crop_dir / (crop.name + ".part")
         helper = getattr(prepare_mod, "label_crop", None)
         if callable(helper):
-            for attempt in (
-                lambda: helper(source_path=source, output_path=crop),
-                lambda: helper(source, crop),
-            ):
-                try:
-                    produced = attempt()
-                except Exception:
-                    continue
-                if crop.is_file() and crop.stat().st_size > 0:
-                    detection = produced if isinstance(produced, dict) else None
-                    if detection and detection.get("source_sha256") not in (None, digest):
-                        raise StrictAdapterError(
-                            "label crop helper derived from a different source")
-                    return crop, "betta_prepare.label_crop", detection
+            try:
+                produced = helper(source, crop)
+                usable = crop.is_file() and crop.stat().st_size > 0
+            except Exception:
+                produced, usable = None, False
+            if usable:
+                detection = produced if isinstance(produced, dict) else None
+                if detection and detection.get("source_sha256") not in (None, digest):
+                    raise StrictAdapterError(
+                        "label crop helper derived from a different source")
+                return crop, "betta_prepare.label_crop", detection
             if temporary.exists():
                 temporary.unlink()
         try:
@@ -630,15 +639,9 @@ class StrictBAUAdapters(base.Adapters):
         # the values the gates actually accepted (None when a field failed its
         # gate): a below-gate value was already discarded and must never veto a
         # later confident focused label read.  The raw values and gate outcomes
-        # are preserved on the receipt for audit.
-        def _raw_confidence(field: str):
-            confidence = output.get("confidence")
-            value = confidence.get(field) if isinstance(confidence, Mapping) else None
-            if value is None:
-                value = output.get(f"{field}_confidence")
-            return value
-
-        raw_confidences = {field: _raw_confidence(field)
+        # are preserved on the receipt for audit, read through the exact same
+        # lookup the gates use (``_confidence_value`` on the gate input).
+        raw_confidences = {field: _confidence_value(confidence_output, field)
                            for field in ("tank_id", "photo_date")}
 
         def _gate_outcome(field: str) -> str:
@@ -1491,11 +1494,16 @@ class StrictBAUAdapters(base.Adapters):
         for entry in sorted(entries, key=lambda value: value["tank_id"]):
             tank = entry["tank_id"]
             label_reads = entry.get("label_reads")
-            if isinstance(label_reads, dict) and label_reads.get("status") == "DISAGREE":
-                # Defence in depth: a quarantined disagreement can never be
-                # manifest-bound even if a future caller mishandles status.
+            refusal_statuses = {"DISAGREE", "RETRY_CONFLICT"}
+            if (isinstance(label_reads, dict)
+                    and label_reads.get("status") in refusal_statuses):
+                # Defence in depth: an identity refusal — a confident-confident
+                # comparator disagreement or a refused retry contradiction —
+                # can never be manifest-bound even if a future caller
+                # mishandles status.
                 raise StrictAdapterError(
-                    f"{tank}: label read disagreement must never reach a manifest")
+                    f"{tank}: refused label contradiction "
+                    f"({label_reads.get('status')}) must never reach a manifest")
             product = entry.get("product") or {}
             before = product.get("before") or {}
             raw_product = copy.deepcopy(product.get("raw_snapshot"))

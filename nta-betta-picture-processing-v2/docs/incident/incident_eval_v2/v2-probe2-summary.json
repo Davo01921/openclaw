@@ -1,0 +1,151 @@
+{
+  "archive_fix": "catalogue receipt re-copied from label_reads.full.receipt_path: after a gate-aware retry the entry's catalogue_evidence_path points at the retry receipt; fixed without any new model call",
+  "batch_dir": "/private/var/folders/f0/ncwpvltd3_sfbjtbnct70dnm0000gn/T/opencode/incident-eval-v2/probe2/batches/betta-20261015-155106-t135kd",
+  "batch_id": "betta-20261015-155106-t135kd",
+  "budget_after": {
+    "batch_id": "betta-20261015-155106-t135kd",
+    "batch_reserved": 0.0,
+    "batch_spent": 0.0,
+    "blocked": false,
+    "blocked_reason": null,
+    "fish": {},
+    "limits": {
+      "fallback_cost_usd": 0.07,
+      "max_attempts_per_fish": 2,
+      "max_fish_per_batch": 20,
+      "max_retries_per_fish": 1,
+      "per_batch_usd": 2.8,
+      "per_fish_usd": 0.14
+    }
+  },
+  "calls": [
+    {
+      "detail_json": "{\"sha256\": \"6e4a4f573f8cfc829218f798eeb5b45cd08803689d31d7db6fce4920cdca9ca9\"}",
+      "error": null,
+      "model": null,
+      "outcome": "OK",
+      "provider": null,
+      "stage": "intake",
+      "timestamp": "2026-10-15T04:51:06.993265+00:00"
+    },
+    {
+      "detail_json": "{\"attempt\": 1, \"call_id\": \"7fb0c7d9-b8d3-4eec-910d-c3f587f5b263\"}",
+      "error": null,
+      "model": "gpt-5.6-sol",
+      "outcome": "OK",
+      "provider": "openai",
+      "stage": "identify",
+      "timestamp": "2026-10-15T04:51:42.786993+00:00"
+    },
+    {
+      "detail_json": null,
+      "error": null,
+      "model": "gpt-5.6-sol",
+      "outcome": "OK",
+      "provider": "openai",
+      "stage": "identify_label_retry",
+      "timestamp": "2026-10-15T04:52:06.535424+00:00"
+    },
+    {
+      "detail_json": "{\"attempt\": 1, \"call_id\": \"probe2-preflight\"}",
+      "error": null,
+      "model": "mock-vision",
+      "outcome": "OK",
+      "provider": "mock-router",
+      "stage": "prepare_preflight",
+      "timestamp": "2026-10-15T04:52:06.544464+00:00"
+    },
+    {
+      "detail_json": "{\"attempt\": 1, \"call_id\": \"probe2-prepqa\"}",
+      "error": null,
+      "model": "mock-vision",
+      "outcome": "OK",
+      "provider": "mock-router",
+      "stage": "prepare_qa",
+      "timestamp": "2026-10-15T04:52:11.877732+00:00"
+    }
+  ],
+  "entries": [
+    {
+      "catalogue_confidences": {
+        "photo_date": null,
+        "tank_id": 0.94
+      },
+      "catalogue_evidence_path": "/private/var/folders/f0/ncwpvltd3_sfbjtbnct70dnm0000gn/T/opencode/incident-eval-v2/probe2/batches/betta-20261015-155106-t135kd/evidence/catalogue/6e4a4f573f8cfc829218f798eeb5b45cd08803689d31d7db6fce4920cdca9ca9-label-retry.json",
+      "identify_reason": "catalogue confidence below 0.90",
+      "key": "/private/var/folders/f0/ncwpvltd3_sfbjtbnct70dnm0000gn/T/opencode/incident-eval-v2/probe2/batches/betta-20261015-155106-t135kd/intake/incident-photo.png",
+      "label_price_visible": "35",
+      "label_reads": {
+        "crop": {
+          "confident": true,
+          "crop_helper": "betta_prepare.label_crop",
+          "crop_path": "/private/var/folders/f0/ncwpvltd3_sfbjtbnct70dnm0000gn/T/opencode/incident-eval-v2/probe2/batches/betta-20261015-155106-t135kd/evidence/label-crops/6e4a4f573f8cfc829218f798eeb5b45cd08803689d31d7db6fce4920cdca9ca9-label.png",
+          "crop_sha256": "b6cbc02721b2071d01fe7e16f48cea2b043842bec7478d45ac8b5f80f12107f1",
+          "photo_date": "2026-10-14",
+          "receipt_path": "/private/var/folders/f0/ncwpvltd3_sfbjtbnct70dnm0000gn/T/opencode/incident-eval-v2/probe2/batches/betta-20261015-155106-t135kd/evidence/catalogue/6e4a4f573f8cfc829218f798eeb5b45cd08803689d31d7db6fce4920cdca9ca9-label-retry.json",
+          "receipt_sha256": "63e00595af04eb11727eb3d2be77d3f48dcf501b0aef4a227dbeaa04384fc215",
+          "tank_id": "2BT23"
+        },
+        "full": {
+          "confidences": {
+            "photo_date": null,
+            "tank_id": 0.94
+          },
+          "confident": false,
+          "gate_passed": {
+            "photo_date": false,
+            "tank_id": true
+          },
+          "photo_date": "2026-04-10",
+          "receipt_path": "/private/var/folders/f0/ncwpvltd3_sfbjtbnct70dnm0000gn/T/opencode/incident-eval-v2/probe2/batches/betta-20261015-155106-t135kd/evidence/catalogue/6e4a4f573f8cfc829218f798eeb5b45cd08803689d31d7db6fce4920cdca9ca9.json",
+          "receipt_sha256": "c942e5ed8058d5715d8fd399d41047bcc21a863db8310af0c9343f3a8aaee77a",
+          "tank_id": "2BT23"
+        },
+        "reasons": [],
+        "status": "RETRY_ACCEPTED",
+        "visible_price": "35"
+      },
+      "notes": [
+        "focused label retry accepted"
+      ],
+      "photo_date": "2026-10-14",
+      "prep_status": "PREPARED",
+      "source_sha256": "6e4a4f573f8cfc829218f798eeb5b45cd08803689d31d7db6fce4920cdca9ca9",
+      "status": "PENDING",
+      "tank_id": "2BT23",
+      "uncertain": false,
+      "uncertain_reason": null
+    }
+  ],
+  "probe_note": "identification runs LIVE; only the prepared-image stage is mocked (probe2-preflight/probe2-prepqa) to stay inside the <=6 live-call bound",
+  "raw_source": {
+    "path": "/private/var/folders/f0/ncwpvltd3_sfbjtbnct70dnm0000gn/T/opencode/incident-eval-v2/probe2/intake/incident-photo.png",
+    "sha256_after": "6e4a4f573f8cfc829218f798eeb5b45cd08803689d31d7db6fce4920cdca9ca9",
+    "sha256_before": "6e4a4f573f8cfc829218f798eeb5b45cd08803689d31d7db6fce4920cdca9ca9",
+    "unchanged": true
+  },
+  "receipt_copies": {
+    "catalogue": {
+      "copy": "/private/var/folders/f0/ncwpvltd3_sfbjtbnct70dnm0000gn/T/opencode/incident-eval-v2/probe2/evidence/catalogue-receipt.json",
+      "sha256": "c942e5ed8058d5715d8fd399d41047bcc21a863db8310af0c9343f3a8aaee77a",
+      "source": "/private/var/folders/f0/ncwpvltd3_sfbjtbnct70dnm0000gn/T/opencode/incident-eval-v2/probe2/batches/betta-20261015-155106-t135kd/evidence/catalogue/6e4a4f573f8cfc829218f798eeb5b45cd08803689d31d7db6fce4920cdca9ca9.json"
+    },
+    "label": {
+      "copy": "/private/var/folders/f0/ncwpvltd3_sfbjtbnct70dnm0000gn/T/opencode/incident-eval-v2/probe2/evidence/label-receipt.json",
+      "sha256": "63e00595af04eb11727eb3d2be77d3f48dcf501b0aef4a227dbeaa04384fc215",
+      "source": "/private/var/folders/f0/ncwpvltd3_sfbjtbnct70dnm0000gn/T/opencode/incident-eval-v2/probe2/batches/betta-20261015-155106-t135kd/evidence/catalogue/6e4a4f573f8cfc829218f798eeb5b45cd08803689d31d7db6fce4920cdca9ca9-label-retry.json"
+    },
+    "label_crop": {
+      "sha256": "b6cbc02721b2071d01fe7e16f48cea2b043842bec7478d45ac8b5f80f12107f1",
+      "source": "/private/var/folders/f0/ncwpvltd3_sfbjtbnct70dnm0000gn/T/opencode/incident-eval-v2/probe2/batches/betta-20261015-155106-t135kd/evidence/label-crops/6e4a4f573f8cfc829218f798eeb5b45cd08803689d31d7db6fce4920cdca9ca9-label.png"
+    }
+  },
+  "result": {
+    "batch_id": "betta-20261015-155106-t135kd",
+    "manifest_sha256": null,
+    "published": 0,
+    "quarantined": 0,
+    "stage": "PREPARED",
+    "status": "AWAITING_AUTHORISATION"
+  }
+}
