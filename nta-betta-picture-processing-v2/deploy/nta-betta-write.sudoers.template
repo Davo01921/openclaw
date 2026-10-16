@@ -1,0 +1,15 @@
+# nta-betta-write sudoers hardening (template)
+#
+# Installed by deploy/install-trusted-writer.sh ONLY with explicit owner consent
+# (--consent-timestamp-timeout) to /etc/sudoers.d/nta-betta-write as root:wheel
+# 0440, only after `visudo -c -f` validation.
+#
+# Threat closed: after any manual `sudo` by davidlo, macOS sudo normally keeps a
+# ~5-minute passwordless timestamp. An agent process running as davidlo could
+# ride that window to run privileged commands (H1 residual, documented in
+# docs/incident/TRUSTED_WRITE_BOUNDARY_BRIEF_2026-10-16.md). timestamp_timeout=0
+# removes the cached window: every sudo invocation requires the password again.
+#
+# Scope: the davidlo account only. This does not change authentication methods,
+# does not grant or remove any privileges, and does not affect other users.
+Defaults:davidlo timestamp_timeout=0

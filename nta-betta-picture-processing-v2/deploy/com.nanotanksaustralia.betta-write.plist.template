@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  NTA Betta trusted Shopify write boundary — production LaunchDaemon template.
+
+  Deployed by deploy/install-trusted-writer.sh as
+  /Library/LaunchDaemons/com.nanotanksaustralia.betta-write.plist (root:wheel 0644).
+
+  Every path below is absolute and root-owned (or Apple-owned); the daemon
+  never reads code, interpreters or dependencies from a user-writable path.
+  The interpreter is Apple's /usr/bin/python3 (Python 3.9, stdlib only).
+  Do not add EnvironmentVariables here: environment variables must never widen
+  daemon authority (policy and credentials are read only from root-owned files).
+
+  --socket-group staff: this host has no per-user "davidlo" group (macOS
+  primary group is staff), and the socket must be reachable by uid 501. The
+  socket group only controls reachability; authorisation is the daemon's
+  kernel-verified peer-uid allowlist (allowed_uids / root), which refuses and
+  logs any other local user (peer_not_allowed).
+-->
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.nanotanksaustralia.betta-write</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/usr/bin/python3</string>
+		<string>/usr/local/libexec/nta-betta-write/betta_write_daemon.py</string>
+		<string>--socket</string>
+		<string>/var/run/nta-betta-write/boundary.sock</string>
+		<string>--state-dir</string>
+		<string>/var/db/nta-betta-write</string>
+		<string>--code-root</string>
+		<string>/usr/local/libexec/nta-betta-write</string>
+		<string>--socket-group</string>
+		<string>staff</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>KeepAlive</key>
+	<true/>
+	<key>ProcessType</key>
+	<string>Background</string>
+	<key>ThrottleInterval</key>
+	<integer>10</integer>
+	<!-- 63 == 0077: daemon-created files default to owner-only. -->
+	<key>Umask</key>
+	<integer>63</integer>
+	<key>StandardOutPath</key>
+	<string>/var/log/nta-betta-write.out.log</string>
+	<key>StandardErrorPath</key>
+	<string>/var/log/nta-betta-write.err.log</string>
+</dict>
+</plist>

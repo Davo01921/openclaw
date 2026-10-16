@@ -1,0 +1,27 @@
+{
+  "schema": "nta-betta-write-boundary-policy-v1",
+  "version": 1,
+  "allowed_uids": [501],
+  "allowed_roots": ["/Users/davidlo/Documents/Betta Processing/batches"],
+  "operations": {
+    "status": {"enabled": true},
+    "verify": {"enabled": true},
+    "update_details": {"standing": true, "fields": ["title", "arrival_date"]},
+    "set_inventory": {
+      "standing": true,
+      "allowed_from": [0],
+      "target": 1,
+      "reasons": ["received"]
+    },
+    "media_append": {
+      "standing": true,
+      "max_assets": 2,
+      "max_bytes": 20971520,
+      "mime_types": ["image/png", "image/jpeg"],
+      "poll_attempts": 30,
+      "poll_interval": 2.0
+    },
+    "merch_update": {"standing": false, "fields": ["vendor", "price", "cost"]}
+  },
+  "budgets": {"max_operations_per_request": 6, "max_daily_writes": 60}
+}
