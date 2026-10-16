@@ -52,7 +52,7 @@ POLICY_SOURCE="$SCRIPT_DIR/boundary-policy.production.json"
 PLIST_TEMPLATE="$SCRIPT_DIR/${SERVICE_LABEL}.plist.template"
 SUDOERS_TEMPLATE="$SCRIPT_DIR/nta-betta-write.sudoers.template"
 
-SOURCE_SCRIPTS="betta_write_boundary.py betta_write_daemon.py betta_write_client.py betta_write_admin.py"
+SOURCE_SCRIPTS="betta_write_boundary.py betta_write_daemon.py betta_write_client.py betta_write_admin.py betta_corrections.py"
 
 DRY_RUN=0
 UPGRADE=0
